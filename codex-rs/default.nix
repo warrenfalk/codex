@@ -2,15 +2,21 @@
   cmake,
   llvmPackages,
   openssl,
+  libcap,
   rustPlatform,
   pkg-config,
+  git,
   lib,
   version ? "0.0.0",
   ...
 }:
 rustPlatform.buildRustPackage (_: {
   env = {
-    PKG_CONFIG_PATH = "${openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH";
+    PKG_CONFIG_PATH = "${openssl.dev}/lib/pkgconfig:${lib.getDev libcap}/lib/pkgconfig:$PKG_CONFIG_PATH";
+    LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+    # rama-boring-sys honors target-specific CC/CXX vars (matches cc crate behavior).
+    CC_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang";
+    CXX_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang++";
   };
   pname = "codex-rs";
   inherit version;
@@ -27,8 +33,10 @@ rustPlatform.buildRustPackage (_: {
   '';
   nativeBuildInputs = [
     cmake
+    git
     llvmPackages.clang
     llvmPackages.libclang.lib
+    libcap
     openssl
     pkg-config
   ];
