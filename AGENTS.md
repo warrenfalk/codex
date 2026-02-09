@@ -21,6 +21,38 @@ In the codex-rs folder where the rust code lives:
   locally before CI.
 - Do not create small helper methods that are referenced only once.
 
+## Repository overview
+
+This repository is a monorepo with:
+
+- `codex-rs`: primary Rust workspace for the CLI, TUI, and core libraries.
+- `codex-cli`: TypeScript npm wrapper.
+- `sdk`: TypeScript SDK for building agents.
+- `shell-tool-mcp`: MCP server for shell tool integration.
+
+The root `justfile` targets `codex-rs` via `working-directory := "codex-rs"` for Rust-focused recipes.
+
+## Additional useful commands
+
+Beyond crate-specific `cargo` commands, these are commonly useful:
+
+- Run interactive Codex: `just codex "your prompt"`
+- Run non-interactive mode: `just exec "your prompt"`
+- Faster test runner wrapper: `just test`
+- Workspace lint pass: `just clippy`
+- Run MCP server locally: `just mcp-server-run`
+- Tail Codex logs: `just log`
+- Bazel workflows: `just bazel-codex`, `just bazel-test`, `just bazel-remote-test`
+- Nix workflows: `nix build`, `nix develop`
+- Root formatting for non-Rust files: `npm run format`, `npm run format:fix`
+
+## Runtime paths and tooling
+
+- User config: `~/.codex/config.toml`
+- TUI log file: `~/.codex/log/codex-tui.log` (controlled by `RUST_LOG`)
+- Local state and SQLite data: `~/.codex/`
+- TypeScript workspace toolchain: `pnpm@10.28.2` minimum and Node.js 22+
+
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
 1. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui`.
