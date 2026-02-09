@@ -180,11 +180,13 @@ fn install_network_seccomp_filter_on_current_thread(
 
     match mode {
         NetworkSeccompMode::Restricted => {
-            deny_syscall(&mut rules, libc::SYS_connect);
+            // Allow socket lifecycle calls (connect/bind/listen) so AF_UNIX path
+            // sockets remain usable under restricted-network sandboxing.
+            //
+            // Network sockets remain blocked because `socket(AF_INET/AF_INET6, ..)` is
+            // denied below.
             deny_syscall(&mut rules, libc::SYS_accept);
             deny_syscall(&mut rules, libc::SYS_accept4);
-            deny_syscall(&mut rules, libc::SYS_bind);
-            deny_syscall(&mut rules, libc::SYS_listen);
             deny_syscall(&mut rules, libc::SYS_getpeername);
             deny_syscall(&mut rules, libc::SYS_getsockname);
             deny_syscall(&mut rules, libc::SYS_shutdown);
