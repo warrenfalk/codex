@@ -5,6 +5,8 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io;
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
@@ -385,6 +387,150 @@ fn unix_sock_body() {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn sockaddr_un_for_path(path: &Path) -> (libc::sockaddr_un, libc::socklen_t) {
+    let path_bytes = path.as_os_str().as_bytes();
+
+    let mut addr = unsafe { std::mem::zeroed::<libc::sockaddr_un>() };
+    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    assert!(
+        path_bytes.len() < addr.sun_path.len(),
+        "unix socket path too long: {}",
+        path.display()
+    );
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            path_bytes.as_ptr().cast::<libc::c_char>(),
+            addr.sun_path.as_mut_ptr(),
+            path_bytes.len(),
+        );
+    }
+
+    let len = (std::mem::size_of::<libc::sa_family_t>() + path_bytes.len() + 1)
+        .try_into()
+        .expect("sockaddr_un length should fit into socklen_t");
+    (addr, len)
+}
+
+#[cfg(target_os = "linux")]
+fn af_inet_socket_denied_body() {
+    unsafe {
+        let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0);
+        assert_eq!(fd, -1, "AF_INET socket should be denied");
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM),
+            "AF_INET socket should fail with EPERM"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn unix_socket_path_calls_work_body() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stream_path = dir.path().join("stream.sock");
+    let dgram_path = dir.path().join("dgram.sock");
+    let payload = b"hello_unix_path";
+
+    unsafe {
+        let stream_fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+        assert!(
+            stream_fd >= 0,
+            "AF_UNIX stream socket failed: {}",
+            io::Error::last_os_error()
+        );
+        let (stream_addr, stream_addr_len) = sockaddr_un_for_path(&stream_path);
+        let bind_stream = libc::bind(
+            stream_fd,
+            (&stream_addr as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            stream_addr_len,
+        );
+        assert_eq!(
+            bind_stream,
+            0,
+            "bind(AF_UNIX stream) failed: {}",
+            io::Error::last_os_error()
+        );
+        let listen_result = libc::listen(stream_fd, 1);
+        assert_eq!(
+            listen_result,
+            0,
+            "listen(AF_UNIX stream) failed: {}",
+            io::Error::last_os_error()
+        );
+        let _ = libc::close(stream_fd);
+
+        let server_fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0);
+        assert!(
+            server_fd >= 0,
+            "AF_UNIX dgram server socket failed: {}",
+            io::Error::last_os_error()
+        );
+        let (server_addr, server_addr_len) = sockaddr_un_for_path(&dgram_path);
+        let bind_server = libc::bind(
+            server_fd,
+            (&server_addr as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            server_addr_len,
+        );
+        assert_eq!(
+            bind_server,
+            0,
+            "bind(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let client_fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0);
+        assert!(
+            client_fd >= 0,
+            "AF_UNIX dgram client socket failed: {}",
+            io::Error::last_os_error()
+        );
+        let connect_result = libc::connect(
+            client_fd,
+            (&server_addr as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            server_addr_len,
+        );
+        assert_eq!(
+            connect_result,
+            0,
+            "connect(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let sent = libc::write(
+            client_fd,
+            payload.as_ptr().cast::<libc::c_void>(),
+            payload.len(),
+        );
+        assert!(
+            sent >= 0,
+            "write(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let mut recv_buf = [0u8; 64];
+        let recvd = libc::recv(
+            server_fd,
+            recv_buf.as_mut_ptr().cast::<libc::c_void>(),
+            recv_buf.len(),
+            0,
+        );
+        assert!(
+            recvd >= 0,
+            "recv(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+        assert_eq!(&recv_buf[..(recvd as usize)], payload);
+
+        let _ = libc::close(client_fd);
+        let _ = libc::close(server_fd);
+    }
+
+    let _ = std::fs::remove_file(stream_path);
+    let _ = std::fs::remove_file(dgram_path);
+}
+
 #[tokio::test]
 async fn allow_unix_socketpair_recvfrom() {
     run_code_under_sandbox(
@@ -394,6 +540,48 @@ async fn allow_unix_socketpair_recvfrom() {
     )
     .await
     .expect("should be able to reexec");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn deny_af_inet_socket_in_workspace_write() {
+    let status = run_code_under_sandbox(
+        "deny_af_inet_socket_in_workspace_write",
+        &SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![],
+            network_access: false,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        },
+        || async { af_inet_socket_denied_body() },
+    )
+    .await
+    .expect("should be able to reexec");
+
+    if let Some(status) = status {
+        assert!(status.success(), "child exited with {status:?}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn allow_unix_socket_path_calls_in_workspace_write() {
+    let status = run_code_under_sandbox(
+        "allow_unix_socket_path_calls_in_workspace_write",
+        &SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![],
+            network_access: false,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        },
+        || async { unix_socket_path_calls_work_body() },
+    )
+    .await
+    .expect("should be able to reexec");
+
+    if let Some(status) = status {
+        assert!(status.success(), "child exited with {status:?}");
+    }
 }
 
 const IN_SANDBOX_ENV_VAR: &str = "IN_SANDBOX";

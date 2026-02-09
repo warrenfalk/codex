@@ -149,11 +149,13 @@ fn install_network_seccomp_filter_on_current_thread() -> std::result::Result<(),
         rules.insert(nr, vec![]); // empty rule vec = unconditional match
     };
 
-    deny_syscall(libc::SYS_connect);
+    // Allow socket lifecycle calls (connect/bind/listen) so AF_UNIX path
+    // sockets remain usable under restricted-network sandboxing.
+    //
+    // Network sockets remain blocked because `socket(AF_INET/AF_INET6, ..)` is
+    // denied below.
     deny_syscall(libc::SYS_accept);
     deny_syscall(libc::SYS_accept4);
-    deny_syscall(libc::SYS_bind);
-    deny_syscall(libc::SYS_listen);
     deny_syscall(libc::SYS_getpeername);
     deny_syscall(libc::SYS_getsockname);
     deny_syscall(libc::SYS_shutdown);
