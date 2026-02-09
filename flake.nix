@@ -58,6 +58,7 @@
               pkgs.cmake
               pkgs.llvmPackages.clang
               pkgs.llvmPackages.libclang.lib
+              pkgs.python3
             ];
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
