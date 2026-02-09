@@ -3,6 +3,7 @@ use codex_core::spawn::StdioPolicy;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
+use std::env;
 use std::future::Future;
 use std::io;
 use std::path::Path;
@@ -57,6 +58,13 @@ async fn spawn_command_under_sandbox(
         env,
     )
     .await
+}
+
+fn find_executable_on_path(name: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 #[cfg(target_os = "linux")]
@@ -115,6 +123,11 @@ async fn can_apply_linux_sandbox_policy(
 #[tokio::test]
 async fn python_multiprocessing_lock_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
+    let Some(python3) = find_executable_on_path("python3") else {
+        eprintln!("python3 not found in PATH, skipping test.");
+        return;
+    };
+    let python3 = python3.to_string_lossy().to_string();
     #[cfg(target_os = "linux")]
     let sandbox_env = match linux_sandbox_test_env().await {
         Some(env) => env,
@@ -157,11 +170,7 @@ if __name__ == '__main__':
     let command_cwd = std::env::current_dir().expect("should be able to get current dir");
     let sandbox_cwd = command_cwd.clone();
     let mut child = spawn_command_under_sandbox(
-        vec![
-            "python3".to_string(),
-            "-c".to_string(),
-            python_code.to_string(),
-        ],
+        vec![python3, "-c".to_string(), python_code.to_string()],
         command_cwd,
         &policy,
         sandbox_cwd.as_path(),
@@ -178,6 +187,13 @@ if __name__ == '__main__':
 #[tokio::test]
 async fn python_getpwuid_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
+
+    let Some(python3) = find_executable_on_path("python3") else {
+        eprintln!("python3 not found in PATH, skipping test.");
+        return;
+    };
+    let python3 = python3.to_string_lossy().to_string();
+
     #[cfg(target_os = "linux")]
     let sandbox_env = match linux_sandbox_test_env().await {
         Some(env) => env,
@@ -185,23 +201,13 @@ async fn python_getpwuid_works_under_sandbox() {
     };
     #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
-
-    if std::process::Command::new("python3")
-        .arg("--version")
-        .status()
-        .is_err()
-    {
-        eprintln!("python3 not found in PATH, skipping test.");
-        return;
-    }
-
     let policy = SandboxPolicy::new_read_only_policy();
     let command_cwd = std::env::current_dir().expect("should be able to get current dir");
     let sandbox_cwd = command_cwd.clone();
 
     let mut child = spawn_command_under_sandbox(
         vec![
-            "python3".to_string(),
+            python3,
             "-c".to_string(),
             "import pwd, os; print(pwd.getpwuid(os.getuid()))".to_string(),
         ],
@@ -224,6 +230,12 @@ async fn python_getpwuid_works_under_sandbox() {
 #[tokio::test]
 async fn sandbox_distinguishes_command_and_policy_cwds() {
     core_test_support::skip_if_sandbox!();
+    let Some(touch) = find_executable_on_path("touch") else {
+        eprintln!("touch not found in PATH, skipping test.");
+        return;
+    };
+    let touch = touch.to_string_lossy().to_string();
+
     #[cfg(target_os = "linux")]
     let sandbox_env = match linux_sandbox_test_env().await {
         Some(env) => env,
@@ -288,10 +300,7 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
 
     // Writing to the sandbox policy cwd after changing directories into it should succeed.
     let mut child = spawn_command_under_sandbox(
-        vec![
-            "/usr/bin/touch".to_string(),
-            canonical_allowed_path.to_string_lossy().into_owned(),
-        ],
+        vec![touch, canonical_allowed_path.to_string_lossy().into_owned()],
         command_root,
         &policy,
         canonical_sandbox_root.as_path(),
