@@ -165,7 +165,6 @@ fn install_network_seccomp_filter_on_current_thread() -> std::result::Result<(),
     // with their socketpair + child processes for sub-proc management
     // deny_syscall(libc::SYS_recvfrom);
     deny_syscall(libc::SYS_recvmmsg);
-    deny_syscall(libc::SYS_getsockopt);
     deny_syscall(libc::SYS_setsockopt);
     deny_syscall(libc::SYS_ptrace);
     deny_syscall(libc::SYS_io_uring_setup);
