@@ -540,6 +540,76 @@ fn unix_socket_path_calls_work_body() {
     let _ = std::fs::remove_file(dgram_path);
 }
 
+#[cfg(target_os = "linux")]
+fn unix_socket_getsockopt_so_error_works_body() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dgram_path = dir.path().join("getsockopt.sock");
+
+    unsafe {
+        let server_fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0);
+        assert!(
+            server_fd >= 0,
+            "AF_UNIX dgram server socket failed: {}",
+            io::Error::last_os_error()
+        );
+        let (server_addr, server_addr_len) = sockaddr_un_for_path(&dgram_path);
+        let bind_server = libc::bind(
+            server_fd,
+            (&server_addr as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            server_addr_len,
+        );
+        assert_eq!(
+            bind_server,
+            0,
+            "bind(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let client_fd = libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0);
+        assert!(
+            client_fd >= 0,
+            "AF_UNIX dgram client socket failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let connect_result = libc::connect(
+            client_fd,
+            (&server_addr as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
+            server_addr_len,
+        );
+        assert_eq!(
+            connect_result,
+            0,
+            "connect(AF_UNIX dgram) failed: {}",
+            io::Error::last_os_error()
+        );
+
+        let mut so_error: libc::c_int = -1;
+        let mut optlen: libc::socklen_t = std::mem::size_of::<libc::c_int>()
+            .try_into()
+            .expect("size_of::<c_int>() should fit into socklen_t");
+        let getsockopt_result = libc::getsockopt(
+            client_fd,
+            libc::SOL_SOCKET,
+            libc::SO_ERROR,
+            (&mut so_error as *mut libc::c_int).cast::<libc::c_void>(),
+            &mut optlen,
+        );
+        assert_eq!(
+            getsockopt_result,
+            0,
+            "getsockopt(SO_ERROR) failed: {}",
+            io::Error::last_os_error()
+        );
+        assert_eq!(so_error, 0, "SO_ERROR should be zero");
+
+        let _ = libc::close(client_fd);
+        let _ = libc::close(server_fd);
+    }
+
+    let _ = std::fs::remove_file(dgram_path);
+}
+
 #[tokio::test]
 async fn allow_unix_socketpair_recvfrom() {
     run_code_under_sandbox(
@@ -558,6 +628,7 @@ async fn deny_af_inet_socket_in_workspace_write() {
         "deny_af_inet_socket_in_workspace_write",
         &SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![],
+            read_only_access: Default::default(),
             network_access: false,
             exclude_tmpdir_env_var: false,
             exclude_slash_tmp: false,
@@ -579,11 +650,34 @@ async fn allow_unix_socket_path_calls_in_workspace_write() {
         "allow_unix_socket_path_calls_in_workspace_write",
         &SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![],
+            read_only_access: Default::default(),
             network_access: false,
             exclude_tmpdir_env_var: false,
             exclude_slash_tmp: false,
         },
         || async { unix_socket_path_calls_work_body() },
+    )
+    .await
+    .expect("should be able to reexec");
+
+    if let Some(status) = status {
+        assert!(status.success(), "child exited with {status:?}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn allow_unix_socket_getsockopt_so_error_in_workspace_write() {
+    let status = run_code_under_sandbox(
+        "allow_unix_socket_getsockopt_so_error_in_workspace_write",
+        &SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![],
+            read_only_access: Default::default(),
+            network_access: false,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        },
+        || async { unix_socket_getsockopt_so_error_works_body() },
     )
     .await
     .expect("should be able to reexec");
