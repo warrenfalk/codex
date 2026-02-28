@@ -110,6 +110,10 @@ pub struct Cli {
     #[arg(long = "no-alt-screen", default_value_t = false)]
     pub no_alt_screen: bool,
 
+    /// Connect the TUI to an existing `codex app-server` websocket endpoint.
+    #[arg(long = "connect", value_name = "WS_URL")]
+    pub connect: Option<String>,
+
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 }

@@ -81,6 +81,7 @@ use codex_protocol::protocol::TokenUsage;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::bail;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -1534,6 +1535,7 @@ impl App {
         active_profile: Option<String>,
         initial_prompt: Option<String>,
         initial_images: Vec<PathBuf>,
+        connect: Option<String>,
         session_selection: SessionSelection,
         feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
@@ -1617,10 +1619,25 @@ impl App {
         }
 
         let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
+        if connect.is_some()
+            && !matches!(
+                session_selection,
+                SessionSelection::StartFresh | SessionSelection::Exit
+            )
+        {
+            bail!("--connect currently supports only starting a new session");
+        }
+        let mut connected_session = match connect.as_deref() {
+            Some(url) => Some(
+                crate::connected_app_server::connect(url, &config, app_event_tx.clone()).await?,
+            ),
+            None => None,
+        };
 
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
             Self::should_wait_for_initial_session(&session_selection);
+        let mut initial_connected_event = None;
         let mut chat_widget = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 let startup_tooltip_override =
@@ -1647,7 +1664,12 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     otel_manager: otel_manager.clone(),
                 };
-                ChatWidget::new(init, thread_manager.clone())
+                if let Some(connected_session) = connected_session.take() {
+                    initial_connected_event = Some(connected_session.session_configured_event);
+                    ChatWidget::new_with_op_sender(init, connected_session.codex_op_tx)
+                } else {
+                    ChatWidget::new(init, thread_manager.clone())
+                }
             }
             SessionSelection::Resume(target_session) => {
                 let resumed = thread_manager
@@ -1767,6 +1789,9 @@ impl App {
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
         };
+        if let Some(event) = initial_connected_event {
+            app.app_event_tx.send(AppEvent::CodexEvent(event));
+        }
 
         // On startup, if Agent mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
         #[cfg(target_os = "windows")]
