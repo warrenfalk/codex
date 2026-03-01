@@ -1267,3 +1267,500 @@ fn review_decision_to_file_change_approval_decision(
         ReviewDecision::Abort => FileChangeApprovalDecision::Cancel,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use codex_app_server_protocol::AdditionalFileSystemPermissions;
+    use codex_app_server_protocol::AdditionalMacOsPermissions;
+    use codex_app_server_protocol::AdditionalNetworkPermissions;
+    use codex_app_server_protocol::AdditionalPermissionProfile;
+    use codex_app_server_protocol::AskForApproval as RemoteAskForApproval;
+    use codex_app_server_protocol::CommandExecutionStatus;
+    use codex_app_server_protocol::SandboxPolicy as RemoteSandboxPolicy;
+    use codex_app_server_protocol::SessionSource as RemoteSessionSource;
+    use codex_app_server_protocol::ThreadStatus;
+    use codex_protocol::config_types::ReasoningSummary;
+    use codex_protocol::models::FileSystemPermissions;
+    use codex_protocol::models::MacOsAutomationPermission;
+    use codex_protocol::models::MacOsPreferencesPermission;
+    use codex_protocol::models::MacOsSeatbeltProfileExtensions;
+    use codex_protocol::models::NetworkPermissions;
+    use codex_protocol::models::PermissionProfile;
+    use codex_protocol::protocol::AskForApproval;
+    use codex_protocol::protocol::ReadOnlyAccess;
+    use codex_protocol::protocol::SandboxPolicy;
+    use codex_protocol::user_input::UserInput;
+    use codex_utils_absolute_path::AbsolutePathBuf;
+    use pretty_assertions::assert_eq;
+    use tokio::sync::mpsc::error::TryRecvError;
+    use tokio::time::timeout;
+
+    use super::*;
+
+    #[test]
+    fn synthesize_initial_messages_preserves_image_generation_saved_path() {
+        let item = ThreadItem::ImageGeneration {
+            id: "img-1".to_string(),
+            status: "completed".to_string(),
+            revised_prompt: Some("revised".to_string()),
+            result: "base64".to_string(),
+            saved_path: Some("/tmp/output.png".to_string()),
+        };
+
+        let events = synthesize_initial_messages_from_item(&item);
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            EventMsg::ImageGenerationEnd(image) => {
+                assert_eq!(image.saved_path.as_deref(), Some("/tmp/output.png"));
+            }
+            other => panic!("expected completed image generation event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn additional_permission_profile_maps_macos_extensions_to_core() {
+        let profile = AdditionalPermissionProfile {
+            network: Some(AdditionalNetworkPermissions {
+                enabled: Some(true),
+            }),
+            file_system: Some(AdditionalFileSystemPermissions {
+                read: Some(vec![
+                    AbsolutePathBuf::from_absolute_path("/read").expect("absolute read path"),
+                ]),
+                write: Some(vec![
+                    AbsolutePathBuf::from_absolute_path("/write").expect("absolute write path"),
+                ]),
+            }),
+            macos: Some(AdditionalMacOsPermissions {
+                preferences: MacOsPreferencesPermission::ReadWrite,
+                automations: MacOsAutomationPermission::BundleIds(vec![
+                    "com.apple.Calendar".to_string(),
+                ]),
+                accessibility: true,
+                calendar: false,
+            }),
+        };
+
+        assert_eq!(
+            additional_permission_profile_to_core(profile),
+            PermissionProfile {
+                network: Some(NetworkPermissions {
+                    enabled: Some(true),
+                }),
+                file_system: Some(FileSystemPermissions {
+                    read: Some(vec![
+                        AbsolutePathBuf::from_absolute_path("/read").expect("absolute read path"),
+                    ]),
+                    write: Some(vec![
+                        AbsolutePathBuf::from_absolute_path("/write").expect("absolute write path"),
+                    ]),
+                }),
+                macos: Some(MacOsSeatbeltProfileExtensions {
+                    macos_preferences: MacOsPreferencesPermission::ReadWrite,
+                    macos_automation: MacOsAutomationPermission::BundleIds(vec![
+                        "com.apple.Calendar".to_string(),
+                    ]),
+                    macos_accessibility: true,
+                    macos_calendar: false,
+                }),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn user_turn_op_sends_turn_start_request() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/tmp/original"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+        let (codex_op_tx, codex_op_rx) = unbounded_channel();
+
+        let task = tokio::spawn(op_task(
+            codex_op_rx,
+            outbound_tx,
+            state.clone(),
+            app_event_tx,
+        ));
+
+        codex_op_tx
+            .send(Op::UserTurn {
+                items: vec![UserInput::Text {
+                    text: "hello from connected mode".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: PathBuf::from("/repo"),
+                approval_policy: AskForApproval::Never,
+                sandbox_policy: SandboxPolicy::ReadOnly {
+                    access: ReadOnlyAccess::FullAccess,
+                },
+                model: "mock-model".to_string(),
+                effort: None,
+                summary: ReasoningSummary::Auto,
+                final_output_json_schema: None,
+                collaboration_mode: None,
+                personality: None,
+            })
+            .expect("send user turn op");
+        drop(codex_op_tx);
+
+        let outbound = timeout(Duration::from_secs(1), outbound_rx.recv())
+            .await
+            .expect("turn/start request should arrive")
+            .expect("turn/start request should be present");
+        task.await.expect("op task should finish cleanly");
+
+        match outbound {
+            JSONRPCMessage::Request(request) => {
+                assert_eq!(request.id, RequestId::Integer(3));
+                assert_eq!(request.method, "turn/start");
+
+                let params: TurnStartParams =
+                    serde_json::from_value(request.params.expect("turn/start params"))
+                        .expect("decode turn/start params");
+                assert_eq!(params.thread_id, "thread-1");
+                assert_eq!(params.cwd, Some(PathBuf::from("/repo")));
+                assert_eq!(params.approval_policy, Some(RemoteAskForApproval::Never));
+                assert_eq!(
+                    params.sandbox_policy,
+                    Some(RemoteSandboxPolicy::ReadOnly {
+                        access: codex_app_server_protocol::ReadOnlyAccess::FullAccess,
+                    })
+                );
+                assert_eq!(params.model, Some("mock-model".to_string()));
+                assert_eq!(
+                    params.input,
+                    vec![codex_app_server_protocol::UserInput::Text {
+                        text: "hello from connected mode".to_string(),
+                        text_elements: Vec::new(),
+                    }]
+                );
+            }
+            other => panic!("expected turn/start request, got {other:?}"),
+        }
+
+        let guard = state.lock().await;
+        assert_eq!(guard.thread_cwd, PathBuf::from("/repo"));
+        assert_eq!(guard.next_request_id, 4);
+        drop(guard);
+
+        assert!(matches!(
+            app_event_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn exec_approval_round_trip_ignores_legacy_duplicate() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            9,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+
+        handle_server_request(
+            JSONRPCRequest {
+                id: RequestId::Integer(41),
+                method: "item/commandExecution/requestApproval".to_string(),
+                params: Some(
+                    serde_json::to_value(CommandExecutionRequestApprovalParams {
+                        thread_id: "thread-1".to_string(),
+                        turn_id: "turn-1".to_string(),
+                        item_id: "call-1".to_string(),
+                        approval_id: None,
+                        reason: Some("needs approval".to_string()),
+                        network_approval_context: None,
+                        command: Some("echo hi".to_string()),
+                        cwd: Some(PathBuf::from("/repo")),
+                        command_actions: Some(Vec::new()),
+                        additional_permissions: None,
+                        skill_metadata: Some(
+                            codex_app_server_protocol::CommandExecutionRequestApprovalSkillMetadata {
+                                path_to_skills_md: PathBuf::from("/repo/SKILLS.md"),
+                            },
+                        ),
+                        proposed_execpolicy_amendment: None,
+                        proposed_network_policy_amendments: None,
+                        available_decisions: None,
+                    })
+                    .expect("serialize exec approval params"),
+                ),
+            },
+            &outbound_tx,
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        let event = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("approval event should arrive")
+            .expect("approval event should be present");
+        match event {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ExecApprovalRequest(request),
+                ..
+            }) => {
+                assert_eq!(request.call_id, "call-1");
+                assert_eq!(request.turn_id, "turn-1");
+                assert_eq!(request.command, vec!["echo hi".to_string()]);
+                assert_eq!(request.cwd, PathBuf::from("/repo"));
+                assert_eq!(request.reason, Some("needs approval".to_string()));
+                assert_eq!(
+                    request.skill_metadata,
+                    Some(
+                        codex_protocol::approvals::ExecApprovalRequestSkillMetadata {
+                            path_to_skills_md: PathBuf::from("/repo/SKILLS.md"),
+                        }
+                    )
+                );
+            }
+            other => panic!("expected exec approval event, got {other:?}"),
+        }
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "codex/event/exec_approval_request".to_string(),
+                params: Some(
+                    serde_json::to_value(Event {
+                        id: "dup".to_string(),
+                        msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
+                            call_id: "call-1".to_string(),
+                            approval_id: None,
+                            turn_id: "turn-1".to_string(),
+                            command: vec!["echo hi".to_string()],
+                            cwd: PathBuf::from("/repo"),
+                            reason: Some("needs approval".to_string()),
+                            network_approval_context: None,
+                            proposed_execpolicy_amendment: None,
+                            proposed_network_policy_amendments: None,
+                            additional_permissions: None,
+                            skill_metadata: None,
+                            available_decisions: None,
+                            parsed_cmd: Vec::new(),
+                        }),
+                    })
+                    .expect("serialize legacy approval event"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        assert!(matches!(app_event_rx.try_recv(), Err(TryRecvError::Empty)));
+
+        let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let task = tokio::spawn(op_task(
+            codex_op_rx,
+            outbound_tx,
+            state.clone(),
+            app_event_tx,
+        ));
+
+        codex_op_tx
+            .send(Op::ExecApproval {
+                id: "call-1".to_string(),
+                turn_id: Some("turn-1".to_string()),
+                decision: ReviewDecision::Approved,
+            })
+            .expect("send exec approval op");
+        drop(codex_op_tx);
+
+        let outbound = timeout(Duration::from_secs(1), outbound_rx.recv())
+            .await
+            .expect("approval response should arrive")
+            .expect("approval response should be present");
+        task.await.expect("op task should finish cleanly");
+
+        match outbound {
+            JSONRPCMessage::Response(response) => {
+                assert_eq!(response.id, RequestId::Integer(41));
+                let body: CommandExecutionRequestApprovalResponse =
+                    serde_json::from_value(response.result).expect("decode exec approval response");
+                assert_eq!(body.decision, CommandExecutionApprovalDecision::Accept);
+            }
+            other => panic!("expected exec approval response, got {other:?}"),
+        }
+
+        let guard = state.lock().await;
+        assert!(guard.pending_exec_approvals.is_empty());
+    }
+
+    #[test]
+    fn resumed_thread_synthesizes_initial_messages() {
+        let event = session_configured_event_from_thread_response(
+            Thread {
+                id: ThreadId::new().to_string(),
+                preview: "hello".to_string(),
+                model_provider: "openai".to_string(),
+                created_at: 1,
+                updated_at: 2,
+                status: ThreadStatus::Idle,
+                path: Some(PathBuf::from("/tmp/thread.jsonl")),
+                cwd: PathBuf::from("/repo"),
+                cli_version: "0.106.0".to_string(),
+                source: RemoteSessionSource::Cli,
+                agent_nickname: None,
+                agent_role: None,
+                git_info: None,
+                name: Some("saved thread".to_string()),
+                turns: vec![
+                    Turn {
+                        id: "turn-1".to_string(),
+                        items: vec![
+                            ThreadItem::UserMessage {
+                                id: "user-1".to_string(),
+                                content: vec![codex_app_server_protocol::UserInput::Text {
+                                    text: "hello".to_string(),
+                                    text_elements: Vec::new(),
+                                }],
+                            },
+                            ThreadItem::AgentMessage {
+                                id: "agent-1".to_string(),
+                                text: "world".to_string(),
+                                phase: None,
+                            },
+                            ThreadItem::Reasoning {
+                                id: "reason-1".to_string(),
+                                summary: vec!["thinking".to_string()],
+                                content: vec!["raw".to_string()],
+                            },
+                            ThreadItem::WebSearch {
+                                id: "search-1".to_string(),
+                                query: "codex".to_string(),
+                                action: Some(codex_app_server_protocol::WebSearchAction::Search {
+                                    query: Some("codex".to_string()),
+                                    queries: None,
+                                }),
+                            },
+                            ThreadItem::ContextCompaction {
+                                id: "compact-1".to_string(),
+                            },
+                            ThreadItem::CommandExecution {
+                                id: "cmd-1".to_string(),
+                                command: "echo hi".to_string(),
+                                cwd: PathBuf::from("/repo"),
+                                process_id: None,
+                                status: CommandExecutionStatus::Completed,
+                                command_actions: Vec::new(),
+                                aggregated_output: Some("hi".to_string()),
+                                exit_code: Some(0),
+                                duration_ms: Some(1),
+                            },
+                        ],
+                        status: TurnStatus::Completed,
+                        error: None,
+                    },
+                    Turn {
+                        id: "turn-2".to_string(),
+                        items: vec![ThreadItem::AgentMessage {
+                            id: "agent-2".to_string(),
+                            text: "in progress".to_string(),
+                            phase: None,
+                        }],
+                        status: TurnStatus::InProgress,
+                        error: None,
+                    },
+                ],
+            },
+            "mock-model".to_string(),
+            "openai".to_string(),
+            PathBuf::from("/repo"),
+            AskForApproval::Never,
+            SandboxPolicy::DangerFullAccess,
+            None,
+        )
+        .expect("session configured event");
+
+        match event.msg {
+            EventMsg::SessionConfigured(session) => {
+                assert_eq!(session.thread_name, Some("saved thread".to_string()));
+                assert_eq!(session.cwd, PathBuf::from("/repo"));
+                assert_eq!(
+                    session.rollout_path,
+                    Some(PathBuf::from("/tmp/thread.jsonl"))
+                );
+
+                let initial_messages = session
+                    .initial_messages
+                    .expect("resume should synthesize initial messages");
+                assert_eq!(initial_messages.len(), 5);
+
+                match &initial_messages[0] {
+                    EventMsg::UserMessage(message) => {
+                        assert_eq!(message.message, "hello");
+                    }
+                    other => panic!("expected user message, got {other:?}"),
+                }
+                match &initial_messages[1] {
+                    EventMsg::AgentMessage(message) => {
+                        assert_eq!(message.message, "world");
+                    }
+                    other => panic!("expected agent message, got {other:?}"),
+                }
+                match &initial_messages[2] {
+                    EventMsg::AgentReasoning(reasoning) => {
+                        assert_eq!(reasoning.text, "thinking");
+                    }
+                    other => panic!("expected reasoning event, got {other:?}"),
+                }
+                match &initial_messages[3] {
+                    EventMsg::WebSearchEnd(search) => {
+                        assert_eq!(search.call_id, "search-1");
+                        assert_eq!(search.query, "codex");
+                    }
+                    other => panic!("expected web search event, got {other:?}"),
+                }
+                match &initial_messages[4] {
+                    EventMsg::ContextCompacted(_) => {}
+                    other => panic!("expected context compaction event, got {other:?}"),
+                }
+            }
+            other => panic!("expected session configured event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn disconnect_requests_fatal_exit() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, _outbound_rx) = unbounded_channel();
+
+        reader_task(
+            futures::stream::empty::<
+                std::result::Result<WebSocketMessage, tokio_tungstenite::tungstenite::Error>,
+            >(),
+            outbound_tx,
+            state,
+            app_event_tx,
+        )
+        .await;
+
+        let event = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("disconnect event should arrive")
+            .expect("disconnect event should be present");
+        match event {
+            AppEvent::FatalExitRequest(message) => {
+                assert_eq!(message, "app-server websocket connection closed");
+            }
+            other => panic!("expected fatal exit request, got {other:?}"),
+        }
+    }
+}
