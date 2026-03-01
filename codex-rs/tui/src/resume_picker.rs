@@ -50,6 +50,7 @@ pub struct SessionTarget {
 pub enum SessionSelection {
     StartFresh,
     Resume(SessionTarget),
+    ResumeRemote(String),
     Fork(SessionTarget),
     Exit,
 }

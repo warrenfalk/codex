@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 
 use codex_app_server_protocol::ClientInfo;
@@ -16,6 +17,13 @@ use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadListParams;
+use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
+use codex_app_server_protocol::ThreadSortKey as RemoteThreadSortKey;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
@@ -23,11 +31,20 @@ use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
+use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnStartParams;
+use codex_app_server_protocol::TurnStatus;
 use codex_core::config::Config;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ExecApprovalRequestEvent;
+use codex_protocol::items::AgentMessageContent;
+use codex_protocol::items::AgentMessageItem;
+use codex_protocol::items::ContextCompactionItem;
+use codex_protocol::items::ReasoningItem;
+use codex_protocol::items::TurnItem;
+use codex_protocol::items::UserMessageItem;
+use codex_protocol::items::WebSearchItem;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
@@ -101,87 +118,24 @@ pub(crate) struct ConnectedSessionBootstrap {
     pub(crate) session_configured_event: Event,
 }
 
+pub(crate) enum ConnectedSessionMode {
+    StartFresh,
+    Resume { thread_id: String },
+}
+
 pub(crate) async fn connect(
     url: &str,
     config: &Config,
     app_event_tx: AppEventSender,
+    mode: ConnectedSessionMode,
 ) -> Result<ConnectedSessionBootstrap> {
     let (mut ws, _) = connect_async(url)
         .await
         .wrap_err_with(|| format!("failed to connect to app-server websocket at {url}"))?;
 
-    let initialize_request_id = RequestId::Integer(1);
-    send_request(
-        &mut ws,
-        "initialize",
-        initialize_request_id.clone(),
-        Some(serde_json::to_value(InitializeParams {
-            client_info: ClientInfo {
-                name: "codex-tui".to_string(),
-                title: Some("Codex TUI".to_string()),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            },
-            capabilities: Some(InitializeCapabilities {
-                experimental_api: true,
-                opt_out_notification_methods: None,
-            }),
-        })?),
-    )
-    .await?;
-    read_response_for_id(&mut ws, &initialize_request_id).await?;
-    send_notification(&mut ws, "initialized", Option::<serde_json::Value>::None).await?;
-
-    let thread_start_request_id = RequestId::Integer(2);
-    let thread_start_params = ThreadStartParams {
-        model: config.model.clone(),
-        model_provider: None,
-        cwd: Some(config.cwd.display().to_string()),
-        approval_policy: Some(config.permissions.approval_policy.value().into()),
-        sandbox: None,
-        config: None,
-        service_name: None,
-        base_instructions: None,
-        developer_instructions: config.developer_instructions.clone(),
-        personality: config.personality,
-        ephemeral: None,
-        dynamic_tools: None,
-        mock_experimental_field: None,
-        experimental_raw_events: false,
-        persist_extended_history: false,
-    };
-    send_request(
-        &mut ws,
-        "thread/start",
-        thread_start_request_id.clone(),
-        Some(serde_json::to_value(thread_start_params)?),
-    )
-    .await?;
-    let thread_start_response = read_response_for_id(&mut ws, &thread_start_request_id).await?;
-    let thread_start: ThreadStartResponse = serde_json::from_value(thread_start_response.result)
-        .wrap_err("decode thread/start response")?;
-
-    let thread_id = ThreadId::try_from(thread_start.thread.id.as_str())
-        .wrap_err("invalid thread id in thread/start response")?;
-    let thread_cwd = thread_start.cwd.clone();
-    let session_configured_event = Event {
-        id: String::new(),
-        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-            session_id: thread_id,
-            forked_from_id: None,
-            thread_name: None,
-            model: thread_start.model,
-            model_provider_id: thread_start.model_provider,
-            approval_policy: thread_start.approval_policy.to_core(),
-            sandbox_policy: thread_start.sandbox.to_core(),
-            cwd: thread_start.cwd,
-            reasoning_effort: thread_start.reasoning_effort,
-            history_log_id: 0,
-            history_entry_count: 0,
-            initial_messages: None,
-            network_proxy: None,
-            rollout_path: None,
-        }),
-    };
+    initialize_connection(&mut ws).await?;
+    let (thread_id, thread_cwd, session_configured_event) =
+        open_thread_for_session(&mut ws, config, mode).await?;
 
     let state = std::sync::Arc::new(Mutex::new(ConnectedSessionState::new(
         thread_id.to_string(),
@@ -210,6 +164,290 @@ pub(crate) async fn connect(
         codex_op_tx,
         session_configured_event,
     })
+}
+
+pub(crate) async fn find_latest_thread_id(url: &str, cwd: Option<&Path>) -> Result<Option<String>> {
+    let (mut ws, _) = connect_async(url)
+        .await
+        .wrap_err_with(|| format!("failed to connect to app-server websocket at {url}"))?;
+    initialize_connection(&mut ws).await?;
+
+    let request_id = RequestId::Integer(2);
+    send_request(
+        &mut ws,
+        "thread/list",
+        request_id.clone(),
+        Some(serde_json::to_value(ThreadListParams {
+            cursor: None,
+            limit: Some(1),
+            sort_key: Some(RemoteThreadSortKey::UpdatedAt),
+            model_providers: None,
+            source_kinds: None,
+            archived: None,
+            cwd: cwd.map(|path| path.display().to_string()),
+            search_term: None,
+        })?),
+    )
+    .await?;
+    let response = read_response_for_id(&mut ws, &request_id).await?;
+    let threads: ThreadListResponse =
+        serde_json::from_value(response.result).wrap_err("decode thread/list response")?;
+    Ok(threads.data.into_iter().next().map(|thread| thread.id))
+}
+
+async fn initialize_connection(ws: &mut WsClient) -> Result<()> {
+    let initialize_request_id = RequestId::Integer(1);
+    send_request(
+        ws,
+        "initialize",
+        initialize_request_id.clone(),
+        Some(serde_json::to_value(InitializeParams {
+            client_info: ClientInfo {
+                name: "codex-tui".to_string(),
+                title: Some("Codex TUI".to_string()),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+            capabilities: Some(InitializeCapabilities {
+                experimental_api: true,
+                opt_out_notification_methods: None,
+            }),
+        })?),
+    )
+    .await?;
+    read_response_for_id(ws, &initialize_request_id).await?;
+    send_notification(ws, "initialized", Option::<serde_json::Value>::None).await
+}
+
+async fn open_thread_for_session(
+    ws: &mut WsClient,
+    config: &Config,
+    mode: ConnectedSessionMode,
+) -> Result<(ThreadId, PathBuf, Event)> {
+    match mode {
+        ConnectedSessionMode::StartFresh => {
+            let request_id = RequestId::Integer(2);
+            send_request(
+                ws,
+                "thread/start",
+                request_id.clone(),
+                Some(serde_json::to_value(ThreadStartParams {
+                    model: config.model.clone(),
+                    model_provider: None,
+                    cwd: Some(config.cwd.display().to_string()),
+                    approval_policy: Some(config.permissions.approval_policy.value().into()),
+                    sandbox: None,
+                    config: None,
+                    service_name: None,
+                    base_instructions: None,
+                    developer_instructions: config.developer_instructions.clone(),
+                    personality: config.personality,
+                    ephemeral: None,
+                    dynamic_tools: None,
+                    mock_experimental_field: None,
+                    experimental_raw_events: false,
+                    persist_extended_history: false,
+                })?),
+            )
+            .await?;
+            let response = read_response_for_id(ws, &request_id).await?;
+            let thread_start: ThreadStartResponse =
+                serde_json::from_value(response.result).wrap_err("decode thread/start response")?;
+            let thread_id = ThreadId::try_from(thread_start.thread.id.as_str())
+                .wrap_err("invalid thread id in thread/start response")?;
+            let thread_cwd = thread_start.cwd.clone();
+            let session_configured_event = session_configured_event_from_thread_response(
+                thread_start.thread,
+                thread_start.model,
+                thread_start.model_provider,
+                thread_start.cwd,
+                thread_start.approval_policy.to_core(),
+                thread_start.sandbox.to_core(),
+                thread_start.reasoning_effort,
+            )
+            .wrap_err("build session_configured event from thread/start response")?;
+            Ok((thread_id, thread_cwd, session_configured_event))
+        }
+        ConnectedSessionMode::Resume { thread_id } => {
+            let request_id = RequestId::Integer(2);
+            send_request(
+                ws,
+                "thread/resume",
+                request_id.clone(),
+                Some(serde_json::to_value(ThreadResumeParams {
+                    thread_id,
+                    history: None,
+                    path: None,
+                    model: config.model.clone(),
+                    model_provider: None,
+                    cwd: Some(config.cwd.display().to_string()),
+                    approval_policy: Some(config.permissions.approval_policy.value().into()),
+                    sandbox: None,
+                    config: None,
+                    base_instructions: None,
+                    developer_instructions: config.developer_instructions.clone(),
+                    personality: config.personality,
+                    persist_extended_history: false,
+                })?),
+            )
+            .await?;
+            let response = read_response_for_id(ws, &request_id).await?;
+            let thread_resume: ThreadResumeResponse = serde_json::from_value(response.result)
+                .wrap_err("decode thread/resume response")?;
+            let thread_id = ThreadId::try_from(thread_resume.thread.id.as_str())
+                .wrap_err("invalid thread id in thread/resume response")?;
+            let thread_cwd = thread_resume.cwd.clone();
+            let session_configured_event = session_configured_event_from_thread_response(
+                thread_resume.thread,
+                thread_resume.model,
+                thread_resume.model_provider,
+                thread_resume.cwd,
+                thread_resume.approval_policy.to_core(),
+                thread_resume.sandbox.to_core(),
+                thread_resume.reasoning_effort,
+            )
+            .wrap_err("build session_configured event from thread/resume response")?;
+            Ok((thread_id, thread_cwd, session_configured_event))
+        }
+    }
+}
+
+fn session_configured_event_from_thread_response(
+    thread: Thread,
+    model: String,
+    model_provider_id: String,
+    cwd: PathBuf,
+    approval_policy: codex_protocol::protocol::AskForApproval,
+    sandbox_policy: codex_protocol::protocol::SandboxPolicy,
+    reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+) -> Result<Event> {
+    let session_id = ThreadId::try_from(thread.id.as_str())
+        .wrap_err("invalid thread id while building session_configured event")?;
+    let thread_cwd = cwd;
+    Ok(Event {
+        id: String::new(),
+        msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
+            session_id,
+            forked_from_id: None,
+            thread_name: thread.name,
+            model,
+            model_provider_id,
+            approval_policy,
+            sandbox_policy,
+            cwd: thread_cwd,
+            reasoning_effort,
+            history_log_id: 0,
+            history_entry_count: 0,
+            initial_messages: synthesize_initial_messages_from_turns(&thread.turns),
+            network_proxy: None,
+            rollout_path: thread.path,
+        }),
+    })
+}
+
+fn synthesize_initial_messages_from_turns(turns: &[Turn]) -> Option<Vec<EventMsg>> {
+    let events = turns
+        .iter()
+        .flat_map(synthesize_initial_messages_from_turn)
+        .collect::<Vec<_>>();
+    (!events.is_empty()).then_some(events)
+}
+
+fn synthesize_initial_messages_from_turn(turn: &Turn) -> Vec<EventMsg> {
+    if matches!(turn.status, TurnStatus::InProgress) {
+        return Vec::new();
+    }
+
+    turn.items
+        .iter()
+        .flat_map(synthesize_initial_messages_from_item)
+        .collect()
+}
+
+fn synthesize_initial_messages_from_item(item: &ThreadItem) -> Vec<EventMsg> {
+    match item {
+        ThreadItem::UserMessage { id, content } => TurnItem::UserMessage(UserMessageItem {
+            id: id.clone(),
+            content: content
+                .clone()
+                .into_iter()
+                .map(codex_app_server_protocol::UserInput::into_core)
+                .collect(),
+        })
+        .as_legacy_events(false),
+        ThreadItem::AgentMessage {
+            id, text, phase, ..
+        } => TurnItem::AgentMessage(AgentMessageItem {
+            id: id.clone(),
+            content: vec![AgentMessageContent::Text { text: text.clone() }],
+            phase: phase.clone(),
+        })
+        .as_legacy_events(false),
+        ThreadItem::Reasoning {
+            id,
+            summary,
+            content,
+        } => TurnItem::Reasoning(ReasoningItem {
+            id: id.clone(),
+            summary_text: summary.clone(),
+            raw_content: content.clone(),
+        })
+        .as_legacy_events(false),
+        ThreadItem::WebSearch {
+            id,
+            query,
+            action: Some(action),
+        } => TurnItem::WebSearch(WebSearchItem {
+            id: id.clone(),
+            query: query.clone(),
+            action: match action {
+                codex_app_server_protocol::WebSearchAction::Search { query, queries } => {
+                    codex_protocol::models::WebSearchAction::Search {
+                        query: query.clone(),
+                        queries: queries.clone(),
+                    }
+                }
+                codex_app_server_protocol::WebSearchAction::OpenPage { url } => {
+                    codex_protocol::models::WebSearchAction::OpenPage { url: url.clone() }
+                }
+                codex_app_server_protocol::WebSearchAction::FindInPage { url, pattern } => {
+                    codex_protocol::models::WebSearchAction::FindInPage {
+                        url: url.clone(),
+                        pattern: pattern.clone(),
+                    }
+                }
+                codex_app_server_protocol::WebSearchAction::Other => {
+                    codex_protocol::models::WebSearchAction::Other
+                }
+            },
+        })
+        .as_legacy_events(false),
+        ThreadItem::ContextCompaction { id } => {
+            TurnItem::ContextCompaction(ContextCompactionItem { id: id.clone() })
+                .as_legacy_events(false)
+        }
+        ThreadItem::ImageGeneration {
+            id,
+            status,
+            revised_prompt,
+            result,
+        } => TurnItem::ImageGeneration(codex_protocol::items::ImageGenerationItem {
+            id: id.clone(),
+            status: status.clone(),
+            revised_prompt: revised_prompt.clone(),
+            result: result.clone(),
+        })
+        .as_legacy_events(false),
+        ThreadItem::Plan { .. }
+        | ThreadItem::CommandExecution { .. }
+        | ThreadItem::FileChange { .. }
+        | ThreadItem::McpToolCall { .. }
+        | ThreadItem::DynamicToolCall { .. }
+        | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::WebSearch { action: None, .. }
+        | ThreadItem::ImageView { .. }
+        | ThreadItem::EnteredReviewMode { .. }
+        | ThreadItem::ExitedReviewMode { .. } => Vec::new(),
+    }
 }
 
 async fn writer_task<S>(
