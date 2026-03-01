@@ -844,13 +844,13 @@ async fn run_ratatui_app(
             }
         }
     } else if cli.resume_picker {
-        if cli.connect.is_some() {
-            return Err(std::io::Error::other(
-                "--connect does not support the resume picker yet; use `resume <thread-id>` or `--resume-last`",
-            )
-            .into());
-        }
-        match resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await? {
+        let selection = if let Some(url) = cli.connect.as_deref() {
+            resume_picker::run_remote_resume_picker(&mut tui, &config, url, cli.resume_show_all)
+                .await?
+        } else {
+            resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await?
+        };
+        match selection {
             resume_picker::SessionSelection::Exit => {
                 restore();
                 session_log::log_session_end();

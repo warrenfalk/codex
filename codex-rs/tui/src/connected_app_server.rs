@@ -35,6 +35,7 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStatus;
+use codex_core::ThreadSortKey;
 use codex_core::config::Config;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ExecApprovalRequestEvent;
@@ -123,6 +124,24 @@ pub(crate) enum ConnectedSessionMode {
     Resume { thread_id: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RemoteThreadListPage {
+    pub(crate) threads: Vec<RemoteThreadSummary>,
+    pub(crate) next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RemoteThreadSummary {
+    pub(crate) id: String,
+    pub(crate) preview: String,
+    pub(crate) name: Option<String>,
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) cwd: PathBuf,
+    pub(crate) created_at: i64,
+    pub(crate) updated_at: i64,
+    pub(crate) git_branch: Option<String>,
+}
+
 pub(crate) async fn connect(
     url: &str,
     config: &Config,
@@ -167,6 +186,24 @@ pub(crate) async fn connect(
 }
 
 pub(crate) async fn find_latest_thread_id(url: &str, cwd: Option<&Path>) -> Result<Option<String>> {
+    Ok(
+        list_threads_page(url, None, 1, ThreadSortKey::UpdatedAt, None, cwd)
+            .await?
+            .threads
+            .into_iter()
+            .next()
+            .map(|thread| thread.id),
+    )
+}
+
+pub(crate) async fn list_threads_page(
+    url: &str,
+    cursor: Option<String>,
+    limit: u32,
+    sort_key: ThreadSortKey,
+    model_provider: Option<&str>,
+    cwd: Option<&Path>,
+) -> Result<RemoteThreadListPage> {
     let (mut ws, _) = connect_async(url)
         .await
         .wrap_err_with(|| format!("failed to connect to app-server websocket at {url}"))?;
@@ -178,10 +215,10 @@ pub(crate) async fn find_latest_thread_id(url: &str, cwd: Option<&Path>) -> Resu
         "thread/list",
         request_id.clone(),
         Some(serde_json::to_value(ThreadListParams {
-            cursor: None,
-            limit: Some(1),
-            sort_key: Some(RemoteThreadSortKey::UpdatedAt),
-            model_providers: None,
+            cursor,
+            limit: Some(limit),
+            sort_key: Some(remote_thread_sort_key(sort_key)),
+            model_providers: model_provider.map(|provider| vec![provider.to_string()]),
             source_kinds: None,
             archived: None,
             cwd: cwd.map(|path| path.display().to_string()),
@@ -192,7 +229,31 @@ pub(crate) async fn find_latest_thread_id(url: &str, cwd: Option<&Path>) -> Resu
     let response = read_response_for_id(&mut ws, &request_id).await?;
     let threads: ThreadListResponse =
         serde_json::from_value(response.result).wrap_err("decode thread/list response")?;
-    Ok(threads.data.into_iter().next().map(|thread| thread.id))
+
+    Ok(RemoteThreadListPage {
+        threads: threads
+            .data
+            .into_iter()
+            .map(|thread| RemoteThreadSummary {
+                id: thread.id,
+                preview: thread.preview,
+                name: thread.name,
+                path: thread.path,
+                cwd: thread.cwd,
+                created_at: thread.created_at,
+                updated_at: thread.updated_at,
+                git_branch: thread.git_info.and_then(|info| info.branch),
+            })
+            .collect(),
+        next_cursor: threads.next_cursor,
+    })
+}
+
+fn remote_thread_sort_key(sort_key: ThreadSortKey) -> RemoteThreadSortKey {
+    match sort_key {
+        ThreadSortKey::CreatedAt => RemoteThreadSortKey::CreatedAt,
+        ThreadSortKey::UpdatedAt => RemoteThreadSortKey::UpdatedAt,
+    }
 }
 
 async fn initialize_connection(ws: &mut WsClient) -> Result<()> {
