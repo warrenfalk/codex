@@ -2163,7 +2163,7 @@ impl App {
             AppEvent::OpenResumePicker => {
                 if self.connected_mode {
                     self.chat_widget.add_error_message(
-                        "Connected mode does not support the resume picker yet; use `resume <thread-id>` or restart with `--resume-last`."
+                        "Connected mode cannot open the resume picker inside an active session yet; restart with `codex resume --connect ...`, use `resume <thread-id>`, or restart with `--resume-last`."
                             .to_string(),
                     );
                     return Ok(AppRunControl::Continue);
