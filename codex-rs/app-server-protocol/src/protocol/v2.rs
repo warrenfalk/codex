@@ -3885,6 +3885,7 @@ pub enum ThreadItem {
         status: String,
         revised_prompt: Option<String>,
         result: String,
+        saved_path: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -3996,6 +3997,7 @@ impl From<CoreTurnItem> for ThreadItem {
                 status: image.status,
                 revised_prompt: image.revised_prompt,
                 result: image.result,
+                saved_path: image.saved_path,
             },
             CoreTurnItem::ContextCompaction(compaction) => {
                 ThreadItem::ContextCompaction { id: compaction.id }
@@ -5519,6 +5521,30 @@ mod tests {
             Some(CommandExecutionRequestApprovalSkillMetadata {
                 path_to_skills_md: PathBuf::from("/tmp/SKILLS.md"),
             })
+        );
+    }
+
+    #[test]
+    fn thread_item_from_core_image_generation_preserves_saved_path() {
+        let item = ThreadItem::from(TurnItem::ImageGeneration(
+            codex_protocol::items::ImageGenerationItem {
+                id: "img_123".to_string(),
+                status: "completed".to_string(),
+                revised_prompt: Some("revised".to_string()),
+                result: "Zm9v".to_string(),
+                saved_path: Some("/tmp/ig_123.png".to_string()),
+            },
+        ));
+
+        assert_eq!(
+            item,
+            ThreadItem::ImageGeneration {
+                id: "img_123".to_string(),
+                status: "completed".to_string(),
+                revised_prompt: Some("revised".to_string()),
+                result: "Zm9v".to_string(),
+                saved_path: Some("/tmp/ig_123.png".to_string()),
+            }
         );
     }
 

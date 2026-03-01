@@ -752,76 +752,104 @@ async fn run_ratatui_app(
             resume_picker::SessionSelection::StartFresh
         }
     } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-        let is_uuid = Uuid::parse_str(id_str).is_ok();
-        let path = if is_uuid {
-            find_thread_path_by_id_str(&config.codex_home, id_str).await?
+        if cli.connect.is_some() {
+            resume_picker::SessionSelection::ResumeRemote(id_str.to_string())
         } else {
-            find_thread_path_by_name_str(&config.codex_home, id_str).await?
-        };
-        match path {
-            Some(path) => {
-                let thread_id = match resolve_session_thread_id(
-                    path.as_path(),
-                    is_uuid.then_some(id_str),
-                )
-                .await
-                {
-                    Some(thread_id) => thread_id,
-                    None => return missing_session_exit(id_str, "resume"),
-                };
-                resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                    path,
-                    thread_id,
-                })
-            }
-            None => return missing_session_exit(id_str, "resume"),
-        }
-    } else if cli.resume_last {
-        let provider_filter = vec![config.model_provider_id.clone()];
-        let filter_cwd = if cli.resume_show_all {
-            None
-        } else {
-            Some(config.cwd.as_path())
-        };
-        match RolloutRecorder::find_latest_thread_path(
-            &config,
-            1,
-            None,
-            ThreadSortKey::UpdatedAt,
-            INTERACTIVE_SESSION_SOURCES,
-            Some(provider_filter.as_slice()),
-            &config.model_provider_id,
-            filter_cwd,
-        )
-        .await
-        {
-            Ok(Some(path)) => match resolve_session_thread_id(path.as_path(), None).await {
-                Some(thread_id) => {
+            let is_uuid = Uuid::parse_str(id_str).is_ok();
+            let path = if is_uuid {
+                find_thread_path_by_id_str(&config.codex_home, id_str).await?
+            } else {
+                find_thread_path_by_name_str(&config.codex_home, id_str).await?
+            };
+            match path {
+                Some(path) => {
+                    let thread_id =
+                        match resolve_session_thread_id(path.as_path(), is_uuid.then_some(id_str))
+                            .await
+                        {
+                            Some(thread_id) => thread_id,
+                            None => return missing_session_exit(id_str, "resume"),
+                        };
                     resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                         path,
                         thread_id,
                     })
                 }
-                None => {
-                    let rollout_path = path.display();
-                    error!("Error reading session metadata from latest rollout: {rollout_path}");
-                    restore();
-                    session_log::log_session_end();
-                    let _ = tui.terminal.clear();
-                    return Ok(AppExitInfo {
-                        token_usage: codex_protocol::protocol::TokenUsage::default(),
-                        thread_id: None,
-                        thread_name: None,
-                        update_action: None,
-                        exit_reason: ExitReason::Fatal(format!(
-                            "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
-                        )),
-                    });
+                None => return missing_session_exit(id_str, "resume"),
+            }
+        }
+    } else if cli.resume_last {
+        if let Some(url) = cli.connect.as_deref() {
+            let filter_cwd = if cli.resume_show_all {
+                None
+            } else {
+                Some(config.cwd.as_path())
+            };
+            match crate::connected_app_server::find_latest_thread_id(url, filter_cwd).await {
+                Ok(Some(thread_id)) => resume_picker::SessionSelection::ResumeRemote(thread_id),
+                Ok(None) => resume_picker::SessionSelection::StartFresh,
+                Err(err) => {
+                    return Err(std::io::Error::other(format!(
+                        "Failed to query remote sessions: {err}"
+                    ))
+                    .into());
                 }
-            },
-            _ => resume_picker::SessionSelection::StartFresh,
+            }
+        } else {
+            let provider_filter = vec![config.model_provider_id.clone()];
+            let filter_cwd = if cli.resume_show_all {
+                None
+            } else {
+                Some(config.cwd.as_path())
+            };
+            match RolloutRecorder::find_latest_thread_path(
+                &config,
+                1,
+                None,
+                ThreadSortKey::UpdatedAt,
+                INTERACTIVE_SESSION_SOURCES,
+                Some(provider_filter.as_slice()),
+                &config.model_provider_id,
+                filter_cwd,
+            )
+            .await
+            {
+                Ok(Some(path)) => match resolve_session_thread_id(path.as_path(), None).await {
+                    Some(thread_id) => {
+                        resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
+                            path,
+                            thread_id,
+                        })
+                    }
+                    None => {
+                        let rollout_path = path.display();
+                        error!(
+                            "Error reading session metadata from latest rollout: {rollout_path}"
+                        );
+                        restore();
+                        session_log::log_session_end();
+                        let _ = tui.terminal.clear();
+                        return Ok(AppExitInfo {
+                            token_usage: codex_protocol::protocol::TokenUsage::default(),
+                            thread_id: None,
+                            thread_name: None,
+                            update_action: None,
+                            exit_reason: ExitReason::Fatal(format!(
+                                "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
+                            )),
+                        });
+                    }
+                },
+                _ => resume_picker::SessionSelection::StartFresh,
+            }
         }
     } else if cli.resume_picker {
+        if cli.connect.is_some() {
+            return Err(std::io::Error::other(
+                "--connect does not support the resume picker yet; use `resume <thread-id>` or `--resume-last`",
+            )
+            .into());
+        }
         match resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await? {
             resume_picker::SessionSelection::Exit => {
                 restore();
@@ -891,6 +919,7 @@ async fn run_ratatui_app(
             )
             .await
         }
+        resume_picker::SessionSelection::ResumeRemote(_) => config,
         _ => config,
     };
 
