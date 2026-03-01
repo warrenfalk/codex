@@ -1,6 +1,13 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use codex_app_server_protocol::ClientInfo;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
+use codex_app_server_protocol::FileChangeApprovalDecision;
+use codex_app_server_protocol::FileChangeRequestApprovalParams;
+use codex_app_server_protocol::FileChangeRequestApprovalResponse;
 use codex_app_server_protocol::InitializeCapabilities;
 use codex_app_server_protocol::InitializeParams;
 use codex_app_server_protocol::JSONRPCError;
@@ -11,16 +18,26 @@ use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ToolRequestUserInputAnswer;
+use codex_app_server_protocol::ToolRequestUserInputOption;
+use codex_app_server_protocol::ToolRequestUserInputParams;
+use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnStartParams;
 use codex_core::config::Config;
 use codex_protocol::ThreadId;
+use codex_protocol::approvals::ExecApprovalRequestEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::WarningEvent;
+use codex_protocol::request_user_input::RequestUserInputEvent;
+use codex_protocol::request_user_input::RequestUserInputQuestion as CoreRequestUserInputQuestion;
+use codex_protocol::request_user_input::RequestUserInputQuestionOption as CoreRequestUserInputQuestionOption;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use futures::SinkExt;
@@ -49,16 +66,24 @@ struct ConnectedSessionState {
     current_turn_id: Option<String>,
     next_request_id: i64,
     pending_requests: HashMap<RequestId, PendingRequest>,
+    pending_exec_approvals: HashMap<String, RequestId>,
+    pending_patch_approvals: HashMap<String, RequestId>,
+    pending_user_input_requests: HashMap<String, RequestId>,
     thread_id: String,
+    thread_cwd: PathBuf,
 }
 
 impl ConnectedSessionState {
-    fn new(thread_id: String, next_request_id: i64) -> Self {
+    fn new(thread_id: String, thread_cwd: PathBuf, next_request_id: i64) -> Self {
         Self {
             current_turn_id: None,
             next_request_id,
             pending_requests: HashMap::new(),
+            pending_exec_approvals: HashMap::new(),
+            pending_patch_approvals: HashMap::new(),
+            pending_user_input_requests: HashMap::new(),
             thread_id,
+            thread_cwd,
         }
     }
 
@@ -137,6 +162,7 @@ pub(crate) async fn connect(
 
     let thread_id = ThreadId::try_from(thread_start.thread.id.as_str())
         .wrap_err("invalid thread id in thread/start response")?;
+    let thread_cwd = thread_start.cwd.clone();
     let session_configured_event = Event {
         id: String::new(),
         msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
@@ -159,6 +185,7 @@ pub(crate) async fn connect(
 
     let state = std::sync::Arc::new(Mutex::new(ConnectedSessionState::new(
         thread_id.to_string(),
+        thread_cwd,
         3,
     )));
     let (outbound_tx, outbound_rx) = unbounded_channel::<JSONRPCMessage>();
@@ -166,7 +193,12 @@ pub(crate) async fn connect(
     let (write, read) = ws.split();
 
     tokio::spawn(writer_task(write, outbound_rx, app_event_tx.clone()));
-    tokio::spawn(reader_task(read, state.clone(), app_event_tx.clone()));
+    tokio::spawn(reader_task(
+        read,
+        outbound_tx.clone(),
+        state.clone(),
+        app_event_tx.clone(),
+    ));
     tokio::spawn(op_task(
         codex_op_rx,
         outbound_tx,
@@ -212,6 +244,7 @@ async fn writer_task<S>(
 
 async fn reader_task<S>(
     mut read: S,
+    outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
     app_event_tx: AppEventSender,
 ) where
@@ -260,13 +293,7 @@ async fn reader_task<S>(
                 );
             }
             JSONRPCMessage::Request(request) => {
-                send_warning_event(
-                    &app_event_tx,
-                    format!(
-                        "connected mode received unsupported server request `{}`",
-                        request.method
-                    ),
-                );
+                handle_server_request(request, &outbound_tx, &state, &app_event_tx).await;
             }
         }
     }
@@ -294,6 +321,7 @@ async fn op_task(
                 let request_id = {
                     let mut guard = state.lock().await;
                     let thread_id = guard.thread_id.clone();
+                    guard.thread_cwd = PathBuf::from(&cwd);
                     let request_id = guard.allocate_request_id("turn/start");
                     let request = JSONRPCMessage::Request(JSONRPCRequest {
                         id: request_id.clone(),
@@ -357,6 +385,95 @@ async fn op_task(
                     id: String::new(),
                     msg: EventMsg::ShutdownComplete,
                 }));
+            }
+            Op::ExecApproval { id, decision, .. } => {
+                let request_id = {
+                    let mut guard = state.lock().await;
+                    guard.pending_exec_approvals.remove(&id)
+                };
+                let Some(request_id) = request_id else {
+                    send_warning_event(
+                        &app_event_tx,
+                        format!("no pending connected exec approval found for `{id}`"),
+                    );
+                    continue;
+                };
+                let response = JSONRPCMessage::Response(JSONRPCResponse {
+                    id: request_id,
+                    result: serde_json::to_value(CommandExecutionRequestApprovalResponse {
+                        decision: review_decision_to_command_execution_approval_decision(decision),
+                    })
+                    .unwrap_or_default(),
+                });
+                if outbound_tx.send(response).is_err() {
+                    send_error_event(
+                        &app_event_tx,
+                        "failed to send exec approval response to app-server".to_string(),
+                    );
+                }
+            }
+            Op::PatchApproval { id, decision } => {
+                let request_id = {
+                    let mut guard = state.lock().await;
+                    guard.pending_patch_approvals.remove(&id)
+                };
+                let Some(request_id) = request_id else {
+                    send_warning_event(
+                        &app_event_tx,
+                        format!("no pending connected patch approval found for `{id}`"),
+                    );
+                    continue;
+                };
+                let response = JSONRPCMessage::Response(JSONRPCResponse {
+                    id: request_id,
+                    result: serde_json::to_value(FileChangeRequestApprovalResponse {
+                        decision: review_decision_to_file_change_approval_decision(decision),
+                    })
+                    .unwrap_or_default(),
+                });
+                if outbound_tx.send(response).is_err() {
+                    send_error_event(
+                        &app_event_tx,
+                        "failed to send patch approval response to app-server".to_string(),
+                    );
+                }
+            }
+            Op::UserInputAnswer { id, response } => {
+                let request_id = {
+                    let mut guard = state.lock().await;
+                    guard.pending_user_input_requests.remove(&id)
+                };
+                let Some(request_id) = request_id else {
+                    send_warning_event(
+                        &app_event_tx,
+                        format!("no pending connected request_user_input found for `{id}`"),
+                    );
+                    continue;
+                };
+                let response = JSONRPCMessage::Response(JSONRPCResponse {
+                    id: request_id,
+                    result: serde_json::to_value(ToolRequestUserInputResponse {
+                        answers: response
+                            .answers
+                            .into_iter()
+                            .map(|(question_id, answer)| {
+                                (
+                                    question_id,
+                                    ToolRequestUserInputAnswer {
+                                        answers: answer.answers,
+                                    },
+                                )
+                            })
+                            .collect(),
+                    })
+                    .unwrap_or_default(),
+                });
+                if outbound_tx.send(response).is_err() {
+                    send_error_event(
+                        &app_event_tx,
+                        "failed to send request_user_input response to app-server".to_string(),
+                    );
+                }
             }
             Op::AddToHistory { .. }
             | Op::ListCustomPrompts
@@ -490,6 +607,15 @@ async fn handle_notification(
     {
         let mut guard = state.lock().await;
         match &event.msg {
+            // In connected mode, app-server sends these as server requests as well as
+            // legacy codex/event notifications. The request path is the only one that
+            // carries a JSON-RPC callback id, so processing the legacy event here
+            // duplicates the prompt and leaves the second approval unresolved.
+            EventMsg::ExecApprovalRequest(_)
+            | EventMsg::ApplyPatchApprovalRequest(_)
+            | EventMsg::RequestUserInput(_) => {
+                return;
+            }
             EventMsg::TurnStarted(turn_started) => {
                 guard.current_turn_id = Some(turn_started.turn_id.clone());
             }
@@ -511,6 +637,214 @@ async fn handle_notification(
     }
 
     app_event_tx.send(AppEvent::CodexEvent(event));
+}
+
+async fn handle_server_request(
+    request: JSONRPCRequest,
+    outbound_tx: &UnboundedSender<JSONRPCMessage>,
+    state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
+    app_event_tx: &AppEventSender,
+) {
+    match request.method.as_str() {
+        "item/commandExecution/requestApproval" => {
+            let Some(params) = request.params else {
+                send_warning_event(
+                    app_event_tx,
+                    "connected mode received exec approval request without params".to_string(),
+                );
+                send_unsupported_request_response(
+                    outbound_tx,
+                    request.id,
+                    "exec approval request missing params",
+                    app_event_tx,
+                );
+                return;
+            };
+            let approval =
+                match serde_json::from_value::<CommandExecutionRequestApprovalParams>(params) {
+                    Ok(approval) => approval,
+                    Err(err) => {
+                        send_error_event(
+                            app_event_tx,
+                            format!("failed to decode exec approval request: {err}"),
+                        );
+                        send_unsupported_request_response(
+                            outbound_tx,
+                            request.id,
+                            "failed to decode exec approval request",
+                            app_event_tx,
+                        );
+                        return;
+                    }
+                };
+            let approval_key = approval
+                .approval_id
+                .clone()
+                .unwrap_or_else(|| approval.item_id.clone());
+            let cwd = {
+                let mut guard = state.lock().await;
+                guard
+                    .pending_exec_approvals
+                    .insert(approval_key.clone(), request.id.clone());
+                guard.thread_cwd.clone()
+            };
+            let event = Event {
+                id: String::new(),
+                msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
+                    call_id: approval.item_id,
+                    approval_id: approval.approval_id,
+                    turn_id: approval.turn_id,
+                    command: approval
+                        .command
+                        .map_or_else(Vec::new, |command| vec![command]),
+                    cwd: approval.cwd.unwrap_or(cwd),
+                    reason: approval.reason,
+                    network_approval_context: approval
+                        .network_approval_context
+                        .map(network_approval_context_to_core),
+                    proposed_execpolicy_amendment: approval
+                        .proposed_execpolicy_amendment
+                        .map(codex_app_server_protocol::ExecPolicyAmendment::into_core),
+                    proposed_network_policy_amendments: approval
+                        .proposed_network_policy_amendments
+                        .map(|amendments| {
+                            amendments
+                                .into_iter()
+                                .map(codex_app_server_protocol::NetworkPolicyAmendment::into_core)
+                                .collect()
+                        }),
+                    additional_permissions: approval
+                        .additional_permissions
+                        .map(additional_permission_profile_to_core),
+                    available_decisions: approval.available_decisions.map(|decisions| {
+                        decisions
+                            .into_iter()
+                            .map(command_execution_approval_decision_to_review_decision)
+                            .collect()
+                    }),
+                    parsed_cmd: Vec::new(),
+                }),
+            };
+            app_event_tx.send(AppEvent::CodexEvent(event));
+        }
+        "item/fileChange/requestApproval" => {
+            let Some(params) = request.params else {
+                send_warning_event(
+                    app_event_tx,
+                    "connected mode received file change approval request without params"
+                        .to_string(),
+                );
+                send_unsupported_request_response(
+                    outbound_tx,
+                    request.id,
+                    "file change approval request missing params",
+                    app_event_tx,
+                );
+                return;
+            };
+            let approval = match serde_json::from_value::<FileChangeRequestApprovalParams>(params) {
+                Ok(approval) => approval,
+                Err(err) => {
+                    send_error_event(
+                        app_event_tx,
+                        format!("failed to decode file change approval request: {err}"),
+                    );
+                    send_unsupported_request_response(
+                        outbound_tx,
+                        request.id,
+                        "failed to decode file change approval request",
+                        app_event_tx,
+                    );
+                    return;
+                }
+            };
+            {
+                let mut guard = state.lock().await;
+                guard
+                    .pending_patch_approvals
+                    .insert(approval.item_id.clone(), request.id.clone());
+            }
+            let event = Event {
+                id: String::new(),
+                msg: EventMsg::ApplyPatchApprovalRequest(
+                    codex_protocol::protocol::ApplyPatchApprovalRequestEvent {
+                        call_id: approval.item_id,
+                        turn_id: approval.turn_id,
+                        changes: HashMap::new(),
+                        reason: approval.reason,
+                        grant_root: approval.grant_root,
+                    },
+                ),
+            };
+            app_event_tx.send(AppEvent::CodexEvent(event));
+        }
+        "item/tool/requestUserInput" => {
+            let Some(params) = request.params else {
+                send_warning_event(
+                    app_event_tx,
+                    "connected mode received request_user_input request without params".to_string(),
+                );
+                send_unsupported_request_response(
+                    outbound_tx,
+                    request.id,
+                    "request_user_input request missing params",
+                    app_event_tx,
+                );
+                return;
+            };
+            let request_user_input =
+                match serde_json::from_value::<ToolRequestUserInputParams>(params) {
+                    Ok(request_user_input) => request_user_input,
+                    Err(err) => {
+                        send_error_event(
+                            app_event_tx,
+                            format!("failed to decode request_user_input request: {err}"),
+                        );
+                        send_unsupported_request_response(
+                            outbound_tx,
+                            request.id,
+                            "failed to decode request_user_input request",
+                            app_event_tx,
+                        );
+                        return;
+                    }
+                };
+            {
+                let mut guard = state.lock().await;
+                guard
+                    .pending_user_input_requests
+                    .insert(request_user_input.turn_id.clone(), request.id.clone());
+            }
+            let event = Event {
+                id: String::new(),
+                msg: EventMsg::RequestUserInput(RequestUserInputEvent {
+                    call_id: request_user_input.item_id,
+                    turn_id: request_user_input.turn_id,
+                    questions: request_user_input
+                        .questions
+                        .into_iter()
+                        .map(tool_request_user_input_question_to_core)
+                        .collect(),
+                }),
+            };
+            app_event_tx.send(AppEvent::CodexEvent(event));
+        }
+        _ => {
+            send_warning_event(
+                app_event_tx,
+                format!(
+                    "connected mode received unsupported server request `{}`",
+                    request.method
+                ),
+            );
+            send_unsupported_request_response(
+                outbound_tx,
+                request.id,
+                format!("connected mode does not support `{}`", request.method),
+                app_event_tx,
+            );
+        }
+    }
 }
 
 fn send_error_event(app_event_tx: &AppEventSender, message: String) {
@@ -538,5 +872,153 @@ impl AppEventSenderExt for AppEventSender {
     fn noop() -> Self {
         let (tx, _rx) = unbounded_channel();
         Self::new(tx)
+    }
+}
+
+fn send_unsupported_request_response(
+    outbound_tx: &UnboundedSender<JSONRPCMessage>,
+    id: RequestId,
+    message: impl Into<String>,
+    app_event_tx: &AppEventSender,
+) {
+    let response = JSONRPCMessage::Error(JSONRPCError {
+        error: codex_app_server_protocol::JSONRPCErrorError {
+            code: -32601,
+            data: None,
+            message: message.into(),
+        },
+        id,
+    });
+    if outbound_tx.send(response).is_err() {
+        send_error_event(
+            app_event_tx,
+            "failed to send unsupported-request response to app-server".to_string(),
+        );
+    }
+}
+
+fn network_approval_context_to_core(
+    value: codex_app_server_protocol::NetworkApprovalContext,
+) -> codex_protocol::approvals::NetworkApprovalContext {
+    codex_protocol::approvals::NetworkApprovalContext {
+        host: value.host,
+        protocol: match value.protocol {
+            codex_app_server_protocol::NetworkApprovalProtocol::Http => {
+                codex_protocol::approvals::NetworkApprovalProtocol::Http
+            }
+            codex_app_server_protocol::NetworkApprovalProtocol::Https => {
+                codex_protocol::approvals::NetworkApprovalProtocol::Https
+            }
+            codex_app_server_protocol::NetworkApprovalProtocol::Socks5Tcp => {
+                codex_protocol::approvals::NetworkApprovalProtocol::Socks5Tcp
+            }
+            codex_app_server_protocol::NetworkApprovalProtocol::Socks5Udp => {
+                codex_protocol::approvals::NetworkApprovalProtocol::Socks5Udp
+            }
+        },
+    }
+}
+
+fn additional_permission_profile_to_core(
+    value: codex_app_server_protocol::AdditionalPermissionProfile,
+) -> codex_protocol::models::PermissionProfile {
+    codex_protocol::models::PermissionProfile {
+        network: value.network,
+        file_system: value.file_system.map(|permissions| {
+            codex_protocol::models::FileSystemPermissions {
+                read: permissions.read,
+                write: permissions.write,
+            }
+        }),
+        macos: value
+            .macos
+            .map(|permissions| codex_protocol::models::MacOsPermissions {
+                preferences: permissions.preferences,
+                automations: permissions.automations,
+                accessibility: permissions.accessibility,
+                calendar: permissions.calendar,
+            }),
+    }
+}
+
+fn tool_request_user_input_question_to_core(
+    value: ToolRequestUserInputQuestion,
+) -> CoreRequestUserInputQuestion {
+    CoreRequestUserInputQuestion {
+        id: value.id,
+        header: value.header,
+        question: value.question,
+        is_other: value.is_other,
+        is_secret: value.is_secret,
+        options: value.options.map(|options| {
+            options
+                .into_iter()
+                .map(tool_request_user_input_question_option_to_core)
+                .collect()
+        }),
+    }
+}
+
+fn tool_request_user_input_question_option_to_core(
+    value: ToolRequestUserInputOption,
+) -> CoreRequestUserInputQuestionOption {
+    CoreRequestUserInputQuestionOption {
+        label: value.label,
+        description: value.description,
+    }
+}
+
+fn command_execution_approval_decision_to_review_decision(
+    value: CommandExecutionApprovalDecision,
+) -> ReviewDecision {
+    match value {
+        CommandExecutionApprovalDecision::Accept => ReviewDecision::Approved,
+        CommandExecutionApprovalDecision::AcceptForSession => ReviewDecision::ApprovedForSession,
+        CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+            execpolicy_amendment,
+        } => ReviewDecision::ApprovedExecpolicyAmendment {
+            proposed_execpolicy_amendment: execpolicy_amendment.into_core(),
+        },
+        CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+            network_policy_amendment,
+        } => ReviewDecision::NetworkPolicyAmendment {
+            network_policy_amendment: network_policy_amendment.into_core(),
+        },
+        CommandExecutionApprovalDecision::Decline => ReviewDecision::Denied,
+        CommandExecutionApprovalDecision::Cancel => ReviewDecision::Abort,
+    }
+}
+
+fn review_decision_to_command_execution_approval_decision(
+    value: ReviewDecision,
+) -> CommandExecutionApprovalDecision {
+    match value {
+        ReviewDecision::Approved => CommandExecutionApprovalDecision::Accept,
+        ReviewDecision::ApprovedExecpolicyAmendment {
+            proposed_execpolicy_amendment,
+        } => CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+            execpolicy_amendment: proposed_execpolicy_amendment.into(),
+        },
+        ReviewDecision::ApprovedForSession => CommandExecutionApprovalDecision::AcceptForSession,
+        ReviewDecision::NetworkPolicyAmendment {
+            network_policy_amendment,
+        } => CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+            network_policy_amendment: network_policy_amendment.into(),
+        },
+        ReviewDecision::Denied => CommandExecutionApprovalDecision::Decline,
+        ReviewDecision::Abort => CommandExecutionApprovalDecision::Cancel,
+    }
+}
+
+fn review_decision_to_file_change_approval_decision(
+    value: ReviewDecision,
+) -> FileChangeApprovalDecision {
+    match value {
+        ReviewDecision::Approved => FileChangeApprovalDecision::Accept,
+        ReviewDecision::ApprovedForSession => FileChangeApprovalDecision::AcceptForSession,
+        ReviewDecision::ApprovedExecpolicyAmendment { .. }
+        | ReviewDecision::NetworkPolicyAmendment { .. }
+        | ReviewDecision::Denied => FileChangeApprovalDecision::Decline,
+        ReviewDecision::Abort => FileChangeApprovalDecision::Cancel,
     }
 }
