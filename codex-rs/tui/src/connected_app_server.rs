@@ -18,6 +18,8 @@ use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadForkParams;
+use codex_app_server_protocol::ThreadForkResponse;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
@@ -60,12 +62,13 @@ use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use futures::SinkExt;
 use futures::StreamExt;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncWrite;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
-use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WebSocketMessage;
@@ -73,8 +76,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
-
-type WsClient = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[derive(Clone, Debug)]
 struct PendingRequest {
@@ -125,6 +126,7 @@ pub(crate) struct ConnectedSessionBootstrap {
 pub(crate) enum ConnectedSessionMode {
     StartFresh,
     Resume { thread_id: String },
+    Fork { thread_id: String },
 }
 
 pub(crate) struct ConnectedSessionHandle {
@@ -289,7 +291,10 @@ fn remote_thread_sort_key(sort_key: ThreadSortKey) -> RemoteThreadSortKey {
     }
 }
 
-async fn initialize_connection(ws: &mut WsClient) -> Result<()> {
+async fn initialize_connection<S>(ws: &mut WebSocketStream<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let initialize_request_id = RequestId::Integer(1);
     send_request(
         ws,
@@ -312,11 +317,14 @@ async fn initialize_connection(ws: &mut WsClient) -> Result<()> {
     send_notification(ws, "initialized", Option::<serde_json::Value>::None).await
 }
 
-async fn open_thread_for_session(
-    ws: &mut WsClient,
+async fn open_thread_for_session<S>(
+    ws: &mut WebSocketStream<S>,
     config: &Config,
     mode: ConnectedSessionMode,
-) -> Result<(ThreadId, PathBuf, Event)> {
+) -> Result<(ThreadId, PathBuf, Event)>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     match mode {
         ConnectedSessionMode::StartFresh => {
             let request_id = RequestId::Integer(2);
@@ -404,6 +412,47 @@ async fn open_thread_for_session(
                 thread_resume.reasoning_effort,
             )
             .wrap_err("build session_configured event from thread/resume response")?;
+            Ok((thread_id, thread_cwd, session_configured_event))
+        }
+        ConnectedSessionMode::Fork { thread_id } => {
+            let request_id = RequestId::Integer(2);
+            send_request(
+                ws,
+                "thread/fork",
+                request_id.clone(),
+                Some(serde_json::to_value(ThreadForkParams {
+                    thread_id,
+                    path: None,
+                    model: config.model.clone(),
+                    model_provider: None,
+                    service_tier: config.service_tier.map(Some),
+                    cwd: Some(config.cwd.display().to_string()),
+                    approval_policy: Some(config.permissions.approval_policy.value().into()),
+                    sandbox: None,
+                    config: None,
+                    base_instructions: None,
+                    developer_instructions: config.developer_instructions.clone(),
+                    persist_extended_history: false,
+                })?),
+            )
+            .await?;
+            let response = read_response_for_id(ws, &request_id).await?;
+            let thread_fork: ThreadForkResponse =
+                serde_json::from_value(response.result).wrap_err("decode thread/fork response")?;
+            let thread_id = ThreadId::try_from(thread_fork.thread.id.as_str())
+                .wrap_err("invalid thread id in thread/fork response")?;
+            let thread_cwd = thread_fork.cwd.clone();
+            let session_configured_event = session_configured_event_from_thread_response(
+                thread_fork.thread,
+                thread_fork.model,
+                thread_fork.model_provider,
+                thread_fork.service_tier,
+                thread_fork.cwd,
+                thread_fork.approval_policy.to_core(),
+                thread_fork.sandbox.to_core(),
+                thread_fork.reasoning_effort,
+            )
+            .wrap_err("build session_configured event from thread/fork response")?;
             Ok((thread_id, thread_cwd, session_configured_event))
         }
     }
@@ -860,12 +909,15 @@ async fn op_task(
     }
 }
 
-async fn send_request(
-    ws: &mut WsClient,
+async fn send_request<S>(
+    ws: &mut WebSocketStream<S>,
     method: &str,
     id: RequestId,
     params: Option<serde_json::Value>,
-) -> Result<()> {
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let message = JSONRPCMessage::Request(JSONRPCRequest {
         id,
         method: method.to_string(),
@@ -878,11 +930,14 @@ async fn send_request(
         .wrap_err("failed to send websocket frame")
 }
 
-async fn send_notification(
-    ws: &mut WsClient,
+async fn send_notification<S>(
+    ws: &mut WebSocketStream<S>,
     method: &str,
     params: Option<serde_json::Value>,
-) -> Result<()> {
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let message = JSONRPCMessage::Notification(JSONRPCNotification {
         method: method.to_string(),
         params,
@@ -893,10 +948,13 @@ async fn send_notification(
         .wrap_err("failed to send websocket frame")
 }
 
-async fn read_response_for_id(
-    ws: &mut WsClient,
+async fn read_response_for_id<S>(
+    ws: &mut WebSocketStream<S>,
     request_id: &RequestId,
-) -> Result<JSONRPCResponse> {
+) -> Result<JSONRPCResponse>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     loop {
         match read_jsonrpc_message(ws).await? {
             JSONRPCMessage::Response(response) if response.id == *request_id => {
@@ -910,7 +968,10 @@ async fn read_response_for_id(
     }
 }
 
-async fn read_jsonrpc_message(ws: &mut WsClient) -> Result<JSONRPCMessage> {
+async fn read_jsonrpc_message<S>(ws: &mut WebSocketStream<S>) -> Result<JSONRPCMessage>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     loop {
         let frame = match ws.next().await {
             Some(frame) => frame.wrap_err("failed to read websocket frame")?,
@@ -1417,6 +1478,7 @@ mod tests {
     use codex_app_server_protocol::SandboxPolicy as RemoteSandboxPolicy;
     use codex_app_server_protocol::SessionSource as RemoteSessionSource;
     use codex_app_server_protocol::ThreadStatus;
+    use codex_core::config::ConfigBuilder;
     use codex_protocol::config_types::ReasoningSummary;
     use codex_protocol::models::FileSystemPermissions;
     use codex_protocol::models::MacOsAutomationPermission;
@@ -1430,8 +1492,11 @@ mod tests {
     use codex_protocol::user_input::UserInput;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+    use tokio::io::duplex;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::time::timeout;
+    use tokio_tungstenite::tungstenite::protocol::Role;
     use tokio_util::sync::CancellationToken;
 
     use super::*;
@@ -1737,6 +1802,117 @@ mod tests {
 
         let guard = state.lock().await;
         assert!(guard.pending_exec_approvals.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fork_mode_sends_thread_fork_request_and_configures_session() {
+        let cwd = tempdir().expect("temp cwd");
+        let codex_home = tempdir().expect("temp codex home");
+        let cwd_path = cwd.path().to_path_buf();
+        let server_cwd_path = cwd_path.clone();
+        let (client_io, server_io) = duplex(16 * 1024);
+        let config = ConfigBuilder::default()
+            .codex_home(codex_home.path().to_path_buf())
+            .fallback_cwd(Some(cwd_path.clone()))
+            .build()
+            .await
+            .expect("build config");
+        let expected_model = config.model.clone();
+        let expected_approval_policy: RemoteAskForApproval =
+            config.permissions.approval_policy.value().into();
+
+        let server = tokio::spawn(async move {
+            let mut ws = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
+
+            let request = ws
+                .next()
+                .await
+                .expect("thread/fork request")
+                .expect("websocket message")
+                .into_text()
+                .expect("request text");
+            let request: JSONRPCRequest =
+                serde_json::from_str(&request).expect("decode thread/fork request");
+            assert_eq!(request.id, RequestId::Integer(2));
+            assert_eq!(request.method, "thread/fork");
+
+            let params: ThreadForkParams =
+                serde_json::from_value(request.params.expect("thread/fork params"))
+                    .expect("decode thread/fork params");
+            assert_eq!(params.thread_id, "thread-source");
+            assert_eq!(params.cwd, Some(server_cwd_path.display().to_string()));
+            assert_eq!(params.model, expected_model);
+            assert_eq!(params.approval_policy, Some(expected_approval_policy));
+
+            let response = JSONRPCMessage::Response(JSONRPCResponse {
+                id: request.id,
+                result: serde_json::to_value(ThreadForkResponse {
+                    thread: Thread {
+                        id: ThreadId::new().to_string(),
+                        preview: "forked preview".to_string(),
+                        ephemeral: false,
+                        model_provider: "openai".to_string(),
+                        created_at: 10,
+                        updated_at: 11,
+                        status: ThreadStatus::Idle,
+                        path: Some(PathBuf::from("/tmp/forked.jsonl")),
+                        cwd: PathBuf::from("/remote/repo"),
+                        cli_version: "0.106.0".to_string(),
+                        source: RemoteSessionSource::Cli,
+                        agent_nickname: None,
+                        agent_role: None,
+                        git_info: None,
+                        name: Some("forked thread".to_string()),
+                        turns: Vec::new(),
+                    },
+                    model: "mock-model".to_string(),
+                    model_provider: "openai".to_string(),
+                    service_tier: None,
+                    cwd: PathBuf::from("/remote/repo"),
+                    approval_policy: RemoteAskForApproval::OnFailure,
+                    sandbox: codex_app_server_protocol::SandboxPolicy::WorkspaceWrite {
+                        writable_roots: Vec::new(),
+                        read_only_access: codex_app_server_protocol::ReadOnlyAccess::FullAccess,
+                        network_access: false,
+                        exclude_tmpdir_env_var: false,
+                        exclude_slash_tmp: false,
+                    },
+                    reasoning_effort: None,
+                })
+                .expect("serialize thread/fork response"),
+            });
+            let response = serde_json::to_string(&response).expect("serialize json-rpc response");
+            ws.send(WebSocketMessage::Text(response.into()))
+                .await
+                .expect("send thread/fork response");
+        });
+        let mut ws = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+
+        let (thread_id, thread_cwd, event) = open_thread_for_session(
+            &mut ws,
+            &config,
+            ConnectedSessionMode::Fork {
+                thread_id: "thread-source".to_string(),
+            },
+        )
+        .await
+        .expect("fork session");
+
+        server.await.expect("server task should finish");
+        assert_eq!(thread_cwd, PathBuf::from("/remote/repo"));
+
+        match event.msg {
+            EventMsg::SessionConfigured(session) => {
+                assert_eq!(session.session_id, thread_id);
+                assert_eq!(session.thread_name, Some("forked thread".to_string()));
+                assert_eq!(session.cwd, PathBuf::from("/remote/repo"));
+                assert_eq!(
+                    session.rollout_path,
+                    Some(PathBuf::from("/tmp/forked.jsonl"))
+                );
+            }
+            other => panic!("expected session configured event, got {other:?}"),
+        }
     }
 
     #[test]

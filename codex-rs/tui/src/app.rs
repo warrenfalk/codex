@@ -1838,10 +1838,11 @@ impl App {
                 SessionSelection::StartFresh
                     | SessionSelection::Exit
                     | SessionSelection::ResumeRemote(_)
+                    | SessionSelection::ForkRemote(_)
             )
         {
             bail!(
-                "--connect currently supports only starting a new session or resuming by thread id"
+                "--connect currently supports only starting a new session, resuming by thread id, or forking by thread id"
             );
         }
         let connected_mode = connect.is_some();
@@ -1854,6 +1855,11 @@ impl App {
                     match &session_selection {
                         SessionSelection::ResumeRemote(thread_id) => {
                             crate::connected_app_server::ConnectedSessionMode::Resume {
+                                thread_id: thread_id.clone(),
+                            }
+                        }
+                        SessionSelection::ForkRemote(thread_id) => {
+                            crate::connected_app_server::ConnectedSessionMode::Fork {
                                 thread_id: thread_id.clone(),
                             }
                         }
@@ -1876,7 +1882,8 @@ impl App {
         let mut chat_widget = match session_selection {
             SessionSelection::StartFresh
             | SessionSelection::Exit
-            | SessionSelection::ResumeRemote(_) => {
+            | SessionSelection::ResumeRemote(_)
+            | SessionSelection::ForkRemote(_) => {
                 let startup_tooltip_override =
                     prepare_startup_tooltip_override(&mut config, &available_models, is_first_run)
                         .await;
@@ -2264,7 +2271,8 @@ impl App {
                         SessionSelection::Exit
                         | SessionSelection::StartFresh
                         | SessionSelection::Resume(_)
-                        | SessionSelection::Fork(_) => {}
+                        | SessionSelection::Fork(_)
+                        | SessionSelection::ForkRemote(_) => {}
                     }
                     tui.frame_requester().schedule_frame();
                     return Ok(AppRunControl::Continue);
@@ -2355,7 +2363,8 @@ impl App {
                     SessionSelection::Exit
                     | SessionSelection::StartFresh
                     | SessionSelection::Fork(_)
-                    | SessionSelection::ResumeRemote(_) => {}
+                    | SessionSelection::ResumeRemote(_)
+                    | SessionSelection::ForkRemote(_) => {}
                 }
 
                 // Leaving alt-screen may blank the inline viewport; force a redraw either way.
@@ -2374,6 +2383,30 @@ impl App {
                 );
                 self.chat_widget
                     .add_plain_history_lines(vec!["/fork".magenta().into()]);
+                if self.connected_mode {
+                    let Some(thread_id) = self.chat_widget.thread_id().map(|id| id.to_string())
+                    else {
+                        self.chat_widget.add_error_message(
+                            "A thread must contain at least one turn before it can be forked."
+                                .to_string(),
+                        );
+                        return Ok(AppRunControl::Continue);
+                    };
+                    if let Err(err) = self
+                        .replace_connected_session(
+                            tui,
+                            crate::connected_app_server::ConnectedSessionMode::Fork { thread_id },
+                            summary,
+                        )
+                        .await
+                    {
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to fork current remote session: {err}"
+                        ));
+                    }
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                }
                 if let Some(path) = self.chat_widget.rollout_path() {
                     self.refresh_in_memory_config_from_disk_best_effort("forking the thread")
                         .await;
