@@ -64,10 +64,12 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WebSocketMessage;
+use tokio_util::sync::CancellationToken;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -117,11 +119,27 @@ impl ConnectedSessionState {
 pub(crate) struct ConnectedSessionBootstrap {
     pub(crate) codex_op_tx: UnboundedSender<Op>,
     pub(crate) session_configured_event: Event,
+    pub(crate) handle: ConnectedSessionHandle,
 }
 
 pub(crate) enum ConnectedSessionMode {
     StartFresh,
     Resume { thread_id: String },
+}
+
+pub(crate) struct ConnectedSessionHandle {
+    cancel: CancellationToken,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl ConnectedSessionHandle {
+    pub(crate) async fn shutdown(self) {
+        self.cancel.cancel();
+        for task in self.tasks {
+            task.abort();
+            let _ = task.await;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,23 +183,38 @@ pub(crate) async fn connect(
     let (codex_op_tx, codex_op_rx) = unbounded_channel::<Op>();
     let (write, read) = ws.split();
 
-    tokio::spawn(writer_task(write, outbound_rx, app_event_tx.clone()));
-    tokio::spawn(reader_task(
+    let cancel = CancellationToken::new();
+    let writer_cancel = cancel.clone();
+    let reader_cancel = cancel.clone();
+    let op_cancel = cancel.clone();
+    let writer = tokio::spawn(writer_task(
+        write,
+        outbound_rx,
+        writer_cancel,
+        app_event_tx.clone(),
+    ));
+    let reader = tokio::spawn(reader_task(
         read,
         outbound_tx.clone(),
         state.clone(),
+        reader_cancel,
         app_event_tx.clone(),
     ));
-    tokio::spawn(op_task(
+    let op = tokio::spawn(op_task(
         codex_op_rx,
         outbound_tx,
         state,
+        op_cancel,
         app_event_tx.clone(),
     ));
 
     Ok(ConnectedSessionBootstrap {
         codex_op_tx,
         session_configured_event,
+        handle: ConnectedSessionHandle {
+            cancel,
+            tasks: vec![writer, reader, op],
+        },
     })
 }
 
@@ -294,6 +327,7 @@ async fn open_thread_for_session(
                 Some(serde_json::to_value(ThreadStartParams {
                     model: config.model.clone(),
                     model_provider: None,
+                    service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     sandbox: None,
@@ -320,6 +354,7 @@ async fn open_thread_for_session(
                 thread_start.thread,
                 thread_start.model,
                 thread_start.model_provider,
+                thread_start.service_tier,
                 thread_start.cwd,
                 thread_start.approval_policy.to_core(),
                 thread_start.sandbox.to_core(),
@@ -340,6 +375,7 @@ async fn open_thread_for_session(
                     path: None,
                     model: config.model.clone(),
                     model_provider: None,
+                    service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     sandbox: None,
@@ -361,6 +397,7 @@ async fn open_thread_for_session(
                 thread_resume.thread,
                 thread_resume.model,
                 thread_resume.model_provider,
+                thread_resume.service_tier,
                 thread_resume.cwd,
                 thread_resume.approval_policy.to_core(),
                 thread_resume.sandbox.to_core(),
@@ -376,6 +413,7 @@ fn session_configured_event_from_thread_response(
     thread: Thread,
     model: String,
     model_provider_id: String,
+    service_tier: Option<codex_protocol::config_types::ServiceTier>,
     cwd: PathBuf,
     approval_policy: codex_protocol::protocol::AskForApproval,
     sandbox_policy: codex_protocol::protocol::SandboxPolicy,
@@ -392,6 +430,7 @@ fn session_configured_event_from_thread_response(
             thread_name: thread.name,
             model,
             model_provider_id,
+            service_tier,
             approval_policy,
             sandbox_policy,
             cwd: thread_cwd,
@@ -516,6 +555,7 @@ fn synthesize_initial_messages_from_item(item: &ThreadItem) -> Vec<EventMsg> {
 async fn writer_task<S>(
     mut write: S,
     mut outbound_rx: UnboundedReceiver<JSONRPCMessage>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) where
     S: futures::Sink<WebSocketMessage, Error = tokio_tungstenite::tungstenite::Error>
@@ -523,7 +563,14 @@ async fn writer_task<S>(
         + Send
         + 'static,
 {
-    while let Some(message) = outbound_rx.recv().await {
+    loop {
+        let message = tokio::select! {
+            _ = cancel.cancelled() => break,
+            message = outbound_rx.recv() => match message {
+                Some(message) => message,
+                None => break,
+            },
+        };
         let payload = match serde_json::to_string(&message) {
             Ok(payload) => payload,
             Err(err) => {
@@ -535,9 +582,11 @@ async fn writer_task<S>(
             }
         };
         if let Err(err) = write.send(WebSocketMessage::Text(payload.into())).await {
-            app_event_tx.send(AppEvent::FatalExitRequest(format!(
-                "app-server websocket send failed: {err}"
-            )));
+            if !cancel.is_cancelled() {
+                app_event_tx.send(AppEvent::FatalExitRequest(format!(
+                    "app-server websocket send failed: {err}"
+                )));
+            }
             break;
         }
     }
@@ -547,6 +596,7 @@ async fn reader_task<S>(
     mut read: S,
     outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) where
     S: futures::Stream<
@@ -556,18 +606,25 @@ async fn reader_task<S>(
         + 'static,
 {
     loop {
-        let frame = match read.next().await {
+        let frame = match tokio::select! {
+            _ = cancel.cancelled() => break,
+            frame = read.next() => frame,
+        } {
             Some(Ok(frame)) => frame,
             Some(Err(err)) => {
-                app_event_tx.send(AppEvent::FatalExitRequest(format!(
-                    "app-server websocket read failed: {err}"
-                )));
+                if !cancel.is_cancelled() {
+                    app_event_tx.send(AppEvent::FatalExitRequest(format!(
+                        "app-server websocket read failed: {err}"
+                    )));
+                }
                 break;
             }
             None => {
-                app_event_tx.send(AppEvent::FatalExitRequest(
-                    "app-server websocket connection closed".to_string(),
-                ));
+                if !cancel.is_cancelled() {
+                    app_event_tx.send(AppEvent::FatalExitRequest(
+                        "app-server websocket connection closed".to_string(),
+                    ));
+                }
                 break;
             }
         };
@@ -604,9 +661,17 @@ async fn op_task(
     mut codex_op_rx: UnboundedReceiver<Op>,
     outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) {
-    while let Some(op) = codex_op_rx.recv().await {
+    loop {
+        let op = tokio::select! {
+            _ = cancel.cancelled() => break,
+            op = codex_op_rx.recv() => match op {
+                Some(op) => op,
+                None => break,
+            },
+        };
         match op {
             Op::UserTurn {
                 items,
@@ -614,6 +679,7 @@ async fn op_task(
                 approval_policy,
                 sandbox_policy,
                 model,
+                service_tier,
                 effort,
                 personality,
                 final_output_json_schema,
@@ -635,6 +701,7 @@ async fn op_task(
                                 approval_policy: Some(approval_policy.into()),
                                 sandbox_policy: Some(sandbox_policy.into()),
                                 model: Some(model),
+                                service_tier,
                                 effort,
                                 summary: None,
                                 personality,
@@ -643,6 +710,7 @@ async fn op_task(
                             })
                             .unwrap_or_default(),
                         ),
+                        trace: None,
                     });
                     if outbound_tx.send(request).is_err() {
                         send_error_event(
@@ -669,6 +737,7 @@ async fn op_task(
                                 })
                                 .unwrap_or_default(),
                             ),
+                            trace: None,
                         })
                     })
                 };
@@ -801,6 +870,7 @@ async fn send_request(
         id,
         method: method.to_string(),
         params,
+        trace: None,
     });
     let payload = serde_json::to_string(&message)?;
     ws.send(WebSocketMessage::Text(payload.into()))
@@ -1229,7 +1299,11 @@ fn additional_permission_profile_to_core(
     value: codex_app_server_protocol::AdditionalPermissionProfile,
 ) -> codex_protocol::models::PermissionProfile {
     codex_protocol::models::PermissionProfile {
-        network: value.network,
+        network: value
+            .network
+            .map(|permissions| codex_protocol::models::NetworkPermissions {
+                enabled: permissions.enabled,
+            }),
         file_system: value.file_system.map(|permissions| {
             codex_protocol::models::FileSystemPermissions {
                 read: permissions.read,
@@ -1358,6 +1432,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::time::timeout;
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
 
@@ -1448,6 +1523,7 @@ mod tests {
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            CancellationToken::new(),
             app_event_tx,
         ));
 
@@ -1461,10 +1537,12 @@ mod tests {
                 approval_policy: AskForApproval::Never,
                 sandbox_policy: SandboxPolicy::ReadOnly {
                     access: ReadOnlyAccess::FullAccess,
+                    network_access: false,
                 },
                 model: "mock-model".to_string(),
+                service_tier: None,
                 effort: None,
-                summary: ReasoningSummary::Auto,
+                summary: Some(ReasoningSummary::Auto),
                 final_output_json_schema: None,
                 collaboration_mode: None,
                 personality: None,
@@ -1493,6 +1571,7 @@ mod tests {
                     params.sandbox_policy,
                     Some(RemoteSandboxPolicy::ReadOnly {
                         access: codex_app_server_protocol::ReadOnlyAccess::FullAccess,
+                        network_access: false,
                     })
                 );
                 assert_eq!(params.model, Some("mock-model".to_string()));
@@ -1556,6 +1635,7 @@ mod tests {
                     })
                     .expect("serialize exec approval params"),
                 ),
+                trace: None,
             },
             &outbound_tx,
             &state,
@@ -1626,6 +1706,7 @@ mod tests {
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            CancellationToken::new(),
             app_event_tx,
         ));
 
@@ -1664,6 +1745,7 @@ mod tests {
             Thread {
                 id: ThreadId::new().to_string(),
                 preview: "hello".to_string(),
+                ephemeral: false,
                 model_provider: "openai".to_string(),
                 created_at: 1,
                 updated_at: 2,
@@ -1737,6 +1819,7 @@ mod tests {
             },
             "mock-model".to_string(),
             "openai".to_string(),
+            None,
             PathBuf::from("/repo"),
             AskForApproval::Never,
             SandboxPolicy::DangerFullAccess,
@@ -1809,6 +1892,7 @@ mod tests {
             >(),
             outbound_tx,
             state,
+            CancellationToken::new(),
             app_event_tx,
         )
         .await;
@@ -1823,5 +1907,35 @@ mod tests {
             }
             other => panic!("expected fatal exit request, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn cancelled_disconnect_does_not_request_fatal_exit() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, _outbound_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        reader_task(
+            futures::stream::empty::<
+                std::result::Result<WebSocketMessage, tokio_tungstenite::tungstenite::Error>,
+            >(),
+            outbound_tx,
+            state,
+            cancel,
+            app_event_tx,
+        )
+        .await;
+
+        assert!(matches!(
+            app_event_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
     }
 }

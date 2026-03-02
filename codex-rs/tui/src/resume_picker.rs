@@ -2385,6 +2385,7 @@ mod tests {
             path: PathBuf::from("/tmp/missing.jsonl"),
             preview: String::from("missing metadata"),
             thread_id: None,
+            remote_thread_id: None,
             thread_name: None,
             created_at: None,
             updated_at: None,

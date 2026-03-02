@@ -694,6 +694,8 @@ pub(crate) struct App {
     /// so shutdown events from other threads still take the normal failover path.
     pending_shutdown_exit_thread_id: Option<ThreadId>,
     connected_mode: bool,
+    connected_url: Option<String>,
+    connected_session: Option<crate::connected_app_server::ConnectedSessionHandle>,
 
     windows_sandbox: WindowsSandboxState,
 
@@ -982,6 +984,12 @@ impl App {
     }
 
     async fn shutdown_current_thread(&mut self) {
+        if self.connected_mode {
+            if let Some(session) = self.connected_session.take() {
+                session.shutdown().await;
+            }
+            return;
+        }
         if let Some(thread_id) = self.chat_widget.thread_id() {
             // Clear any in-flight rollback guard when switching threads.
             self.backtrack.pending_rollback = None;
@@ -1541,6 +1549,21 @@ impl App {
             self.chat_widget.thread_id(),
             self.chat_widget.thread_name(),
         );
+        if self.connected_mode {
+            if let Err(err) = self
+                .replace_connected_session(
+                    tui,
+                    crate::connected_app_server::ConnectedSessionMode::StartFresh,
+                    summary,
+                )
+                .await
+            {
+                self.chat_widget
+                    .add_error_message(format!("Failed to start new remote session: {err}"));
+            }
+            tui.frame_requester().schedule_frame();
+            return;
+        }
         self.shutdown_current_thread().await;
         if let Err(err) = self.server.remove_and_close_all_threads().await {
             tracing::warn!(error = %err, "failed to close all threads");
@@ -1581,6 +1604,43 @@ impl App {
         config
     }
 
+    async fn replace_connected_session(
+        &mut self,
+        tui: &mut tui::Tui,
+        mode: crate::connected_app_server::ConnectedSessionMode,
+        summary: Option<SessionSummary>,
+    ) -> Result<()> {
+        let Some(url) = self.connected_url.as_deref() else {
+            bail!("connected session requested without a connect URL");
+        };
+        let connected_session = crate::connected_app_server::connect(
+            url,
+            &self.config,
+            self.app_event_tx.clone(),
+            mode,
+        )
+        .await?;
+
+        if let Some(previous) = self.connected_session.take() {
+            previous.shutdown().await;
+        }
+
+        let init = self.chatwidget_init_for_forked_or_resumed_thread(tui, self.config.clone());
+        self.chat_widget = ChatWidget::new_with_op_sender(init, connected_session.codex_op_tx);
+        self.reset_thread_event_state();
+        if let Some(summary) = summary {
+            let mut lines: Vec<Line<'static>> = vec![summary.usage_line.into()];
+            if let Some(command) = summary.resume_command {
+                lines.push(vec!["To continue this session, run ".into(), command.cyan()].into());
+            }
+            self.chat_widget.add_plain_history_lines(lines);
+        }
+        self.connected_session = Some(connected_session.handle);
+        self.enqueue_primary_event(connected_session.session_configured_event)
+            .await?;
+        self.drain_active_thread_events(tui).await?;
+        Ok(())
+    }
     async fn drain_active_thread_events(&mut self, tui: &mut tui::Tui) -> Result<()> {
         let Some(mut rx) = self.active_thread_rx.take() else {
             return Ok(());
@@ -1812,6 +1872,7 @@ impl App {
         let wait_for_initial_session_configured =
             Self::should_wait_for_initial_session(&session_selection);
         let mut initial_connected_event = None;
+        let mut initial_connected_handle = None;
         let mut chat_widget = match session_selection {
             SessionSelection::StartFresh
             | SessionSelection::Exit
@@ -1842,6 +1903,7 @@ impl App {
                 };
                 if let Some(connected_session) = connected_session.take() {
                     initial_connected_event = Some(connected_session.session_configured_event);
+                    initial_connected_handle = Some(connected_session.handle);
                     ChatWidget::new_with_op_sender(init, connected_session.codex_op_tx)
                 } else {
                     ChatWidget::new(init, thread_manager.clone())
@@ -1956,6 +2018,8 @@ impl App {
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
             connected_mode,
+            connected_url: connect.clone(),
+            connected_session: initial_connected_handle,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -2162,10 +2226,47 @@ impl App {
             }
             AppEvent::OpenResumePicker => {
                 if self.connected_mode {
-                    self.chat_widget.add_error_message(
-                        "Connected mode cannot open the resume picker inside an active session yet; restart with `codex resume --connect ...`, use `resume <thread-id>`, or restart with `--resume-last`."
-                            .to_string(),
-                    );
+                    let Some(url) = self.connected_url.as_deref() else {
+                        self.chat_widget.add_error_message(
+                            "Connected mode is missing its app-server URL.".to_string(),
+                        );
+                        return Ok(AppRunControl::Continue);
+                    };
+                    match crate::resume_picker::run_remote_resume_picker(
+                        tui,
+                        &self.config,
+                        url,
+                        false,
+                    )
+                    .await?
+                    {
+                        SessionSelection::ResumeRemote(thread_id) => {
+                            let summary = session_summary(
+                                self.chat_widget.token_usage(),
+                                self.chat_widget.thread_id(),
+                                self.chat_widget.thread_name(),
+                            );
+                            if let Err(err) = self
+                                .replace_connected_session(
+                                    tui,
+                                    crate::connected_app_server::ConnectedSessionMode::Resume {
+                                        thread_id,
+                                    },
+                                    summary,
+                                )
+                                .await
+                            {
+                                self.chat_widget.add_error_message(format!(
+                                    "Failed to resume remote session: {err}"
+                                ));
+                            }
+                        }
+                        SessionSelection::Exit
+                        | SessionSelection::StartFresh
+                        | SessionSelection::Resume(_)
+                        | SessionSelection::Fork(_) => {}
+                    }
+                    tui.frame_requester().schedule_frame();
                     return Ok(AppRunControl::Continue);
                 }
                 match crate::resume_picker::run_resume_picker(tui, &self.config, false).await? {
@@ -5595,6 +5696,8 @@ mod tests {
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
             connected_mode: false,
+            connected_url: None,
+            connected_session: None,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -5656,6 +5759,8 @@ mod tests {
                 suppress_shutdown_complete: false,
                 pending_shutdown_exit_thread_id: None,
                 connected_mode: false,
+                connected_url: None,
+                connected_session: None,
                 windows_sandbox: WindowsSandboxState::default(),
                 thread_event_channels: HashMap::new(),
                 thread_event_listener_tasks: HashMap::new(),
