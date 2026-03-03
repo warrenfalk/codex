@@ -42,7 +42,6 @@ rustPlatform.buildRustPackage (_: {
     git
     llvmPackages.clang
     llvmPackages.libclang.lib
-    libcap
     openssl
     pkg-config
   ] ++ lib.optionals stdenv.isLinux [
