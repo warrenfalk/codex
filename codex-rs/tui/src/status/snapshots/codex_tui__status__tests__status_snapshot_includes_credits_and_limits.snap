@@ -17,7 +17,7 @@ expression: sanitized
 │                                                                   │
 │  Token usage:      2K total  (1.4K input + 600 output)            │
 │  Context window:   100% left (2.2K used / 272K)                   │
-│  5h limit:         [███████████░░░░░░░░░] 55% left (resets 09:25) │
-│  Weekly limit:     [██████████████░░░░░░] 70% left (resets 09:55) │
+│  5h limit:         [█│█████████░░░░░░░░░] 55% left (5% time left) │
+│  Weekly limit:     [│█████████████░░░░░░] 70% left (0% time left) │
 │  Credits:          38 credits                                     │
 ╰───────────────────────────────────────────────────────────────────╯
