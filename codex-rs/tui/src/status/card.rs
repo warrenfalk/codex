@@ -346,22 +346,32 @@ impl StatusHistoryCell {
             match &row.value {
                 StatusRateLimitValue::Window {
                     percent_used,
+                    time_remaining_percent,
                     resets_at,
                 } => {
                     let percent_remaining = (100.0 - percent_used).clamp(0.0, 100.0);
                     let value_spans = vec![
-                        Span::from(render_status_limit_progress_bar(percent_remaining)),
+                        Span::from(render_status_limit_progress_bar(
+                            percent_remaining,
+                            *time_remaining_percent,
+                        )),
                         Span::from(" "),
                         Span::from(format_status_limit_summary(percent_remaining)),
                     ];
                     let base_spans = formatter.full_spans(row.label.as_str(), value_spans);
                     let base_line = Line::from(base_spans.clone());
+                    let trailing_span = time_remaining_percent
+                        .map(|percent| Span::from(format!("({percent:.0}% time left)")).dim())
+                        .or_else(|| {
+                            resets_at
+                                .as_ref()
+                                .map(|resets_at| Span::from(format!("(resets {resets_at})")).dim())
+                        });
 
-                    if let Some(resets_at) = resets_at.as_ref() {
-                        let resets_span = Span::from(format!("(resets {resets_at})")).dim();
+                    if let Some(trailing_span) = trailing_span {
                         let mut inline_spans = base_spans.clone();
                         inline_spans.push(Span::from(" ").dim());
-                        inline_spans.push(resets_span.clone());
+                        inline_spans.push(trailing_span.clone());
 
                         if line_display_width(&Line::from(inline_spans.clone()))
                             <= available_inner_width
@@ -369,7 +379,7 @@ impl StatusHistoryCell {
                             lines.push(Line::from(inline_spans));
                         } else {
                             lines.push(base_line);
-                            lines.push(formatter.continuation(vec![resets_span]));
+                            lines.push(formatter.continuation(vec![trailing_span]));
                         }
                     } else {
                         lines.push(base_line);
