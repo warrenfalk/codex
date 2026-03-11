@@ -1,9 +1,15 @@
+use crate::file_links;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::{self};
 use crate::render::line_utils::prefix_lines;
 use crate::style::proposed_plan_style;
+use codex_core::config::types::UriBasedFileOpener;
 use ratatui::prelude::Stylize;
 use ratatui::text::Line;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -15,28 +21,39 @@ pub(crate) struct StreamController {
     state: StreamState,
     finishing_after_drain: bool,
     header_emitted: bool,
+    cwd: PathBuf,
+    file_opener: UriBasedFileOpener,
+    source_buffer: String,
+    committed_source_len: usize,
+    markdown_link_targets_by_line: VecDeque<Option<Arc<HashMap<String, String>>>>,
 }
 
 impl StreamController {
-    pub(crate) fn new(width: Option<usize>) -> Self {
+    pub(crate) fn new(width: Option<usize>, cwd: PathBuf, file_opener: UriBasedFileOpener) -> Self {
         Self {
             state: StreamState::new(width),
             finishing_after_drain: false,
             header_emitted: false,
+            cwd,
+            file_opener,
+            source_buffer: String::new(),
+            committed_source_len: 0,
+            markdown_link_targets_by_line: VecDeque::new(),
         }
     }
 
     /// Push a delta; if it contains a newline, commit completed lines and start animation.
     pub(crate) fn push(&mut self, delta: &str) -> bool {
-        let state = &mut self.state;
         if !delta.is_empty() {
-            state.has_seen_delta = true;
+            self.state.has_seen_delta = true;
         }
-        state.collector.push_delta(delta);
+        self.source_buffer.push_str(delta);
+        self.state.collector.push_delta(delta);
         if delta.contains('\n') {
-            let newly_completed = state.collector.commit_complete_lines();
+            let newly_completed = self.state.collector.commit_complete_lines();
+            let completed_source = self.take_completed_source_chunk();
             if !newly_completed.is_empty() {
-                state.enqueue(newly_completed);
+                self.enqueue_with_markdown_link_targets(newly_completed, &completed_source);
                 return true;
             }
         }
@@ -52,19 +69,20 @@ impl StreamController {
         };
         // Collect all output first to avoid emitting headers when there is no content.
         let mut out_lines = Vec::new();
-        {
-            let state = &mut self.state;
-            if !remaining.is_empty() {
-                state.enqueue(remaining);
-            }
-            let step = state.drain_all();
-            out_lines.extend(step);
+        if !remaining.is_empty() {
+            let remaining_source = self.take_remaining_source_chunk();
+            self.enqueue_with_markdown_link_targets(remaining, &remaining_source);
         }
+        out_lines.extend(self.state.drain_all());
 
         // Cleanup
         self.state.clear();
         self.finishing_after_drain = false;
-        self.emit(out_lines)
+        let out = self.emit(out_lines);
+        self.source_buffer.clear();
+        self.committed_source_len = 0;
+        self.markdown_link_targets_by_line.clear();
+        out
     }
 
     /// Step animation: commit at most one queued line and handle end-of-drain cleanup.
@@ -99,11 +117,98 @@ impl StreamController {
         if lines.is_empty() {
             return None;
         }
-        Some(Box::new(history_cell::AgentMessageCell::new(lines, {
-            let header_emitted = self.header_emitted;
-            self.header_emitted = true;
-            !header_emitted
-        })))
+        Some(Box::new(self.agent_message_cell_for_lines(lines)))
+    }
+
+    fn agent_message_cell_for_lines(
+        &mut self,
+        lines: Vec<Line<'static>>,
+    ) -> history_cell::AgentMessageCell {
+        let markdown_link_targets = self.take_markdown_link_targets(lines.len());
+        if let Some(markdown_link_targets) = markdown_link_targets {
+            history_cell::AgentMessageCell::new_with_markdown_link_targets(
+                lines,
+                {
+                    let header_emitted = self.header_emitted;
+                    self.header_emitted = true;
+                    !header_emitted
+                },
+                self.cwd.clone(),
+                self.file_opener,
+                markdown_link_targets,
+            )
+        } else {
+            history_cell::AgentMessageCell::new_with_file_links(
+                lines,
+                {
+                    let header_emitted = self.header_emitted;
+                    self.header_emitted = true;
+                    !header_emitted
+                },
+                self.cwd.clone(),
+                self.file_opener,
+            )
+        }
+    }
+
+    fn enqueue_with_markdown_link_targets(
+        &mut self,
+        lines: Vec<Line<'static>>,
+        markdown_source: &str,
+    ) {
+        let markdown_link_targets = file_links::extract_markdown_link_targets(
+            markdown_source,
+            self.cwd.as_path(),
+            self.file_opener,
+        );
+        self.markdown_link_targets_by_line
+            .extend((0..lines.len()).map(|_| markdown_link_targets.clone()));
+        self.state.enqueue(lines);
+    }
+
+    fn take_completed_source_chunk(&mut self) -> String {
+        let Some(last_newline_idx) = self.source_buffer.rfind('\n') else {
+            return String::new();
+        };
+        let completed =
+            self.source_buffer[self.committed_source_len..=last_newline_idx].to_string();
+        self.committed_source_len = last_newline_idx + 1;
+        completed
+    }
+
+    fn take_remaining_source_chunk(&mut self) -> String {
+        let remaining = self.source_buffer[self.committed_source_len..].to_string();
+        self.committed_source_len = self.source_buffer.len();
+        remaining
+    }
+
+    fn take_markdown_link_targets(
+        &mut self,
+        line_count: usize,
+    ) -> Option<Arc<HashMap<String, String>>> {
+        let mut merged_targets: HashMap<String, Option<String>> = HashMap::new();
+        for _ in 0..line_count {
+            let Some(targets) = self.markdown_link_targets_by_line.pop_front().flatten() else {
+                continue;
+            };
+            for (label, uri) in targets.iter() {
+                match merged_targets.entry(label.clone()) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(uri.clone()));
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        if entry.get().as_ref() != Some(uri) {
+                            entry.insert(None);
+                        }
+                    }
+                }
+            }
+        }
+        let merged_targets = merged_targets
+            .into_iter()
+            .filter_map(|(label, uri)| uri.map(|uri| (label, uri)))
+            .collect::<HashMap<_, _>>();
+        (!merged_targets.is_empty()).then(|| Arc::new(merged_targets))
     }
 }
 
@@ -248,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn controller_loose_vs_tight_with_commit_ticks_matches_full() {
-        let mut ctrl = StreamController::new(None);
+        let mut ctrl = StreamController::new(None, std::env::temp_dir(), UriBasedFileOpener::None);
         let mut lines = Vec::new();
 
         // Exact deltas from the session log (section: Loose vs. tight list items)
