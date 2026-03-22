@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 9336
+assertion_line: 9755
 expression: rendered
 ---
 • Reviewing 2 approval requests (0s • esc to interrupt)
@@ -10,4 +10,4 @@ expression: rendered
 
 › Ask Codex to do anything
 
-  ? for shortcuts                                    100% context left
+  ? for shortcuts                                      -- context left

@@ -1,6 +1,6 @@
 ---
 source: tui/src/bottom_pane/footer.rs
-assertion_line: 1207
+assertion_line: 1245
 expression: terminal.backend()
 ---
-"  Robie [explorer]                                           100% context left  "
+"  Robie [explorer]                                             -- context left  "

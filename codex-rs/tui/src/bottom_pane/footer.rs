@@ -856,7 +856,7 @@ pub(crate) fn context_window_line(percent: Option<i64>, used_tokens: Option<i64>
         return Line::from(vec![Span::from(format!("{used_fmt} used")).dim()]);
     }
 
-    Line::from(vec![Span::from("100% context left").dim()])
+    Line::from(vec![Span::from("-- context left").dim()])
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1701,6 +1701,12 @@ mod tests {
             screen.contains('…'),
             "status line should be truncated with ellipsis to keep mode indicator"
         );
+    }
+
+    #[test]
+    fn context_window_line_uses_placeholder_when_usage_is_unknown() {
+        let line = context_window_line(None, None);
+        assert_eq!(line, Line::from(vec!["-- context left".dim()]));
     }
 
     #[test]

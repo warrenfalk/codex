@@ -10653,7 +10653,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.4 xhigh fast · 100% left · /tmp/project".to_string())
+        Some("gpt-5.4 xhigh fast · -- left · /tmp/project".to_string())
     );
 
     chat.set_model("gpt-5.3-codex");
@@ -10661,7 +10661,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.3-codex xhigh · 100% left · /tmp/project".to_string())
+        Some("gpt-5.3-codex xhigh · -- left · /tmp/project".to_string())
     );
 }
 
