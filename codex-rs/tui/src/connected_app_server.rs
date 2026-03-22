@@ -6,9 +6,13 @@ use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
+use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
+use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::HookCompletedNotification;
+use codex_app_server_protocol::HookStartedNotification;
 use codex_app_server_protocol::InitializeCapabilities;
 use codex_app_server_protocol::InitializeParams;
 use codex_app_server_protocol::JSONRPCError;
@@ -16,7 +20,9 @@ use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
@@ -28,32 +34,79 @@ use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSortKey as RemoteThreadSortKey;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnInterruptParams;
+use codex_app_server_protocol::TurnPlanStepStatus;
+use codex_app_server_protocol::TurnPlanUpdatedNotification;
 use codex_app_server_protocol::TurnStartParams;
+use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
 use codex_core::ThreadSortKey;
 use codex_core::config::Config;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ExecApprovalRequestEvent;
+use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem;
+use codex_protocol::dynamic_tools::DynamicToolCallRequest;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
 use codex_protocol::items::ContextCompactionItem;
+use codex_protocol::items::ImageGenerationItem;
+use codex_protocol::items::PlanItem;
 use codex_protocol::items::ReasoningItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::items::WebSearchItem;
+use codex_protocol::mcp::CallToolResult;
+use codex_protocol::plan_tool::PlanItemArg;
+use codex_protocol::plan_tool::StepStatus;
+use codex_protocol::plan_tool::UpdatePlanArgs;
+use codex_protocol::protocol::AgentMessageContentDeltaEvent;
+use codex_protocol::protocol::DeprecationNoticeEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ExecCommandBeginEvent;
+use codex_protocol::protocol::ExecCommandEndEvent;
+use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
+use codex_protocol::protocol::ExecCommandSource;
+use codex_protocol::protocol::ExecCommandStatus;
+use codex_protocol::protocol::ExecOutputStream;
+use codex_protocol::protocol::FileChange;
+use codex_protocol::protocol::HasLegacyEvent;
+use codex_protocol::protocol::HookCompletedEvent;
+use codex_protocol::protocol::HookStartedEvent;
+use codex_protocol::protocol::ItemCompletedEvent;
+use codex_protocol::protocol::ItemStartedEvent;
+use codex_protocol::protocol::McpInvocation;
+use codex_protocol::protocol::McpToolCallBeginEvent;
+use codex_protocol::protocol::McpToolCallEndEvent;
+use codex_protocol::protocol::ModelRerouteEvent;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::PatchApplyBeginEvent;
+use codex_protocol::protocol::PatchApplyEndEvent;
+use codex_protocol::protocol::ReasoningContentDeltaEvent;
+use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionConfiguredEvent;
+use codex_protocol::protocol::StreamErrorEvent;
+use codex_protocol::protocol::TerminalInteractionEvent;
+use codex_protocol::protocol::ThreadNameUpdatedEvent;
+use codex_protocol::protocol::TokenCountEvent;
+use codex_protocol::protocol::TokenUsage;
+use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TurnAbortReason;
+use codex_protocol::protocol::TurnAbortedEvent;
+use codex_protocol::protocol::TurnCompleteEvent;
+use codex_protocol::protocol::TurnDiffEvent;
+use codex_protocol::protocol::TurnStartedEvent;
+use codex_protocol::protocol::ViewImageToolCallEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::request_user_input::RequestUserInputEvent;
 use codex_protocol::request_user_input::RequestUserInputQuestion as CoreRequestUserInputQuestion;
@@ -1031,56 +1084,730 @@ async fn handle_notification(
     state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
     app_event_tx: &AppEventSender,
 ) {
-    if !notification.method.starts_with("codex/event/") {
+    if notification.method.starts_with("codex/event/") {
+        let Some(params) = notification.params else {
+            return;
+        };
+        let Ok(event) = serde_json::from_value::<Event>(params) else {
+            send_error_event(
+                app_event_tx,
+                format!(
+                    "failed to decode legacy event notification `{}`",
+                    notification.method
+                ),
+            );
+            return;
+        };
+
+        forward_connected_events(vec![event], state, app_event_tx).await;
         return;
     }
-    let Some(params) = notification.params else {
-        return;
+
+    let server_notification = match ServerNotification::try_from(notification.clone()) {
+        Ok(server_notification) => server_notification,
+        Err(_) => return,
     };
-    let Ok(event) = serde_json::from_value::<Event>(params) else {
+    let Ok(events) = events_from_server_notification(server_notification) else {
         send_error_event(
             app_event_tx,
             format!(
-                "failed to decode legacy event notification `{}`",
+                "failed to translate app-server notification `{}` for connected mode",
                 notification.method
             ),
         );
         return;
     };
 
-    {
-        let mut guard = state.lock().await;
-        match &event.msg {
-            // In connected mode, app-server sends these as server requests as well as
-            // legacy codex/event notifications. The request path is the only one that
-            // carries a JSON-RPC callback id, so processing the legacy event here
-            // duplicates the prompt and leaves the second approval unresolved.
-            EventMsg::ExecApprovalRequest(_)
-            | EventMsg::ApplyPatchApprovalRequest(_)
-            | EventMsg::RequestUserInput(_) => {
-                return;
-            }
-            EventMsg::TurnStarted(turn_started) => {
-                guard.current_turn_id = Some(turn_started.turn_id.clone());
-            }
-            EventMsg::TurnComplete(turn_complete) => {
-                if guard.current_turn_id.as_deref() == Some(turn_complete.turn_id.as_str()) {
-                    guard.current_turn_id = None;
+    forward_connected_events(events, state, app_event_tx).await;
+}
+
+async fn forward_connected_events(
+    events: Vec<Event>,
+    state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
+    app_event_tx: &AppEventSender,
+) {
+    for event in events {
+        let skip = {
+            let mut guard = state.lock().await;
+            match &event.msg {
+                // In connected mode, app-server sends these as server requests as well as
+                // legacy codex/event notifications. The request path is the only one that
+                // carries a JSON-RPC callback id, so processing the legacy event here
+                // duplicates the prompt and leaves the second approval unresolved.
+                EventMsg::ExecApprovalRequest(_)
+                | EventMsg::ApplyPatchApprovalRequest(_)
+                | EventMsg::RequestUserInput(_) => true,
+                EventMsg::TurnStarted(turn_started) => {
+                    guard.current_turn_id = Some(turn_started.turn_id.clone());
+                    false
                 }
-            }
-            EventMsg::TurnAborted(turn_aborted) => {
-                if guard.current_turn_id.as_deref() == turn_aborted.turn_id.as_deref() {
-                    guard.current_turn_id = None;
+                EventMsg::TurnComplete(turn_complete) => {
+                    if guard.current_turn_id.as_deref() == Some(turn_complete.turn_id.as_str()) {
+                        guard.current_turn_id = None;
+                    }
+                    false
                 }
+                EventMsg::TurnAborted(turn_aborted) => {
+                    if guard.current_turn_id.as_deref() == turn_aborted.turn_id.as_deref() {
+                        guard.current_turn_id = None;
+                    }
+                    false
+                }
+                EventMsg::ShutdownComplete => {
+                    guard.current_turn_id = None;
+                    false
+                }
+                _ => false,
             }
-            EventMsg::ShutdownComplete => {
-                guard.current_turn_id = None;
-            }
-            _ => {}
+        };
+        if !skip {
+            app_event_tx.send(AppEvent::CodexEvent(event));
         }
     }
+}
 
-    app_event_tx.send(AppEvent::CodexEvent(event));
+fn events_from_server_notification(notification: ServerNotification) -> Result<Vec<Event>> {
+    let messages = match notification {
+        ServerNotification::Error(notification) => {
+            let msg = if notification.will_retry {
+                EventMsg::StreamError(StreamErrorEvent {
+                    message: notification.error.message,
+                    codex_error_info: notification
+                        .error
+                        .codex_error_info
+                        .map(codex_error_info_to_core),
+                    additional_details: notification.error.additional_details,
+                })
+            } else {
+                EventMsg::Error(ErrorEvent {
+                    message: notification.error.message,
+                    codex_error_info: notification
+                        .error
+                        .codex_error_info
+                        .map(codex_error_info_to_core),
+                })
+            };
+            vec![msg]
+        }
+        ServerNotification::ThreadNameUpdated(notification) => {
+            let thread_id = ThreadId::try_from(notification.thread_id.as_str())
+                .wrap_err("invalid thread id in thread/name/updated notification")?;
+            vec![EventMsg::ThreadNameUpdated(ThreadNameUpdatedEvent {
+                thread_id,
+                thread_name: notification.thread_name,
+            })]
+        }
+        ServerNotification::ThreadTokenUsageUpdated(notification) => {
+            vec![EventMsg::TokenCount(thread_token_usage_to_token_count(
+                notification,
+            ))]
+        }
+        ServerNotification::TurnStarted(notification) => {
+            vec![EventMsg::TurnStarted(turn_started_event_from_notification(
+                notification,
+            ))]
+        }
+        ServerNotification::TurnCompleted(notification) => {
+            turn_completion_messages_from_notification(notification)
+        }
+        ServerNotification::HookStarted(notification) => {
+            vec![EventMsg::HookStarted(hook_started_event_from_notification(
+                notification,
+            ))]
+        }
+        ServerNotification::HookCompleted(notification) => {
+            vec![EventMsg::HookCompleted(
+                hook_completed_event_from_notification(notification),
+            )]
+        }
+        ServerNotification::TurnDiffUpdated(notification) => {
+            vec![EventMsg::TurnDiff(TurnDiffEvent {
+                unified_diff: notification.diff,
+            })]
+        }
+        ServerNotification::TurnPlanUpdated(notification) => {
+            vec![EventMsg::PlanUpdate(turn_plan_update_from_notification(
+                notification,
+            ))]
+        }
+        ServerNotification::ItemStarted(notification) => item_messages_from_notification(
+            notification.thread_id,
+            notification.turn_id,
+            notification.item,
+            true,
+        )?,
+        ServerNotification::ItemCompleted(notification) => item_messages_from_notification(
+            notification.thread_id,
+            notification.turn_id,
+            notification.item,
+            false,
+        )?,
+        ServerNotification::AgentMessageDelta(notification) => event_messages_with_legacy(
+            EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                item_id: notification.item_id,
+                delta: notification.delta,
+            }),
+        ),
+        ServerNotification::PlanDelta(notification) => vec![EventMsg::PlanDelta(
+            codex_protocol::protocol::PlanDeltaEvent {
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                item_id: notification.item_id,
+                delta: notification.delta,
+            },
+        )],
+        ServerNotification::ReasoningSummaryTextDelta(notification) => event_messages_with_legacy(
+            EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                item_id: notification.item_id,
+                delta: notification.delta,
+                summary_index: notification.summary_index,
+            }),
+        ),
+        ServerNotification::ReasoningTextDelta(notification) => event_messages_with_legacy(
+            EventMsg::ReasoningRawContentDelta(ReasoningRawContentDeltaEvent {
+                thread_id: notification.thread_id,
+                turn_id: notification.turn_id,
+                item_id: notification.item_id,
+                delta: notification.delta,
+                content_index: notification.content_index,
+            }),
+        ),
+        ServerNotification::TerminalInteraction(notification) => {
+            vec![EventMsg::TerminalInteraction(TerminalInteractionEvent {
+                call_id: notification.item_id,
+                process_id: notification.process_id,
+                stdin: notification.stdin,
+            })]
+        }
+        ServerNotification::CommandExecutionOutputDelta(notification) => {
+            vec![EventMsg::ExecCommandOutputDelta(
+                ExecCommandOutputDeltaEvent {
+                    call_id: notification.item_id,
+                    stream: ExecOutputStream::Stdout,
+                    chunk: notification.delta.into_bytes(),
+                },
+            )]
+        }
+        ServerNotification::SkillsChanged(_) => vec![EventMsg::SkillsUpdateAvailable],
+        ServerNotification::ModelRerouted(notification) => {
+            vec![EventMsg::ModelReroute(ModelRerouteEvent {
+                from_model: notification.from_model,
+                to_model: notification.to_model,
+                reason: notification.reason.to_core(),
+            })]
+        }
+        ServerNotification::DeprecationNotice(notification) => {
+            vec![EventMsg::DeprecationNotice(DeprecationNoticeEvent {
+                summary: notification.summary,
+                details: notification.details,
+            })]
+        }
+        _ => Vec::new(),
+    };
+
+    Ok(messages
+        .into_iter()
+        .map(|msg| Event {
+            id: String::new(),
+            msg,
+        })
+        .collect())
+}
+
+fn turn_started_event_from_notification(notification: TurnStartedNotification) -> TurnStartedEvent {
+    TurnStartedEvent {
+        turn_id: notification.turn.id,
+        model_context_window: None,
+        collaboration_mode_kind: Default::default(),
+    }
+}
+
+fn turn_completion_messages_from_notification(
+    notification: TurnCompletedNotification,
+) -> Vec<EventMsg> {
+    match notification.turn.status {
+        TurnStatus::Completed => vec![EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id: notification.turn.id,
+            last_agent_message: None,
+        })],
+        TurnStatus::Interrupted => vec![EventMsg::TurnAborted(TurnAbortedEvent {
+            turn_id: Some(notification.turn.id),
+            reason: TurnAbortReason::Interrupted,
+        })],
+        TurnStatus::Failed => Vec::new(),
+        TurnStatus::InProgress => Vec::new(),
+    }
+}
+
+fn hook_started_event_from_notification(notification: HookStartedNotification) -> HookStartedEvent {
+    HookStartedEvent {
+        turn_id: notification.turn_id,
+        run: hook_run_summary_to_core(notification.run),
+    }
+}
+
+fn hook_completed_event_from_notification(
+    notification: HookCompletedNotification,
+) -> HookCompletedEvent {
+    HookCompletedEvent {
+        turn_id: notification.turn_id,
+        run: hook_run_summary_to_core(notification.run),
+    }
+}
+
+fn hook_run_summary_to_core(
+    summary: codex_app_server_protocol::HookRunSummary,
+) -> codex_protocol::protocol::HookRunSummary {
+    codex_protocol::protocol::HookRunSummary {
+        id: summary.id,
+        event_name: summary.event_name.to_core(),
+        handler_type: summary.handler_type.to_core(),
+        execution_mode: summary.execution_mode.to_core(),
+        scope: summary.scope.to_core(),
+        source_path: summary.source_path,
+        display_order: summary.display_order,
+        status: summary.status.to_core(),
+        status_message: summary.status_message,
+        started_at: summary.started_at,
+        completed_at: summary.completed_at,
+        duration_ms: summary.duration_ms,
+        entries: summary
+            .entries
+            .into_iter()
+            .map(|entry| codex_protocol::protocol::HookOutputEntry {
+                kind: entry.kind.to_core(),
+                text: entry.text,
+            })
+            .collect(),
+    }
+}
+
+fn turn_plan_update_from_notification(notification: TurnPlanUpdatedNotification) -> UpdatePlanArgs {
+    UpdatePlanArgs {
+        explanation: notification.explanation,
+        plan: notification
+            .plan
+            .into_iter()
+            .map(|step| PlanItemArg {
+                step: step.step,
+                status: match step.status {
+                    TurnPlanStepStatus::Pending => StepStatus::Pending,
+                    TurnPlanStepStatus::InProgress => StepStatus::InProgress,
+                    TurnPlanStepStatus::Completed => StepStatus::Completed,
+                },
+            })
+            .collect(),
+    }
+}
+
+fn item_messages_from_notification(
+    thread_id: String,
+    turn_id: String,
+    item: ThreadItem,
+    started: bool,
+) -> Result<Vec<EventMsg>> {
+    if let Some(messages) = tool_item_messages(thread_id.as_str(), turn_id.as_str(), &item, started)
+    {
+        return Ok(messages);
+    }
+
+    let thread_id = ThreadId::try_from(thread_id.as_str())
+        .wrap_err("invalid thread id in item notification")?;
+    let Some(item) = core_turn_item_from_thread_item(item) else {
+        return Ok(Vec::new());
+    };
+    let event = if started {
+        EventMsg::ItemStarted(ItemStartedEvent {
+            thread_id,
+            turn_id,
+            item,
+        })
+    } else {
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            thread_id,
+            turn_id,
+            item,
+        })
+    };
+    Ok(event_messages_with_legacy(event))
+}
+
+fn tool_item_messages(
+    _thread_id: &str,
+    turn_id: &str,
+    item: &ThreadItem,
+    started: bool,
+) -> Option<Vec<EventMsg>> {
+    match item {
+        ThreadItem::CommandExecution {
+            id,
+            command,
+            cwd,
+            process_id,
+            status,
+            aggregated_output,
+            exit_code,
+            duration_ms,
+            ..
+        } => {
+            let command_parts = shlex::split(command).unwrap_or_else(|| vec![command.clone()]);
+            Some(
+                if started || matches!(status, CommandExecutionStatus::InProgress) {
+                    vec![EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                        call_id: id.clone(),
+                        process_id: process_id.clone(),
+                        turn_id: turn_id.to_string(),
+                        command: command_parts,
+                        cwd: cwd.clone(),
+                        parsed_cmd: Vec::new(),
+                        source: ExecCommandSource::Agent,
+                        interaction_input: None,
+                    })]
+                } else {
+                    vec![EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                        call_id: id.clone(),
+                        process_id: process_id.clone(),
+                        turn_id: turn_id.to_string(),
+                        command: command_parts,
+                        cwd: cwd.clone(),
+                        parsed_cmd: Vec::new(),
+                        source: ExecCommandSource::Agent,
+                        interaction_input: None,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        aggregated_output: aggregated_output.clone().unwrap_or_default(),
+                        exit_code: exit_code.unwrap_or_default(),
+                        duration: std::time::Duration::from_millis(
+                            u64::try_from(duration_ms.unwrap_or_default()).unwrap_or_default(),
+                        ),
+                        formatted_output: aggregated_output.clone().unwrap_or_default(),
+                        status: match status {
+                            CommandExecutionStatus::InProgress
+                            | CommandExecutionStatus::Completed => ExecCommandStatus::Completed,
+                            CommandExecutionStatus::Failed => ExecCommandStatus::Failed,
+                            CommandExecutionStatus::Declined => ExecCommandStatus::Declined,
+                        },
+                    })]
+                },
+            )
+        }
+        ThreadItem::FileChange {
+            id,
+            changes,
+            status,
+        } => Some(
+            if started || matches!(status, PatchApplyStatus::InProgress) {
+                vec![EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
+                    call_id: id.clone(),
+                    turn_id: turn_id.to_string(),
+                    auto_approved: true,
+                    changes: file_changes_to_core(changes),
+                })]
+            } else {
+                let success = matches!(status, PatchApplyStatus::Completed);
+                vec![EventMsg::PatchApplyEnd(PatchApplyEndEvent {
+                    call_id: id.clone(),
+                    turn_id: turn_id.to_string(),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success,
+                    changes: file_changes_to_core(changes),
+                    status: match status {
+                        PatchApplyStatus::InProgress | PatchApplyStatus::Completed => {
+                            codex_protocol::protocol::PatchApplyStatus::Completed
+                        }
+                        PatchApplyStatus::Failed => {
+                            codex_protocol::protocol::PatchApplyStatus::Failed
+                        }
+                        PatchApplyStatus::Declined => {
+                            codex_protocol::protocol::PatchApplyStatus::Declined
+                        }
+                    },
+                })]
+            },
+        ),
+        ThreadItem::McpToolCall {
+            id,
+            server,
+            tool,
+            arguments,
+            result,
+            error,
+            duration_ms,
+            ..
+        } => Some(if started {
+            vec![EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+                call_id: id.clone(),
+                invocation: McpInvocation {
+                    server: server.clone(),
+                    tool: tool.clone(),
+                    arguments: Some(arguments.clone()),
+                },
+            })]
+        } else {
+            let result = match (result.clone(), error.clone()) {
+                (Some(result), _) => Ok(CallToolResult {
+                    content: result.content,
+                    structured_content: result.structured_content,
+                    is_error: Some(false),
+                    meta: None,
+                }),
+                (None, Some(error)) => Err(error.message),
+                (None, None) => Err("MCP tool call completed without result".to_string()),
+            };
+            vec![EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                call_id: id.clone(),
+                invocation: McpInvocation {
+                    server: server.clone(),
+                    tool: tool.clone(),
+                    arguments: Some(arguments.clone()),
+                },
+                duration: std::time::Duration::from_millis(
+                    u64::try_from(duration_ms.unwrap_or_default()).unwrap_or_default(),
+                ),
+                result,
+            })]
+        }),
+        ThreadItem::DynamicToolCall {
+            id,
+            tool,
+            arguments,
+            content_items,
+            success,
+            duration_ms,
+            ..
+        } => Some(if started {
+            vec![EventMsg::DynamicToolCallRequest(DynamicToolCallRequest {
+                call_id: id.clone(),
+                turn_id: turn_id.to_string(),
+                tool: tool.clone(),
+                arguments: arguments.clone(),
+            })]
+        } else {
+            vec![EventMsg::DynamicToolCallResponse(
+                codex_protocol::protocol::DynamicToolCallResponseEvent {
+                    call_id: id.clone(),
+                    turn_id: turn_id.to_string(),
+                    tool: tool.clone(),
+                    arguments: arguments.clone(),
+                    content_items: content_items
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect::<Vec<DynamicToolCallOutputContentItem>>(),
+                    success: success.unwrap_or(false),
+                    error: None,
+                    duration: std::time::Duration::from_millis(
+                        u64::try_from(duration_ms.unwrap_or_default()).unwrap_or_default(),
+                    ),
+                },
+            )]
+        }),
+        ThreadItem::ImageView { id, path } if !started => {
+            Some(vec![EventMsg::ViewImageToolCall(ViewImageToolCallEvent {
+                call_id: id.clone(),
+                path: PathBuf::from(path),
+            })])
+        }
+        ThreadItem::ContextCompaction { .. } if started => Some(Vec::new()),
+        ThreadItem::EnteredReviewMode { .. }
+        | ThreadItem::ExitedReviewMode { .. }
+        | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::ImageView { .. }
+        | ThreadItem::ContextCompaction { .. } => Some(Vec::new()),
+        ThreadItem::UserMessage { .. }
+        | ThreadItem::AgentMessage { .. }
+        | ThreadItem::Plan { .. }
+        | ThreadItem::Reasoning { .. }
+        | ThreadItem::WebSearch { .. }
+        | ThreadItem::ImageGeneration { .. } => None,
+    }
+}
+
+fn core_turn_item_from_thread_item(item: ThreadItem) -> Option<TurnItem> {
+    match item {
+        ThreadItem::UserMessage { id, content } => Some(TurnItem::UserMessage(UserMessageItem {
+            id,
+            content: content
+                .into_iter()
+                .map(codex_app_server_protocol::UserInput::into_core)
+                .collect(),
+        })),
+        ThreadItem::AgentMessage {
+            id, text, phase, ..
+        } => Some(TurnItem::AgentMessage(AgentMessageItem {
+            id,
+            content: vec![AgentMessageContent::Text { text }],
+            phase,
+            memory_citation: None,
+        })),
+        ThreadItem::Plan { id, text } => Some(TurnItem::Plan(PlanItem { id, text })),
+        ThreadItem::Reasoning {
+            id,
+            summary,
+            content,
+        } => Some(TurnItem::Reasoning(ReasoningItem {
+            id,
+            summary_text: summary,
+            raw_content: content,
+        })),
+        ThreadItem::WebSearch {
+            id,
+            query,
+            action: Some(action),
+        } => Some(TurnItem::WebSearch(WebSearchItem {
+            id,
+            query,
+            action: match action {
+                codex_app_server_protocol::WebSearchAction::Search { query, queries } => {
+                    codex_protocol::models::WebSearchAction::Search { query, queries }
+                }
+                codex_app_server_protocol::WebSearchAction::OpenPage { url } => {
+                    codex_protocol::models::WebSearchAction::OpenPage { url }
+                }
+                codex_app_server_protocol::WebSearchAction::FindInPage { url, pattern } => {
+                    codex_protocol::models::WebSearchAction::FindInPage { url, pattern }
+                }
+                codex_app_server_protocol::WebSearchAction::Other => {
+                    codex_protocol::models::WebSearchAction::Other
+                }
+            },
+        })),
+        ThreadItem::ImageGeneration {
+            id,
+            status,
+            revised_prompt,
+            result,
+            saved_path,
+        } => Some(TurnItem::ImageGeneration(ImageGenerationItem {
+            id,
+            status,
+            revised_prompt,
+            result,
+            saved_path,
+        })),
+        ThreadItem::ContextCompaction { id } => {
+            Some(TurnItem::ContextCompaction(ContextCompactionItem { id }))
+        }
+        ThreadItem::CommandExecution { .. }
+        | ThreadItem::FileChange { .. }
+        | ThreadItem::McpToolCall { .. }
+        | ThreadItem::DynamicToolCall { .. }
+        | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::WebSearch { action: None, .. }
+        | ThreadItem::ImageView { .. }
+        | ThreadItem::EnteredReviewMode { .. }
+        | ThreadItem::ExitedReviewMode { .. } => None,
+    }
+}
+
+fn file_changes_to_core(changes: &[FileUpdateChange]) -> HashMap<PathBuf, FileChange> {
+    changes
+        .iter()
+        .map(|change| {
+            let file_change = match &change.kind {
+                codex_app_server_protocol::PatchChangeKind::Add => FileChange::Add {
+                    content: change.diff.clone(),
+                },
+                codex_app_server_protocol::PatchChangeKind::Delete => FileChange::Delete {
+                    content: change.diff.clone(),
+                },
+                codex_app_server_protocol::PatchChangeKind::Update { move_path } => {
+                    FileChange::Update {
+                        unified_diff: change.diff.clone(),
+                        move_path: move_path.clone(),
+                    }
+                }
+            };
+            (PathBuf::from(&change.path), file_change)
+        })
+        .collect()
+}
+
+fn thread_token_usage_to_token_count(
+    notification: ThreadTokenUsageUpdatedNotification,
+) -> TokenCountEvent {
+    TokenCountEvent {
+        info: Some(TokenUsageInfo {
+            total_token_usage: token_usage_to_core(notification.token_usage.total),
+            last_token_usage: token_usage_to_core(notification.token_usage.last),
+            model_context_window: notification.token_usage.model_context_window,
+        }),
+        rate_limits: None,
+    }
+}
+
+fn token_usage_to_core(value: codex_app_server_protocol::TokenUsageBreakdown) -> TokenUsage {
+    TokenUsage {
+        input_tokens: value.input_tokens,
+        cached_input_tokens: value.cached_input_tokens,
+        output_tokens: value.output_tokens,
+        reasoning_output_tokens: value.reasoning_output_tokens,
+        total_tokens: value.total_tokens,
+    }
+}
+
+fn codex_error_info_to_core(
+    value: codex_app_server_protocol::CodexErrorInfo,
+) -> codex_protocol::protocol::CodexErrorInfo {
+    match value {
+        codex_app_server_protocol::CodexErrorInfo::ContextWindowExceeded => {
+            codex_protocol::protocol::CodexErrorInfo::ContextWindowExceeded
+        }
+        codex_app_server_protocol::CodexErrorInfo::UsageLimitExceeded => {
+            codex_protocol::protocol::CodexErrorInfo::UsageLimitExceeded
+        }
+        codex_app_server_protocol::CodexErrorInfo::ServerOverloaded => {
+            codex_protocol::protocol::CodexErrorInfo::ServerOverloaded
+        }
+        codex_app_server_protocol::CodexErrorInfo::HttpConnectionFailed { http_status_code } => {
+            codex_protocol::protocol::CodexErrorInfo::HttpConnectionFailed { http_status_code }
+        }
+        codex_app_server_protocol::CodexErrorInfo::ResponseStreamConnectionFailed {
+            http_status_code,
+        } => codex_protocol::protocol::CodexErrorInfo::ResponseStreamConnectionFailed {
+            http_status_code,
+        },
+        codex_app_server_protocol::CodexErrorInfo::InternalServerError => {
+            codex_protocol::protocol::CodexErrorInfo::InternalServerError
+        }
+        codex_app_server_protocol::CodexErrorInfo::Unauthorized => {
+            codex_protocol::protocol::CodexErrorInfo::Unauthorized
+        }
+        codex_app_server_protocol::CodexErrorInfo::BadRequest => {
+            codex_protocol::protocol::CodexErrorInfo::BadRequest
+        }
+        codex_app_server_protocol::CodexErrorInfo::ThreadRollbackFailed => {
+            codex_protocol::protocol::CodexErrorInfo::ThreadRollbackFailed
+        }
+        codex_app_server_protocol::CodexErrorInfo::SandboxError => {
+            codex_protocol::protocol::CodexErrorInfo::SandboxError
+        }
+        codex_app_server_protocol::CodexErrorInfo::ResponseStreamDisconnected {
+            http_status_code,
+        } => codex_protocol::protocol::CodexErrorInfo::ResponseStreamDisconnected {
+            http_status_code,
+        },
+        codex_app_server_protocol::CodexErrorInfo::ResponseTooManyFailedAttempts {
+            http_status_code,
+        } => codex_protocol::protocol::CodexErrorInfo::ResponseTooManyFailedAttempts {
+            http_status_code,
+        },
+        codex_app_server_protocol::CodexErrorInfo::Other => {
+            codex_protocol::protocol::CodexErrorInfo::Other
+        }
+    }
+}
+
+fn event_messages_with_legacy(message: EventMsg) -> Vec<EventMsg> {
+    let mut messages = vec![message.clone()];
+    messages.extend(message.as_legacy_events(false));
+    messages
 }
 
 async fn handle_server_request(
@@ -2070,6 +2797,495 @@ mod tests {
                 }
             }
             other => panic!("expected session configured event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reader_task_translates_command_stream_server_notifications() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, _outbound_rx) = unbounded_channel();
+
+        let messages = vec![
+            JSONRPCMessage::Notification(JSONRPCNotification {
+                method: "turn/started".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::TurnStartedNotification {
+                        thread_id: "thread-1".to_string(),
+                        turn: Turn {
+                            id: "turn-1".to_string(),
+                            items: Vec::new(),
+                            status: TurnStatus::InProgress,
+                            error: None,
+                        },
+                    })
+                    .expect("serialize turn/started"),
+                ),
+            }),
+            JSONRPCMessage::Notification(JSONRPCNotification {
+                method: "item/started".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::ItemStartedNotification {
+                        thread_id: "thread-1".to_string(),
+                        turn_id: "turn-1".to_string(),
+                        item: ThreadItem::CommandExecution {
+                            id: "cmd-1".to_string(),
+                            command: "echo hello".to_string(),
+                            cwd: PathBuf::from("/repo"),
+                            process_id: Some("proc-1".to_string()),
+                            status: CommandExecutionStatus::InProgress,
+                            command_actions: Vec::new(),
+                            aggregated_output: None,
+                            exit_code: None,
+                            duration_ms: None,
+                        },
+                    })
+                    .expect("serialize item/started"),
+                ),
+            }),
+            JSONRPCMessage::Notification(JSONRPCNotification {
+                method: "item/commandExecution/outputDelta".to_string(),
+                params: Some(
+                    serde_json::to_value(
+                        codex_app_server_protocol::CommandExecutionOutputDeltaNotification {
+                            thread_id: "thread-1".to_string(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "cmd-1".to_string(),
+                            delta: "hello\n".to_string(),
+                        },
+                    )
+                    .expect("serialize command output delta"),
+                ),
+            }),
+            JSONRPCMessage::Notification(JSONRPCNotification {
+                method: "item/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::ItemCompletedNotification {
+                        thread_id: "thread-1".to_string(),
+                        turn_id: "turn-1".to_string(),
+                        item: ThreadItem::CommandExecution {
+                            id: "cmd-1".to_string(),
+                            command: "echo hello".to_string(),
+                            cwd: PathBuf::from("/repo"),
+                            process_id: Some("proc-1".to_string()),
+                            status: CommandExecutionStatus::Completed,
+                            command_actions: Vec::new(),
+                            aggregated_output: Some("hello\n".to_string()),
+                            exit_code: Some(0),
+                            duration_ms: Some(5),
+                        },
+                    })
+                    .expect("serialize item/completed"),
+                ),
+            }),
+            JSONRPCMessage::Notification(JSONRPCNotification {
+                method: "turn/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::TurnCompletedNotification {
+                        thread_id: "thread-1".to_string(),
+                        turn: Turn {
+                            id: "turn-1".to_string(),
+                            items: Vec::new(),
+                            status: TurnStatus::Completed,
+                            error: None,
+                        },
+                    })
+                    .expect("serialize turn/completed"),
+                ),
+            }),
+        ];
+        let frames = futures::stream::iter(messages.into_iter().map(|message| {
+            let payload = serde_json::to_string(&message).expect("serialize jsonrpc");
+            Ok::<_, tokio_tungstenite::tungstenite::Error>(WebSocketMessage::Text(payload.into()))
+        }));
+
+        reader_task(
+            frames,
+            outbound_tx,
+            state.clone(),
+            CancellationToken::new(),
+            app_event_tx,
+        )
+        .await;
+
+        let first = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("turn started event should arrive")
+            .expect("turn started app event should exist");
+        match first {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::TurnStarted(TurnStartedEvent { turn_id, .. }),
+                ..
+            }) => {
+                assert_eq!(turn_id, "turn-1");
+            }
+            other => panic!("expected TurnStarted event, got {other:?}"),
+        }
+
+        let second = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("exec begin event should arrive")
+            .expect("exec begin app event should exist");
+        match second {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ExecCommandBegin(begin),
+                ..
+            }) => {
+                assert_eq!(begin.call_id, "cmd-1");
+                assert_eq!(begin.turn_id, "turn-1");
+                assert_eq!(begin.command, vec!["echo".to_string(), "hello".to_string()]);
+            }
+            other => panic!("expected ExecCommandBegin event, got {other:?}"),
+        }
+
+        let third = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("exec delta event should arrive")
+            .expect("exec delta app event should exist");
+        match third {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ExecCommandOutputDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.call_id, "cmd-1");
+                assert_eq!(delta.chunk, b"hello\n".to_vec());
+            }
+            other => panic!("expected ExecCommandOutputDelta event, got {other:?}"),
+        }
+
+        let fourth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("exec end event should arrive")
+            .expect("exec end app event should exist");
+        match fourth {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ExecCommandEnd(end),
+                ..
+            }) => {
+                assert_eq!(end.call_id, "cmd-1");
+                assert_eq!(end.exit_code, 0);
+                assert_eq!(end.aggregated_output, "hello\n");
+            }
+            other => panic!("expected ExecCommandEnd event, got {other:?}"),
+        }
+
+        let fifth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("turn complete event should arrive")
+            .expect("turn complete app event should exist");
+        match fifth {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::TurnComplete(TurnCompleteEvent { turn_id, .. }),
+                ..
+            }) => {
+                assert_eq!(turn_id, "turn-1");
+            }
+            other => panic!("expected TurnComplete event, got {other:?}"),
+        }
+
+        let guard = state.lock().await;
+        assert_eq!(guard.current_turn_id, None);
+    }
+
+    #[tokio::test]
+    async fn handle_notification_translates_agent_message_stream_notifications() {
+        let thread_id = "00000000-0000-0000-0000-000000000001".to_string();
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            thread_id.clone(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(
+                    serde_json::to_value(
+                        codex_app_server_protocol::AgentMessageDeltaNotification {
+                            thread_id: thread_id.clone(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "agent-1".to_string(),
+                            delta: "hello".to_string(),
+                        },
+                    )
+                    .expect("serialize agent delta notification"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::ItemCompletedNotification {
+                        thread_id: thread_id.clone(),
+                        turn_id: "turn-1".to_string(),
+                        item: ThreadItem::AgentMessage {
+                            id: "agent-1".to_string(),
+                            text: "hello world".to_string(),
+                            phase: None,
+                            memory_citation: None,
+                        },
+                    })
+                    .expect("serialize agent item completion"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        let first = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("agent delta event should arrive")
+            .expect("agent delta app event should exist");
+        match first {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentMessageContentDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.turn_id, "turn-1");
+                assert_eq!(delta.item_id, "agent-1");
+                assert_eq!(delta.delta, "hello");
+            }
+            other => panic!("expected AgentMessageContentDelta, got {other:?}"),
+        }
+
+        let second = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("legacy agent delta event should arrive")
+            .expect("legacy agent delta app event should exist");
+        match second {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentMessageDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.delta, "hello");
+            }
+            other => panic!("expected AgentMessageDelta, got {other:?}"),
+        }
+
+        let third = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("agent item completion should arrive")
+            .expect("agent item completion app event should exist");
+        match third {
+            AppEvent::CodexEvent(Event {
+                msg:
+                    EventMsg::ItemCompleted(ItemCompletedEvent {
+                        turn_id,
+                        item: TurnItem::AgentMessage(item),
+                        ..
+                    }),
+                ..
+            }) => {
+                assert_eq!(turn_id, "turn-1");
+                assert_eq!(item.id, "agent-1");
+                assert_eq!(item.content.len(), 1);
+                match &item.content[0] {
+                    AgentMessageContent::Text { text } => {
+                        assert_eq!(text, "hello world");
+                    }
+                }
+            }
+            other => panic!("expected ItemCompleted(agent message), got {other:?}"),
+        }
+
+        let fourth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("legacy agent message event should arrive")
+            .expect("legacy agent message app event should exist");
+        match fourth {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentMessage(message),
+                ..
+            }) => {
+                assert_eq!(message.message, "hello world");
+            }
+            other => panic!("expected AgentMessage event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_notification_translates_reasoning_stream_notifications() {
+        let thread_id = "00000000-0000-0000-0000-000000000002".to_string();
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            thread_id.clone(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/reasoning/summaryTextDelta".to_string(),
+                params: Some(
+                    serde_json::to_value(
+                        codex_app_server_protocol::ReasoningSummaryTextDeltaNotification {
+                            thread_id: thread_id.clone(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "reason-1".to_string(),
+                            delta: "thinking".to_string(),
+                            summary_index: 0,
+                        },
+                    )
+                    .expect("serialize reasoning summary delta"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/reasoning/textDelta".to_string(),
+                params: Some(
+                    serde_json::to_value(
+                        codex_app_server_protocol::ReasoningTextDeltaNotification {
+                            thread_id: thread_id.clone(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "reason-1".to_string(),
+                            delta: "raw".to_string(),
+                            content_index: 0,
+                        },
+                    )
+                    .expect("serialize reasoning raw delta"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::ItemCompletedNotification {
+                        thread_id: thread_id.clone(),
+                        turn_id: "turn-1".to_string(),
+                        item: ThreadItem::Reasoning {
+                            id: "reason-1".to_string(),
+                            summary: vec!["thinking complete".to_string()],
+                            content: vec!["raw complete".to_string()],
+                        },
+                    })
+                    .expect("serialize reasoning completion"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        let first = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("reasoning content delta should arrive")
+            .expect("reasoning content delta app event should exist");
+        match first {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ReasoningContentDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.turn_id, "turn-1");
+                assert_eq!(delta.item_id, "reason-1");
+                assert_eq!(delta.delta, "thinking");
+                assert_eq!(delta.summary_index, 0);
+            }
+            other => panic!("expected ReasoningContentDelta, got {other:?}"),
+        }
+
+        let second = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("legacy reasoning delta should arrive")
+            .expect("legacy reasoning delta app event should exist");
+        match second {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentReasoningDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.delta, "thinking");
+            }
+            other => panic!("expected AgentReasoningDelta, got {other:?}"),
+        }
+
+        let third = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("reasoning raw delta should arrive")
+            .expect("reasoning raw delta app event should exist");
+        match third {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::ReasoningRawContentDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.turn_id, "turn-1");
+                assert_eq!(delta.item_id, "reason-1");
+                assert_eq!(delta.delta, "raw");
+                assert_eq!(delta.content_index, 0);
+            }
+            other => panic!("expected ReasoningRawContentDelta, got {other:?}"),
+        }
+
+        let fourth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("legacy raw reasoning delta should arrive")
+            .expect("legacy raw reasoning delta app event should exist");
+        match fourth {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentReasoningRawContentDelta(delta),
+                ..
+            }) => {
+                assert_eq!(delta.delta, "raw");
+            }
+            other => panic!("expected AgentReasoningRawContentDelta, got {other:?}"),
+        }
+
+        let fifth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("reasoning item completion should arrive")
+            .expect("reasoning item completion app event should exist");
+        match fifth {
+            AppEvent::CodexEvent(Event {
+                msg:
+                    EventMsg::ItemCompleted(ItemCompletedEvent {
+                        turn_id,
+                        item: TurnItem::Reasoning(item),
+                        ..
+                    }),
+                ..
+            }) => {
+                assert_eq!(turn_id, "turn-1");
+                assert_eq!(item.id, "reason-1");
+                assert_eq!(item.summary_text, vec!["thinking complete".to_string()]);
+                assert_eq!(item.raw_content, vec!["raw complete".to_string()]);
+            }
+            other => panic!("expected ItemCompleted(reasoning), got {other:?}"),
+        }
+
+        let sixth = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("final reasoning summary event should arrive")
+            .expect("final reasoning summary app event should exist");
+        match sixth {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::AgentReasoning(reasoning),
+                ..
+            }) => {
+                assert_eq!(reasoning.text, "thinking complete");
+            }
+            other => panic!("expected AgentReasoning event, got {other:?}"),
         }
     }
 
