@@ -4,6 +4,8 @@ use codex_utils_cli::ApprovalModeCliArg;
 use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
 
+pub const DEFAULT_CONNECT_URL: &str = "ws://127.0.0.1:4222";
+
 #[derive(Parser, Debug)]
 #[command(version)]
 pub struct Cli {
@@ -111,9 +113,35 @@ pub struct Cli {
     pub no_alt_screen: bool,
 
     /// Connect the TUI to an existing `codex app-server` websocket endpoint.
-    #[arg(long = "connect", value_name = "WS_URL")]
+    ///
+    /// If `WS_URL` is omitted, defaults to `ws://127.0.0.1:4222`.
+    #[arg(
+        long = "connect",
+        value_name = "WS_URL",
+        num_args = 0..=1,
+        default_missing_value = DEFAULT_CONNECT_URL
+    )]
     pub connect: Option<String>,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn connect_flag_without_url_uses_default_local_websocket_url() {
+        let cli = Cli::try_parse_from(["codex", "--connect"]).expect("parse");
+        assert_eq!(cli.connect.as_deref(), Some(DEFAULT_CONNECT_URL));
+    }
+
+    #[test]
+    fn connect_flag_with_explicit_url_preserves_url() {
+        let cli =
+            Cli::try_parse_from(["codex", "--connect", "ws://127.0.0.1:4555"]).expect("parse");
+        assert_eq!(cli.connect.as_deref(), Some("ws://127.0.0.1:4555"));
+    }
 }

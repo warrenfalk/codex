@@ -1405,6 +1405,11 @@ mod tests {
         app_server
     }
 
+    fn interactive_from_args(args: &[&str]) -> TuiCli {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        cli.interactive
+    }
+
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
         let token_usage = TokenUsage {
             output_tokens: 2,
@@ -1589,6 +1594,22 @@ mod tests {
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
+    }
+
+    #[test]
+    fn connect_flag_without_url_uses_default_local_websocket_url() {
+        let interactive = interactive_from_args(["codex", "--connect"].as_ref());
+        assert_eq!(
+            interactive.connect.as_deref(),
+            Some(codex_tui::DEFAULT_CONNECT_URL)
+        );
+    }
+
+    #[test]
+    fn connect_flag_with_explicit_url_preserves_url() {
+        let interactive =
+            interactive_from_args(["codex", "--connect", "ws://127.0.0.1:4555"].as_ref());
+        assert_eq!(interactive.connect.as_deref(), Some("ws://127.0.0.1:4555"));
     }
 
     #[test]
