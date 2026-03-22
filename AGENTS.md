@@ -41,6 +41,81 @@ In the codex-rs folder where the rust code lives:
   - When extracting code from a large module, move the related tests and module/type docs toward
     the new implementation so the invariants stay close to the code that owns them.
 
+## Repository overview
+
+This repository is a monorepo with:
+
+- `codex-rs`: primary Rust workspace for the CLI, TUI, and core libraries.
+- `codex-cli`: TypeScript npm wrapper.
+- `sdk`: TypeScript SDK for building agents.
+- `shell-tool-mcp`: MCP server for shell tool integration.
+
+The root `justfile` targets `codex-rs` via `working-directory := "codex-rs"` for Rust-focused recipes.
+
+## Additional useful commands
+
+Beyond crate-specific `cargo` commands, these are commonly useful:
+
+- Run interactive Codex: `just codex "your prompt"`
+- Run non-interactive mode: `just exec "your prompt"`
+- Faster test runner wrapper: `just test`
+- Workspace lint pass: `just clippy`
+- Run MCP server locally: `just mcp-server-run`
+- Tail Codex logs: `just log`
+- Bazel workflows: `just bazel-codex`, `just bazel-test`, `just bazel-remote-test`
+- Nix workflows: `nix build`, `nix develop`
+- Root formatting for non-Rust files: `npm run format`, `npm run format:fix`
+
+## Runtime paths and tooling
+
+- User config: `~/.codex/config.toml`
+- TUI log file: `~/.codex/log/codex-tui.log` (controlled by `RUST_LOG`)
+- Local state and SQLite data: `~/.codex/`
+- TypeScript workspace toolchain: `pnpm@10.28.2` minimum and Node.js 22+
+
+## Rebases
+
+Rebasing our in-flight changes onto the latest upstream is frequent in this repo. Treat rebase
+conflict resolution as a first-class task, not a mechanical cleanup step.
+
+- Preserve the intent of both sides: our commit and the incoming upstream change.
+- Before resolving a conflict, read the surrounding code and inspect both stage variants (`:2`/`:3`)
+  so the merge decision is based on behavior, not just marker placement.
+- Prefer merges that minimize future conflicts:
+  - preserve newer shared abstractions and call patterns from upstream when they subsume our older
+    local code,
+  - avoid unnecessary churn in high-conflict files,
+  - keep file-local conventions aligned with the latest upstream style when behavior is equivalent.
+- If a conflict spans source files plus generated artifacts, resolve the source intent first, then
+  regenerate or reconcile generated files from that resolved source.
+- When a conflict reveals that a fix really belongs to multiple historical commits, split the
+  follow-up cleanly instead of forcing an inaccurate single fixup target.
+- After finishing a rebase and before declaring it done, verify builds in this order:
+  1. `cargo build` for the Rust workspace (use `nix develop -c cargo build` if `cargo` is not on `PATH`).
+  2. If that succeeds, run `nix build` from the repo root.
+- If `nix build` fails, capture the exact failure and treat it as part of the rebase follow-up; do
+  not assume a successful Cargo build is sufficient.
+- Any fixes required to make `cargo build` or `nix build` pass after a rebase should be committed
+  as separate `fixup!` commits against the appropriate commits from our rebased work, not folded
+  into an arbitrary final conflict-resolution commit.
+- After creating those `fixup!` commits, do not run another rebase/autosquash locally just to apply
+  them. Leave the fixup commits in history and report them clearly; the user will decide when to
+  autosquash them later.
+- Only fix up our own commits:
+  - define "our commits" as commits in the range `<rebased-onto-commit>..HEAD`,
+  - identify the rebased-onto commit from the current rebase state (`git status`, `.git/rebase-merge/onto`,
+    or the explicitly provided base such as `rust-v0.114.0`),
+  - inspect candidate targets with `git log --oneline <base>..HEAD`.
+- Choose the appropriate fixup target by asking which commit introduced the behavior, API usage, or
+  test expectation that now needs correction:
+  - use `git blame` on the affected lines,
+  - use `git log -S <symbol-or-field>` or `git log -- <path>` to find the introducing commit,
+  - prefer the most specific commit in our rebased range that introduced the broken behavior,
+  - if runtime code and tests were introduced by different commits, split follow-up fixups so each
+    targets the commit that actually introduced that part,
+  - do not target upstream commits that are outside `<base>..HEAD`, even if they originally
+    introduced the concept before our branch rebased onto them.
+
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
 1. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui`.
