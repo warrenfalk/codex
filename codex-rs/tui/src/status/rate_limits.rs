@@ -37,6 +37,8 @@ pub(crate) enum StatusRateLimitValue {
     Window {
         /// Percent of the window that has been consumed.
         percent_used: f64,
+        /// Human-readable remaining time until reset.
+        time_remaining: Option<String>,
         /// Percent of the window duration that remains until reset.
         time_remaining_percent: Option<f64>,
         /// Localized reset string, or `None` when unknown.
@@ -65,6 +67,8 @@ pub(crate) const RATE_LIMIT_STALE_THRESHOLD_MINUTES: i64 = 15;
 pub(crate) struct RateLimitWindowDisplay {
     /// Percent used for the window.
     pub used_percent: f64,
+    /// Human-readable remaining time until reset.
+    pub time_remaining: Option<String>,
     /// Percent of the window duration remaining until reset.
     pub time_remaining_percent: Option<f64>,
     /// Human-readable local reset time.
@@ -82,6 +86,14 @@ impl RateLimitWindowDisplay {
         let resets_at = resets_at_local
             .as_ref()
             .map(|dt| format_reset_timestamp(dt.clone(), captured_at));
+        let time_remaining = resets_at_local.as_ref().map(|resets_at_local| {
+            format_remaining_duration(
+                resets_at_local
+                    .signed_duration_since(captured_at)
+                    .num_seconds()
+                    .max(0),
+            )
+        });
         let time_remaining_percent = resets_at_local.as_ref().and_then(|resets_at_local| {
             let window_minutes = window.window_minutes?;
             if window_minutes <= 0 {
@@ -97,6 +109,7 @@ impl RateLimitWindowDisplay {
 
         Self {
             used_percent: window.used_percent,
+            time_remaining,
             time_remaining_percent,
             resets_at,
             window_minutes: window.window_minutes,
@@ -250,6 +263,7 @@ pub(crate) fn compose_rate_limit_data_many(
                 label,
                 value: StatusRateLimitValue::Window {
                     percent_used: primary.used_percent,
+                    time_remaining: primary.time_remaining.clone(),
                     time_remaining_percent: primary.time_remaining_percent,
                     resets_at: primary.resets_at.clone(),
                 },
@@ -277,6 +291,7 @@ pub(crate) fn compose_rate_limit_data_many(
                 label,
                 value: StatusRateLimitValue::Window {
                     percent_used: secondary.used_percent,
+                    time_remaining: secondary.time_remaining.clone(),
                     time_remaining_percent: secondary.time_remaining_percent,
                     resets_at: secondary.resets_at.clone(),
                 },
@@ -329,6 +344,36 @@ pub(crate) fn render_status_limit_progress_bar(
 /// Formats a compact textual summary from remaining percentage.
 pub(crate) fn format_status_limit_summary(percent_remaining: f64) -> String {
     format!("{percent_remaining:.0}% left")
+}
+
+fn format_remaining_duration(remaining_seconds: i64) -> String {
+    const SECONDS_PER_MINUTE: i64 = 60;
+    const SECONDS_PER_HOUR: i64 = 60 * SECONDS_PER_MINUTE;
+    const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
+
+    if remaining_seconds < SECONDS_PER_MINUTE {
+        return "<1m".to_string();
+    }
+
+    let days = remaining_seconds / SECONDS_PER_DAY;
+    let hours = (remaining_seconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR;
+    let minutes = (remaining_seconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
+
+    if days > 0 {
+        if hours > 0 {
+            return format!("{days}d {hours}h");
+        }
+        return format!("{days}d");
+    }
+
+    if hours > 0 {
+        if minutes > 0 {
+            return format!("{hours}h {minutes}m");
+        }
+        return format!("{hours}h");
+    }
+
+    format!("{minutes}m")
 }
 
 /// Builds a single `StatusRateLimitRow` for credits when the snapshot indicates
@@ -389,6 +434,7 @@ mod tests {
     fn window(used_percent: f64) -> RateLimitWindowDisplay {
         RateLimitWindowDisplay {
             used_percent,
+            time_remaining: Some("3h 45m".to_string()),
             time_remaining_percent: Some(75.0),
             resets_at: Some("soon".to_string()),
             window_minutes: Some(300),
@@ -447,12 +493,14 @@ mod tests {
             captured_at: now,
             primary: Some(RateLimitWindowDisplay {
                 used_percent: 20.0,
+                time_remaining: Some("24m".to_string()),
                 time_remaining_percent: Some(40.0),
                 resets_at: Some("soon".to_string()),
                 window_minutes: Some(60),
             }),
             secondary: Some(RateLimitWindowDisplay {
                 used_percent: 40.0,
+                time_remaining: Some("2d 4h".to_string()),
                 time_remaining_percent: None,
                 resets_at: Some("later".to_string()),
                 window_minutes: None,
@@ -486,5 +534,13 @@ mod tests {
     #[test]
     fn summary_reports_percent_remaining() {
         assert_eq!(super::format_status_limit_summary(55.0), "55% left");
+    }
+
+    #[test]
+    fn remaining_duration_formats_compact_text() {
+        assert_eq!(super::format_remaining_duration(30), "<1m");
+        assert_eq!(super::format_remaining_duration(15 * 60), "15m");
+        assert_eq!(super::format_remaining_duration(90 * 60), "1h 30m");
+        assert_eq!(super::format_remaining_duration(27 * 60 * 60), "1d 3h");
     }
 }

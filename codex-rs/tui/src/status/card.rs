@@ -346,6 +346,7 @@ impl StatusHistoryCell {
             match &row.value {
                 StatusRateLimitValue::Window {
                     percent_used,
+                    time_remaining,
                     time_remaining_percent,
                     resets_at,
                 } => {
@@ -361,7 +362,13 @@ impl StatusHistoryCell {
                     let base_spans = formatter.full_spans(row.label.as_str(), value_spans);
                     let base_line = Line::from(base_spans.clone());
                     let trailing_span = time_remaining_percent
-                        .map(|percent| Span::from(format!("({percent:.0}% time left)")).dim())
+                        .map(|percent| {
+                            let concrete_time = time_remaining
+                                .as_deref()
+                                .map(|remaining| format!(", {remaining} left"))
+                                .unwrap_or_default();
+                            Span::from(format!("({percent:.0}% time left{concrete_time})")).dim()
+                        })
                         .or_else(|| {
                             resets_at
                                 .as_ref()

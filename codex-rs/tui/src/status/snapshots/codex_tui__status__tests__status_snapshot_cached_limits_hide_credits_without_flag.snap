@@ -1,23 +1,24 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 983
 expression: sanitized
 ---
 /status
 
-╭─────────────────────────────────────────────────────────────────────╮
-│  >_ OpenAI Codex (v0.0.0)                                           │
-│                                                                     │
-│ Visit https://chatgpt.com/codex/settings/usage for up-to-date       │
-│ information on rate limits and credits                              │
-│                                                                     │
-│  Model:            gpt-5.1-codex (reasoning none, summaries auto)   │
-│  Directory: [[workspace]]                                           │
-│  Permissions:      Custom (read-only, on-request)                   │
-│  Agents.md:        <none>                                           │
-│                                                                     │
-│  Token usage:      1.05K total  (700 input + 350 output)            │
-│  Context window:   100% left (1.45K used / 272K)                    │
-│  5h limit:         [█│██████░░░░░░░░░░░░] 40% left (7% time left)   │
-│  Weekly limit:     [│████████████░░░░░░░] 65% left (0% time left)   │
-│  Warning:          limits may be stale - start new turn to refresh. │
-╰─────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────────────────────╮
+│  >_ OpenAI Codex (v0.0.0)                                                   │
+│                                                                             │
+│ Visit https://chatgpt.com/codex/settings/usage for up-to-date               │
+│ information on rate limits and credits                                      │
+│                                                                             │
+│  Model:            gpt-5.1-codex (reasoning none, summaries auto)           │
+│  Directory: [[workspace]]                                                   │
+│  Permissions:      Custom (read-only, on-request)                           │
+│  Agents.md:        <none>                                                   │
+│                                                                             │
+│  Token usage:      1.05K total  (700 input + 350 output)                    │
+│  Context window:   100% left (1.45K used / 272K)                            │
+│  5h limit:         [█│██████░░░░░░░░░░░░] 40% left (7% time left, 20m left) │
+│  Weekly limit:     [│████████████░░░░░░░] 65% left (0% time left, 40m left) │
+│  Warning:          limits may be stale - start new turn to refresh.         │
+╰─────────────────────────────────────────────────────────────────────────────╯
