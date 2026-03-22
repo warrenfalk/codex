@@ -87,6 +87,7 @@ mod clipboard_paste;
 mod clipboard_text;
 mod collaboration_modes;
 mod color;
+mod connected_app_server;
 pub mod custom_terminal;
 mod cwd_prompt;
 mod debug_config;
@@ -966,6 +967,7 @@ async fn run_ratatui_app(
         prompt,
         images,
         no_alt_screen,
+        connect,
         ..
     } = cli;
 
@@ -981,6 +983,7 @@ async fn run_ratatui_app(
         active_profile,
         prompt,
         images,
+        connect,
         session_selection,
         feedback,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
