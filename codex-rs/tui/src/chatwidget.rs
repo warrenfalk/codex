@@ -1245,23 +1245,19 @@ impl ChatWidget {
             );
             self.on_warning(message);
         }
-        if !items.contains(&StatusLineItem::GitBranch) {
-            self.status_line_branch = None;
-            self.status_line_branch_pending = false;
-            self.status_line_branch_lookup_complete = false;
-        }
         let enabled = !items.is_empty();
         self.bottom_pane.set_status_line_enabled(enabled);
         if !enabled {
-            self.set_status_line(/*status_line*/ None);
-            return;
-        }
+            self.set_status_line(None);
+        } else {
+            let cwd = self.status_line_cwd().to_path_buf();
+            self.sync_status_line_branch_state(&cwd);
 
-        let cwd = self.status_line_cwd().to_path_buf();
-        self.sync_status_line_branch_state(&cwd);
-
-        if items.contains(&StatusLineItem::GitBranch) && !self.status_line_branch_lookup_complete {
-            self.request_status_line_branch(cwd);
+            if items.contains(&StatusLineItem::GitBranch)
+                && !self.status_line_branch_lookup_complete
+            {
+                self.request_status_line_branch(cwd);
+            }
         }
 
         let mut parts = Vec::new();
@@ -3014,6 +3010,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn pre_draw_tick(&mut self) {
+        self.ensure_window_title_branch();
         self.bottom_pane.pre_draw_tick();
     }
 
@@ -5847,6 +5844,39 @@ impl ChatWidget {
                 .map(|name| name.to_string_lossy().to_string())
                 .unwrap_or_else(|| format_directory_display(&root, /*max_width*/ None))
         })
+    }
+
+    fn ensure_window_title_branch(&mut self) {
+        let cwd = self.status_line_cwd().to_path_buf();
+        self.sync_status_line_branch_state(&cwd);
+        if !self.status_line_branch_lookup_complete {
+            self.request_status_line_branch(cwd);
+        }
+    }
+
+    fn window_title_directory_name(&self) -> String {
+        let cwd = self.status_line_cwd();
+        let directory = get_git_repo_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+        directory
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| format_directory_display(&directory, None))
+    }
+
+    pub(crate) fn window_title(&self) -> String {
+        let mut parts = vec!["Codex".to_string(), self.window_title_directory_name()];
+        if let Some(branch) = self
+            .status_line_branch
+            .as_deref()
+            .filter(|branch| !branch.is_empty())
+        {
+            parts.push(branch.to_string());
+        }
+        if let Some(thread_name) = self.thread_name.as_deref().filter(|name| !name.is_empty()) {
+            parts.push(thread_name.to_string());
+        }
+        parts.join(" ")
     }
 
     /// Resets git-branch cache state when the status-line cwd changes.

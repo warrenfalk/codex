@@ -33,6 +33,7 @@ pub(crate) async fn run_sessions_picker(
     tui: &mut Tui,
     sessions: &mut RemoteSessionsClient,
 ) -> Result<()> {
+    tui.set_window_title("Codex Active Sessions");
     let mut screen = SessionsPickerScreen::new(tui.frame_requester());
     screen.reload_all(sessions).await?;
 

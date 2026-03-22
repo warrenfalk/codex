@@ -24,6 +24,7 @@ use crossterm::event::PopKeyboardEnhancementFlags;
 use crossterm::event::PushKeyboardEnhancementFlags;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
+use crossterm::terminal::SetTitle;
 use crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::backend::Backend;
 use ratatui::backend::CrosstermBackend;
@@ -255,6 +256,7 @@ pub struct Tui {
     notification_backend: Option<DesktopNotificationBackend>,
     // When false, enter_alt_screen() becomes a no-op (for Zellij scrollback support)
     alt_screen_enabled: bool,
+    current_window_title: Option<String>,
 }
 
 impl Tui {
@@ -283,6 +285,7 @@ impl Tui {
             enhanced_keys_supported,
             notification_backend: Some(detect_backend(NotificationMethod::default())),
             alt_screen_enabled: true,
+            current_window_title: None,
         }
     }
 
@@ -352,9 +355,26 @@ impl Tui {
         if was_alt_screen {
             let _ = self.enter_alt_screen();
         }
+        if let Some(title) = self.current_window_title.clone() {
+            self.apply_window_title(title);
+        }
 
         self.resume_events();
         output
+    }
+
+    pub fn set_window_title(&mut self, title: impl Into<String>) {
+        let title = sanitize_window_title(title.into());
+        if self.current_window_title.as_ref() == Some(&title) {
+            return;
+        }
+
+        self.apply_window_title(title.clone());
+        self.current_window_title = Some(title);
+    }
+
+    fn apply_window_title(&mut self, title: String) {
+        let _ = execute!(self.terminal.backend_mut(), SetTitle(title));
     }
 
     /// Emit a desktop notification now if the terminal is unfocused.
@@ -542,5 +562,38 @@ impl Tui {
             }
         }
         Ok(None)
+    }
+}
+
+fn sanitize_window_title(title: String) -> String {
+    let mut sanitized = String::with_capacity(title.len());
+    let mut last_was_space = false;
+
+    for ch in title.chars() {
+        let normalized = if ch.is_control() { ' ' } else { ch };
+        if normalized.is_whitespace() {
+            if !last_was_space {
+                sanitized.push(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+
+        sanitized.push(normalized);
+        last_was_space = false;
+    }
+
+    sanitized.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_window_title;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn sanitize_window_title_collapses_control_characters_and_whitespace() {
+        let title = sanitize_window_title("Codex\tfoo\nbar\x1b]0;evil\x07".to_string());
+        assert_eq!(title, "Codex foo bar ]0;evil");
     }
 }

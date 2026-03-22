@@ -457,6 +457,37 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
 }
 
 #[tokio::test]
+async fn window_title_uses_repo_root_branch_and_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    let repo = tempdir().expect("tempdir");
+    std::fs::create_dir(repo.path().join(".git")).expect("git dir");
+    let nested = repo.path().join("src");
+    std::fs::create_dir(&nested).expect("nested dir");
+    let repo_name = repo
+        .path()
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .expect("repo dir name");
+
+    chat.current_cwd = Some(nested);
+    chat.status_line_branch = Some("feature/title".to_string());
+    chat.thread_name = Some("Window Title".to_string());
+
+    assert_eq!(
+        chat.window_title(),
+        format!("Codex {repo_name} feature/title Window Title"),
+    );
+}
+
+#[tokio::test]
+async fn window_title_omits_missing_branch_and_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.current_cwd = Some(PathBuf::from("/tmp/project"));
+
+    assert_eq!(chat.window_title(), "Codex project");
+}
+
+#[tokio::test]
 async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
@@ -10523,7 +10554,7 @@ async fn status_line_invalid_items_warn_once() {
 }
 
 #[tokio::test]
-async fn status_line_branch_state_resets_when_git_branch_disabled() {
+async fn status_line_branch_state_is_preserved_when_git_branch_disabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.status_line_branch = Some("main".to_string());
     chat.status_line_branch_pending = true;
@@ -10532,9 +10563,9 @@ async fn status_line_branch_state_resets_when_git_branch_disabled() {
 
     chat.refresh_status_line();
 
-    assert_eq!(chat.status_line_branch, None);
-    assert!(!chat.status_line_branch_pending);
-    assert!(!chat.status_line_branch_lookup_complete);
+    assert_eq!(chat.status_line_branch, Some("main".to_string()));
+    assert!(chat.status_line_branch_pending);
+    assert!(chat.status_line_branch_lookup_complete);
 }
 
 #[tokio::test]
