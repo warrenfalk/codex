@@ -222,7 +222,7 @@ pub(crate) async fn connect(
 
 pub(crate) async fn find_latest_thread_id(url: &str, cwd: Option<&Path>) -> Result<Option<String>> {
     Ok(
-        list_threads_page(url, None, 1, ThreadSortKey::UpdatedAt, None, cwd)
+        list_threads_page(url, None, 1, ThreadSortKey::UpdatedAt, None, cwd, None)
             .await?
             .threads
             .into_iter()
@@ -238,6 +238,7 @@ pub(crate) async fn list_threads_page(
     sort_key: ThreadSortKey,
     model_provider: Option<&str>,
     cwd: Option<&Path>,
+    search_term: Option<&str>,
 ) -> Result<RemoteThreadListPage> {
     let (mut ws, _) = connect_async(url)
         .await
@@ -257,7 +258,7 @@ pub(crate) async fn list_threads_page(
             source_kinds: None,
             archived: None,
             cwd: cwd.map(|path| path.display().to_string()),
-            search_term: None,
+            search_term: search_term.map(ToOwned::to_owned),
         })?),
     )
     .await?;

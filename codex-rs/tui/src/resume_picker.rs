@@ -100,7 +100,7 @@ impl SessionPickerAction {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum PageCursor {
     Local(Cursor),
     Remote(String),
@@ -111,6 +111,7 @@ struct PageLoadRequest {
     cursor: Option<PageCursor>,
     request_token: usize,
     search_token: Option<usize>,
+    query: Option<String>,
     default_provider: String,
     sort_key: ThreadSortKey,
 }
@@ -236,6 +237,7 @@ async fn run_session_picker(
     } else {
         std::env::current_dir().ok()
     };
+    let use_remote_search = matches!(backend, SessionPickerBackend::Remote { .. });
 
     let page_loader: PageLoader = match backend {
         SessionPickerBackend::Local => {
@@ -309,6 +311,7 @@ async fn run_session_picker(
                         request.sort_key,
                         Some(request.default_provider.as_str()),
                         remote_filter_cwd.as_deref(),
+                        request.query.as_deref(),
                     )
                     .await
                     .map(remote_threads_page_to_picker_page)
@@ -332,6 +335,7 @@ async fn run_session_picker(
         filter_cwd,
         action,
     );
+    state.use_remote_search = use_remote_search;
     state.start_initial_load();
     state.request_frame();
 
@@ -416,6 +420,7 @@ struct PickerState {
     default_provider: String,
     show_all: bool,
     filter_cwd: Option<PathBuf>,
+    use_remote_search: bool,
     action: SessionPickerAction,
     sort_key: ThreadSortKey,
     thread_name_cache: HashMap<ThreadId, Option<String>>,
@@ -535,6 +540,7 @@ impl PickerState {
             default_provider,
             show_all,
             filter_cwd,
+            use_remote_search: false,
             action,
             sort_key: ThreadSortKey::UpdatedAt,
             thread_name_cache: HashMap::new(),
@@ -661,6 +667,7 @@ impl PickerState {
             cursor: None,
             request_token,
             search_token,
+            query: (!self.query.is_empty()).then(|| self.query.clone()),
             default_provider: self.default_provider.clone(),
             sort_key: self.sort_key,
         });
@@ -803,6 +810,10 @@ impl PickerState {
         }
         self.query = new_query;
         self.selected = 0;
+        if self.use_remote_search {
+            self.start_initial_load();
+            return;
+        }
         self.apply_filter();
         if self.query.is_empty() {
             self.search_state = SearchState::Idle;
@@ -930,6 +941,7 @@ impl PickerState {
             cursor: Some(cursor),
             request_token,
             search_token,
+            query: (!self.query.is_empty()).then(|| self.query.clone()),
             default_provider: self.default_provider.clone(),
             sort_key: self.sort_key,
         });
@@ -2607,5 +2619,48 @@ mod tests {
         assert!(state.filtered_rows.is_empty());
         assert!(!state.search_state.is_active());
         assert!(state.pagination.reached_scan_cap);
+    }
+
+    #[test]
+    fn remote_query_restarts_pagination_and_sends_search_term() {
+        let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
+        let request_sink = recorded_requests.clone();
+        let loader: PageLoader = Arc::new(move |req: PageLoadRequest| {
+            request_sink.lock().unwrap().push(req);
+        });
+
+        let mut state = PickerState::new(
+            PathBuf::from("/tmp"),
+            FrameRequester::test_dummy(),
+            loader,
+            String::from("openai"),
+            true,
+            None,
+            SessionPickerAction::Resume,
+        );
+        state.use_remote_search = true;
+        state.ingest_page(page(
+            vec![make_item(
+                "/tmp/start.jsonl",
+                "2025-01-01T00:00:00Z",
+                "alpha",
+            )],
+            Some(cursor_from_str(
+                "2025-01-02T00-00-00|00000000-0000-0000-0000-000000000000",
+            )),
+            1,
+            false,
+        ));
+
+        state.set_query("target".to_string());
+
+        let guard = recorded_requests.lock().unwrap();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0].cursor, None);
+        assert_eq!(guard[0].query, Some("target".to_string()));
+        assert!(guard[0].search_token.is_some());
+        assert!(state.all_rows.is_empty());
+        assert!(state.filtered_rows.is_empty());
+        assert!(state.search_state.is_active());
     }
 }
