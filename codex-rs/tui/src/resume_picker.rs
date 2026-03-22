@@ -39,14 +39,13 @@ use unicode_width::UnicodeWidthStr;
 
 const PAGE_SIZE: usize = 25;
 const LOAD_NEAR_THRESHOLD: usize = 5;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionTarget {
     pub path: PathBuf,
     pub thread_id: ThreadId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionSelection {
     StartFresh,
     Resume(SessionTarget),
@@ -76,18 +75,36 @@ impl SessionPickerAction {
         }
     }
 
-    fn selection(self, path: PathBuf, thread_id: ThreadId) -> SessionSelection {
-        let target_session = SessionTarget { path, thread_id };
+    fn selection(self, row: &Row) -> Option<SessionSelection> {
         match self {
-            SessionPickerAction::Resume => SessionSelection::Resume(target_session),
-            SessionPickerAction::Fork => SessionSelection::Fork(target_session),
+            SessionPickerAction::Resume => match row.remote_thread_id.as_ref() {
+                Some(thread_id) => Some(SessionSelection::ResumeRemote(thread_id.clone())),
+                None => row.thread_id.map(|thread_id| {
+                    SessionSelection::Resume(SessionTarget {
+                        path: row.path.clone(),
+                        thread_id,
+                    })
+                }),
+            },
+            SessionPickerAction::Fork => row.thread_id.map(|thread_id| {
+                SessionSelection::Fork(SessionTarget {
+                    path: row.path.clone(),
+                    thread_id,
+                })
+            }),
         }
     }
 }
 
 #[derive(Clone)]
+enum PageCursor {
+    Local(Cursor),
+    Remote(String),
+}
+
+#[derive(Clone)]
 struct PageLoadRequest {
-    cursor: Option<Cursor>,
+    cursor: Option<PageCursor>,
     request_token: usize,
     search_token: Option<usize>,
     default_provider: String,
@@ -96,11 +113,18 @@ struct PageLoadRequest {
 
 type PageLoader = Arc<dyn Fn(PageLoadRequest) + Send + Sync>;
 
+struct PickerPage {
+    rows: Vec<Row>,
+    next_cursor: Option<PageCursor>,
+    num_scanned_rows: usize,
+    reached_scan_cap: bool,
+}
+
 enum BackgroundEvent {
     PageLoaded {
         request_token: usize,
         search_token: Option<usize>,
-        page: std::io::Result<ThreadsPage>,
+        page: std::io::Result<PickerPage>,
     },
 }
 
@@ -125,7 +149,32 @@ pub async fn run_resume_picker(
     config: &Config,
     show_all: bool,
 ) -> Result<SessionSelection> {
-    run_session_picker(tui, config, show_all, SessionPickerAction::Resume).await
+    run_session_picker(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Resume,
+        SessionPickerBackend::Local,
+    )
+    .await
+}
+
+pub async fn run_remote_resume_picker(
+    tui: &mut Tui,
+    config: &Config,
+    url: &str,
+    show_all: bool,
+) -> Result<SessionSelection> {
+    run_session_picker(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Resume,
+        SessionPickerBackend::Remote {
+            url: url.to_string(),
+        },
+    )
+    .await
 }
 
 pub async fn run_fork_picker(
@@ -133,7 +182,19 @@ pub async fn run_fork_picker(
     config: &Config,
     show_all: bool,
 ) -> Result<SessionSelection> {
-    run_session_picker(tui, config, show_all, SessionPickerAction::Fork).await
+    run_session_picker(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Fork,
+        SessionPickerBackend::Local,
+    )
+    .await
+}
+
+enum SessionPickerBackend {
+    Local,
+    Remote { url: String },
 }
 
 async fn run_session_picker(
@@ -141,6 +202,7 @@ async fn run_session_picker(
     config: &Config,
     show_all: bool,
     action: SessionPickerAction,
+    backend: SessionPickerBackend,
 ) -> Result<SessionSelection> {
     let alt = AltScreenGuard::enter(tui);
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
@@ -153,31 +215,91 @@ async fn run_session_picker(
         std::env::current_dir().ok()
     };
 
-    let config = config.clone();
-    let loader_tx = bg_tx.clone();
-    let page_loader: PageLoader = Arc::new(move |request: PageLoadRequest| {
-        let tx = loader_tx.clone();
-        let config = config.clone();
-        tokio::spawn(async move {
-            let provider_filter = vec![request.default_provider.clone()];
-            let page = RolloutRecorder::list_threads(
-                &config,
-                PAGE_SIZE,
-                request.cursor.as_ref(),
-                request.sort_key,
-                INTERACTIVE_SESSION_SOURCES,
-                Some(provider_filter.as_slice()),
-                request.default_provider.as_str(),
-                /*search_term*/ None,
-            )
-            .await;
-            let _ = tx.send(BackgroundEvent::PageLoaded {
-                request_token: request.request_token,
-                search_token: request.search_token,
-                page,
-            });
-        });
-    });
+    let page_loader: PageLoader = match backend {
+        SessionPickerBackend::Local => {
+            let config = config.clone();
+            let loader_tx = bg_tx.clone();
+            Arc::new(move |request: PageLoadRequest| {
+                let tx = loader_tx.clone();
+                let config = config.clone();
+                tokio::spawn(async move {
+                    let provider_filter = vec![request.default_provider.clone()];
+                    let cursor = match request.cursor {
+                        Some(PageCursor::Local(cursor)) => Some(cursor),
+                        Some(PageCursor::Remote(_)) => {
+                            let _ = tx.send(BackgroundEvent::PageLoaded {
+                                request_token: request.request_token,
+                                search_token: request.search_token,
+                                page: Err(std::io::Error::other(
+                                    "remote cursor used with local resume picker",
+                                )),
+                            });
+                            return;
+                        }
+                        None => None,
+                    };
+                    let page = RolloutRecorder::list_threads(
+                        &config,
+                        PAGE_SIZE,
+                        cursor.as_ref(),
+                        request.sort_key,
+                        INTERACTIVE_SESSION_SOURCES,
+                        Some(provider_filter.as_slice()),
+                        request.default_provider.as_str(),
+                        None,
+                    )
+                    .await
+                    .map(local_threads_page_to_picker_page);
+                    let _ = tx.send(BackgroundEvent::PageLoaded {
+                        request_token: request.request_token,
+                        search_token: request.search_token,
+                        page,
+                    });
+                });
+            }) as PageLoader
+        }
+        SessionPickerBackend::Remote { url } => {
+            let loader_tx = bg_tx.clone();
+            let remote_filter_cwd = if show_all { None } else { filter_cwd.clone() };
+            Arc::new(move |request: PageLoadRequest| {
+                let tx = loader_tx.clone();
+                let url = url.clone();
+                let remote_filter_cwd = remote_filter_cwd.clone();
+                tokio::spawn(async move {
+                    let cursor = match request.cursor {
+                        Some(PageCursor::Remote(cursor)) => Some(cursor),
+                        Some(PageCursor::Local(_)) => {
+                            let _ = tx.send(BackgroundEvent::PageLoaded {
+                                request_token: request.request_token,
+                                search_token: request.search_token,
+                                page: Err(std::io::Error::other(
+                                    "local cursor used with remote resume picker",
+                                )),
+                            });
+                            return;
+                        }
+                        None => None,
+                    };
+                    let page = crate::connected_app_server::list_threads_page(
+                        &url,
+                        cursor,
+                        PAGE_SIZE as u32,
+                        request.sort_key,
+                        Some(request.default_provider.as_str()),
+                        remote_filter_cwd.as_deref(),
+                    )
+                    .await
+                    .map(remote_threads_page_to_picker_page)
+                    .map_err(|err| std::io::Error::other(err.to_string()));
+                    let _ = tx.send(BackgroundEvent::PageLoaded {
+                        request_token: request.request_token,
+                        search_token: request.search_token,
+                        page,
+                    });
+                });
+            }) as PageLoader
+        }
+    };
 
     let mut state = PickerState::new(
         codex_home.to_path_buf(),
@@ -279,7 +401,7 @@ struct PickerState {
 }
 
 struct PaginationState {
-    next_cursor: Option<Cursor>,
+    next_cursor: Option<PageCursor>,
     num_scanned_files: usize,
     reached_scan_cap: bool,
     loading: LoadingState,
@@ -332,6 +454,7 @@ struct Row {
     path: PathBuf,
     preview: String,
     thread_id: Option<ThreadId>,
+    remote_thread_id: Option<String>,
     thread_name: Option<String>,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
@@ -414,23 +537,18 @@ impl PickerState {
             }
             KeyCode::Enter => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
-                    let path = row.path.clone();
-                    let thread_id = match row.thread_id {
-                        Some(thread_id) => Some(thread_id),
-                        None => {
-                            crate::resolve_session_thread_id(
-                                path.as_path(),
-                                /*id_str_if_uuid*/ None,
-                            )
-                            .await
-                        }
-                    };
-                    if let Some(thread_id) = thread_id {
-                        return Ok(Some(self.action.selection(path, thread_id)));
+                    let mut resolved_row = row.clone();
+                    if resolved_row.remote_thread_id.is_none() && resolved_row.thread_id.is_none() {
+                        resolved_row.thread_id =
+                            crate::resolve_session_thread_id(resolved_row.path.as_path(), None)
+                                .await;
+                    }
+                    if let Some(selection) = self.action.selection(&resolved_row) {
+                        return Ok(Some(selection));
                     }
                     self.inline_error = Some(format!(
                         "Failed to read session metadata from {}",
-                        path.display()
+                        resolved_row.path.display()
                     ));
                     self.request_frame();
                 }
@@ -558,7 +676,7 @@ impl PickerState {
         self.pagination.loading = LoadingState::Idle;
     }
 
-    fn ingest_page(&mut self, page: ThreadsPage) {
+    fn ingest_page(&mut self, page: PickerPage) {
         if let Some(cursor) = page.next_cursor.clone() {
             self.pagination.next_cursor = Some(cursor);
         } else {
@@ -567,13 +685,12 @@ impl PickerState {
         self.pagination.num_scanned_files = self
             .pagination
             .num_scanned_files
-            .saturating_add(page.num_scanned_files);
+            .saturating_add(page.num_scanned_rows);
         if page.reached_scan_cap {
             self.pagination.reached_scan_cap = true;
         }
 
-        let rows = rows_from_items(page.items);
-        for row in rows {
+        for row in page.rows {
             if self.seen_paths.insert(row.path.clone()) {
                 self.all_rows.push(row);
             }
@@ -826,6 +943,33 @@ fn rows_from_items(items: Vec<ThreadItem>) -> Vec<Row> {
     items.into_iter().map(|item| head_to_row(&item)).collect()
 }
 
+fn local_threads_page_to_picker_page(page: ThreadsPage) -> PickerPage {
+    PickerPage {
+        rows: rows_from_items(page.items),
+        next_cursor: page.next_cursor.map(PageCursor::Local),
+        num_scanned_rows: page.num_scanned_files,
+        reached_scan_cap: page.reached_scan_cap,
+    }
+}
+
+fn remote_threads_page_to_picker_page(
+    page: crate::connected_app_server::RemoteThreadListPage,
+) -> PickerPage {
+    let row_count = page.threads.len();
+    PickerPage {
+        rows: rows_from_remote_threads(page.threads),
+        next_cursor: page.next_cursor.map(PageCursor::Remote),
+        num_scanned_rows: row_count,
+        reached_scan_cap: false,
+    }
+}
+
+fn rows_from_remote_threads(
+    threads: Vec<crate::connected_app_server::RemoteThreadSummary>,
+) -> Vec<Row> {
+    threads.into_iter().map(remote_thread_to_row).collect()
+}
+
 fn head_to_row(item: &ThreadItem) -> Row {
     let created_at = item.created_at.as_deref().and_then(parse_timestamp_str);
     let updated_at = item
@@ -846,11 +990,32 @@ fn head_to_row(item: &ThreadItem) -> Row {
         path: item.path.clone(),
         preview,
         thread_id: item.thread_id,
+        remote_thread_id: None,
         thread_name: None,
         created_at,
         updated_at,
         cwd: item.cwd.clone(),
         git_branch: item.git_branch.clone(),
+    }
+}
+
+fn remote_thread_to_row(thread: crate::connected_app_server::RemoteThreadSummary) -> Row {
+    Row {
+        path: thread
+            .path
+            .unwrap_or_else(|| PathBuf::from(thread.id.clone())),
+        preview: if thread.preview.trim().is_empty() {
+            String::from("(no message yet)")
+        } else {
+            thread.preview
+        },
+        thread_id: None,
+        remote_thread_id: Some(thread.id),
+        thread_name: thread.name,
+        created_at: parse_timestamp_unix_seconds(thread.created_at),
+        updated_at: parse_timestamp_unix_seconds(thread.updated_at),
+        cwd: Some(thread.cwd),
+        git_branch: thread.git_branch,
     }
 }
 
@@ -868,6 +1033,10 @@ fn parse_timestamp_str(ts: &str) -> Option<DateTime<Utc>> {
     chrono::DateTime::parse_from_rfc3339(ts)
         .map(|dt| dt.with_timezone(&Utc))
         .ok()
+}
+
+fn parse_timestamp_unix_seconds(ts: i64) -> Option<DateTime<Utc>> {
+    DateTime::from_timestamp(ts, 0)
 }
 
 fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
@@ -1380,13 +1549,13 @@ mod tests {
         next_cursor: Option<Cursor>,
         num_scanned_files: usize,
         reached_scan_cap: bool,
-    ) -> ThreadsPage {
-        ThreadsPage {
+    ) -> PickerPage {
+        local_threads_page_to_picker_page(ThreadsPage {
             items,
             next_cursor,
             num_scanned_files,
             reached_scan_cap,
-        }
+        })
     }
 
     #[allow(dead_code)]
@@ -1552,6 +1721,7 @@ mod tests {
             path: PathBuf::from("/tmp/a.jsonl"),
             preview: String::from("first message"),
             thread_id: None,
+            remote_thread_id: None,
             thread_name: Some(String::from("My session")),
             created_at: None,
             updated_at: None,
@@ -1560,6 +1730,26 @@ mod tests {
         };
 
         assert_eq!(row.display_preview(), "My session");
+    }
+
+    #[test]
+    fn resume_selection_prefers_remote_thread_id_when_present() {
+        let row = Row {
+            path: PathBuf::from("/tmp/unused.jsonl"),
+            preview: String::from("first message"),
+            thread_id: None,
+            remote_thread_id: Some(String::from("thread-123")),
+            thread_name: Some(String::from("Remote session")),
+            created_at: None,
+            updated_at: None,
+            cwd: None,
+            git_branch: None,
+        };
+
+        assert_eq!(
+            SessionPickerAction::Resume.selection(&row),
+            Some(SessionSelection::ResumeRemote(String::from("thread-123")))
+        );
     }
 
     #[test]
@@ -1586,6 +1776,7 @@ mod tests {
                 path: PathBuf::from("/tmp/a.jsonl"),
                 preview: String::from("Fix resume picker timestamps"),
                 thread_id: None,
+                remote_thread_id: None,
                 thread_name: None,
                 created_at: Some(now - Duration::minutes(16)),
                 updated_at: Some(now - Duration::seconds(42)),
@@ -1596,6 +1787,7 @@ mod tests {
                 path: PathBuf::from("/tmp/b.jsonl"),
                 preview: String::from("Investigate lazy pagination cap"),
                 thread_id: None,
+                remote_thread_id: None,
                 thread_name: None,
                 created_at: Some(now - Duration::hours(1)),
                 updated_at: Some(now - Duration::minutes(35)),
@@ -1606,6 +1798,7 @@ mod tests {
                 path: PathBuf::from("/tmp/c.jsonl"),
                 preview: String::from("Explain the codebase"),
                 thread_id: None,
+                remote_thread_id: None,
                 thread_name: None,
                 created_at: Some(now - Duration::hours(2)),
                 updated_at: Some(now - Duration::hours(2)),
@@ -1900,6 +2093,7 @@ mod tests {
                 path: PathBuf::from("/tmp/a.jsonl"),
                 preview: String::from("First message preview"),
                 thread_id: Some(id1),
+                remote_thread_id: None,
                 thread_name: None,
                 created_at: None,
                 updated_at: Some(now - Duration::days(2)),
@@ -1910,6 +2104,7 @@ mod tests {
                 path: PathBuf::from("/tmp/b.jsonl"),
                 preview: String::from("Second message preview"),
                 thread_id: Some(id2),
+                remote_thread_id: None,
                 thread_name: None,
                 created_at: None,
                 updated_at: Some(now - Duration::days(3)),
@@ -2190,6 +2385,7 @@ mod tests {
             path: PathBuf::from("/tmp/missing.jsonl"),
             preview: String::from("missing metadata"),
             thread_id: None,
+            remote_thread_id: None,
             thread_name: None,
             created_at: None,
             updated_at: None,
