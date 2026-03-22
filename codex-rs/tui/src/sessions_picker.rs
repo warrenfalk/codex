@@ -65,7 +65,10 @@ pub(crate) async fn run_sessions_picker(
 
         if let Some(thread_id) = screen.take_focus_request() {
             match sessions.activate_thread(&thread_id).await {
-                Ok(()) => screen.close(),
+                Ok(()) => {
+                    screen.footer_message = None;
+                    screen.request_frame.schedule_frame();
+                }
                 Err(err) => {
                     screen.set_footer_message(format!("Failed to activate {thread_id}: {err}"));
                 }
