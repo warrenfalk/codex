@@ -64,10 +64,12 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::task::JoinHandle;
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WebSocketMessage;
+use tokio_util::sync::CancellationToken;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -117,11 +119,27 @@ impl ConnectedSessionState {
 pub(crate) struct ConnectedSessionBootstrap {
     pub(crate) codex_op_tx: UnboundedSender<Op>,
     pub(crate) session_configured_event: Event,
+    pub(crate) handle: ConnectedSessionHandle,
 }
 
 pub(crate) enum ConnectedSessionMode {
     StartFresh,
     Resume { thread_id: String },
+}
+
+pub(crate) struct ConnectedSessionHandle {
+    cancel: CancellationToken,
+    tasks: Vec<JoinHandle<()>>,
+}
+
+impl ConnectedSessionHandle {
+    pub(crate) async fn shutdown(self) {
+        self.cancel.cancel();
+        for task in self.tasks {
+            task.abort();
+            let _ = task.await;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,23 +183,38 @@ pub(crate) async fn connect(
     let (codex_op_tx, codex_op_rx) = unbounded_channel::<Op>();
     let (write, read) = ws.split();
 
-    tokio::spawn(writer_task(write, outbound_rx, app_event_tx.clone()));
-    tokio::spawn(reader_task(
+    let cancel = CancellationToken::new();
+    let writer_cancel = cancel.clone();
+    let reader_cancel = cancel.clone();
+    let op_cancel = cancel.clone();
+    let writer = tokio::spawn(writer_task(
+        write,
+        outbound_rx,
+        writer_cancel,
+        app_event_tx.clone(),
+    ));
+    let reader = tokio::spawn(reader_task(
         read,
         outbound_tx.clone(),
         state.clone(),
+        reader_cancel,
         app_event_tx.clone(),
     ));
-    tokio::spawn(op_task(
+    let op = tokio::spawn(op_task(
         codex_op_rx,
         outbound_tx,
         state,
+        op_cancel,
         app_event_tx.clone(),
     ));
 
     Ok(ConnectedSessionBootstrap {
         codex_op_tx,
         session_configured_event,
+        handle: ConnectedSessionHandle {
+            cancel,
+            tasks: vec![writer, reader, op],
+        },
     })
 }
 
@@ -294,7 +327,7 @@ async fn open_thread_for_session(
                 Some(serde_json::to_value(ThreadStartParams {
                     model: config.model.clone(),
                     model_provider: None,
-                    service_tier: None,
+                    service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     approvals_reviewer: Some(config.approvals_reviewer.into()),
@@ -344,7 +377,7 @@ async fn open_thread_for_session(
                     path: None,
                     model: config.model.clone(),
                     model_provider: None,
-                    service_tier: None,
+                    service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     approvals_reviewer: Some(config.approvals_reviewer.into()),
@@ -529,6 +562,7 @@ fn synthesize_initial_messages_from_item(item: &ThreadItem) -> Vec<EventMsg> {
 async fn writer_task<S>(
     mut write: S,
     mut outbound_rx: UnboundedReceiver<JSONRPCMessage>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) where
     S: futures::Sink<WebSocketMessage, Error = tokio_tungstenite::tungstenite::Error>
@@ -536,7 +570,14 @@ async fn writer_task<S>(
         + Send
         + 'static,
 {
-    while let Some(message) = outbound_rx.recv().await {
+    loop {
+        let message = tokio::select! {
+            _ = cancel.cancelled() => break,
+            message = outbound_rx.recv() => match message {
+                Some(message) => message,
+                None => break,
+            },
+        };
         let payload = match serde_json::to_string(&message) {
             Ok(payload) => payload,
             Err(err) => {
@@ -548,9 +589,11 @@ async fn writer_task<S>(
             }
         };
         if let Err(err) = write.send(WebSocketMessage::Text(payload.into())).await {
-            app_event_tx.send(AppEvent::FatalExitRequest(format!(
-                "app-server websocket send failed: {err}"
-            )));
+            if !cancel.is_cancelled() {
+                app_event_tx.send(AppEvent::FatalExitRequest(format!(
+                    "app-server websocket send failed: {err}"
+                )));
+            }
             break;
         }
     }
@@ -560,6 +603,7 @@ async fn reader_task<S>(
     mut read: S,
     outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) where
     S: futures::Stream<
@@ -569,18 +613,25 @@ async fn reader_task<S>(
         + 'static,
 {
     loop {
-        let frame = match read.next().await {
+        let frame = match tokio::select! {
+            _ = cancel.cancelled() => break,
+            frame = read.next() => frame,
+        } {
             Some(Ok(frame)) => frame,
             Some(Err(err)) => {
-                app_event_tx.send(AppEvent::FatalExitRequest(format!(
-                    "app-server websocket read failed: {err}"
-                )));
+                if !cancel.is_cancelled() {
+                    app_event_tx.send(AppEvent::FatalExitRequest(format!(
+                        "app-server websocket read failed: {err}"
+                    )));
+                }
                 break;
             }
             None => {
-                app_event_tx.send(AppEvent::FatalExitRequest(
-                    "app-server websocket connection closed".to_string(),
-                ));
+                if !cancel.is_cancelled() {
+                    app_event_tx.send(AppEvent::FatalExitRequest(
+                        "app-server websocket connection closed".to_string(),
+                    ));
+                }
                 break;
             }
         };
@@ -617,9 +668,17 @@ async fn op_task(
     mut codex_op_rx: UnboundedReceiver<Op>,
     outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
+    cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) {
-    while let Some(op) = codex_op_rx.recv().await {
+    loop {
+        let op = tokio::select! {
+            _ = cancel.cancelled() => break,
+            op = codex_op_rx.recv() => match op {
+                Some(op) => op,
+                None => break,
+            },
+        };
         match op {
             Op::UserTurn {
                 items,
@@ -627,6 +686,7 @@ async fn op_task(
                 approval_policy,
                 sandbox_policy,
                 model,
+                service_tier,
                 effort,
                 personality,
                 final_output_json_schema,
@@ -649,7 +709,7 @@ async fn op_task(
                                 approvals_reviewer: None,
                                 sandbox_policy: Some(sandbox_policy.into()),
                                 model: Some(model),
-                                service_tier: None,
+                                service_tier,
                                 effort,
                                 summary: None,
                                 personality,
@@ -1379,6 +1439,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::time::timeout;
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
 
@@ -1475,6 +1536,7 @@ mod tests {
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            CancellationToken::new(),
             app_event_tx,
         ));
 
@@ -1491,9 +1553,9 @@ mod tests {
                     network_access: false,
                 },
                 model: "mock-model".to_string(),
+                service_tier: None,
                 effort: None,
                 summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
-                service_tier: None,
                 final_output_json_schema: None,
                 collaboration_mode: None,
                 personality: None,
@@ -1657,6 +1719,7 @@ mod tests {
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            CancellationToken::new(),
             app_event_tx,
         ));
 
@@ -1845,6 +1908,7 @@ mod tests {
             >(),
             outbound_tx,
             state,
+            CancellationToken::new(),
             app_event_tx,
         )
         .await;
@@ -1859,5 +1923,35 @@ mod tests {
             }
             other => panic!("expected fatal exit request, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn cancelled_disconnect_does_not_request_fatal_exit() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, _outbound_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        reader_task(
+            futures::stream::empty::<
+                std::result::Result<WebSocketMessage, tokio_tungstenite::tungstenite::Error>,
+            >(),
+            outbound_tx,
+            state,
+            cancel,
+            app_event_tx,
+        )
+        .await;
+
+        assert!(matches!(
+            app_event_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
     }
 }
