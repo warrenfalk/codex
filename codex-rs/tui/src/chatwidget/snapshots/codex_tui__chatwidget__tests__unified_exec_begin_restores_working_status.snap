@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 4048
+assertion_line: 4032
 expression: terminal.backend()
 ---
 "                                                                                "

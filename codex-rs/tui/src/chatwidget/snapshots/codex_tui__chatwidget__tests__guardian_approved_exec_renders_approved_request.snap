@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 9625
+assertion_line: 9455
 expression: term.backend().vt100().screen().contents()
 ---
 

@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 9755
+assertion_line: 9585
 expression: rendered
 ---
 • Reviewing 2 approval requests (0s • esc to interrupt)

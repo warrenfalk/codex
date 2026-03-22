@@ -475,7 +475,7 @@ async fn window_title_uses_repo_root_branch_and_thread_name() {
 
     assert_eq!(
         chat.window_title(),
-        format!("Codex {repo_name} feature/title Window Title"),
+        format!("Codex {repo_name}: \"Window Title\" (feature/title)"),
     );
 }
 
@@ -485,6 +485,15 @@ async fn window_title_omits_missing_branch_and_thread_name() {
     chat.current_cwd = Some(PathBuf::from("/tmp/project"));
 
     assert_eq!(chat.window_title(), "Codex project");
+}
+
+#[tokio::test]
+async fn window_title_places_branch_in_parentheses_without_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.current_cwd = Some(PathBuf::from("/tmp/project"));
+    chat.status_line_branch = Some("main".to_string());
+
+    assert_eq!(chat.window_title(), "Codex project (main)");
 }
 
 #[tokio::test]

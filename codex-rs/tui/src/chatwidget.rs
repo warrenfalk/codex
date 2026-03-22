@@ -5865,16 +5865,23 @@ impl ChatWidget {
     }
 
     pub(crate) fn window_title(&self) -> String {
-        let mut parts = vec!["Codex".to_string(), self.window_title_directory_name()];
+        let directory = self.window_title_directory_name();
+        let mut parts = if let Some(thread_name) =
+            self.thread_name.as_deref().filter(|name| !name.is_empty())
+        {
+            vec![
+                "Codex".to_string(),
+                format!("{directory}: \"{thread_name}\""),
+            ]
+        } else {
+            vec!["Codex".to_string(), directory]
+        };
         if let Some(branch) = self
             .status_line_branch
             .as_deref()
             .filter(|branch| !branch.is_empty())
         {
-            parts.push(branch.to_string());
-        }
-        if let Some(thread_name) = self.thread_name.as_deref().filter(|name| !name.is_empty()) {
-            parts.push(thread_name.to_string());
+            parts.push(format!("({branch})"));
         }
         parts.join(" ")
     }

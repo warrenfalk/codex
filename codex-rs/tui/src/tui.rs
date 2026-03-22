@@ -24,6 +24,7 @@ use crossterm::event::PopKeyboardEnhancementFlags;
 use crossterm::event::PushKeyboardEnhancementFlags;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
+#[cfg(not(test))]
 use crossterm::terminal::SetTitle;
 use crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::backend::Backend;
@@ -373,9 +374,13 @@ impl Tui {
         self.current_window_title = Some(title);
     }
 
+    #[cfg(not(test))]
     fn apply_window_title(&mut self, title: String) {
         let _ = execute!(self.terminal.backend_mut(), SetTitle(title));
     }
+
+    #[cfg(test)]
+    fn apply_window_title(&mut self, _title: String) {}
 
     /// Emit a desktop notification now if the terminal is unfocused.
     /// Returns true if a notification was posted.

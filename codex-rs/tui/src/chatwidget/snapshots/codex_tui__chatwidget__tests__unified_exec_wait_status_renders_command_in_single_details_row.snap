@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 5382
+assertion_line: 5307
 expression: rendered
 ---
 • Waiting for background terminal (0s • esc to …
