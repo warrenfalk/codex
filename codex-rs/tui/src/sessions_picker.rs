@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::key_hint;
+use crate::kitty;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::remote_sessions::RemoteSessionsClient;
 use crate::tui::FrameRequester;
@@ -29,7 +30,7 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) async fn run_sessions_picker(
     tui: &mut Tui,
     sessions: &mut RemoteSessionsClient,
-) -> Result<Option<String>> {
+) -> Result<()> {
     let mut screen = SessionsPickerScreen::new(tui.frame_requester());
     screen.reload_all(sessions).await?;
 
@@ -62,16 +63,25 @@ pub(crate) async fn run_sessions_picker(
                 screen.handle_server_notification(sessions, event).await?;
             }
         }
+
+        if let Some(thread_id) = screen.take_focus_request() {
+            match kitty::focus_thread(&thread_id).await {
+                Ok(()) => screen.close(),
+                Err(err) => {
+                    screen.set_footer_message(format!("Failed to focus {thread_id}: {err}"));
+                }
+            }
+        }
     }
 
-    Ok(screen.selected_thread_for_focus())
+    Ok(())
 }
 
 struct SessionsPickerScreen {
     request_frame: FrameRequester,
     entries: Vec<SessionEntry>,
     selected_thread_id: Option<String>,
-    focus_thread_id: Option<String>,
+    pending_focus_thread_id: Option<String>,
     should_close: bool,
     footer_message: Option<String>,
 }
@@ -87,18 +97,14 @@ impl SessionsPickerScreen {
             request_frame,
             entries: Vec::new(),
             selected_thread_id: None,
-            focus_thread_id: None,
+            pending_focus_thread_id: None,
             should_close: false,
             footer_message: None,
         }
     }
 
     fn is_done(&self) -> bool {
-        self.should_close || self.focus_thread_id.is_some()
-    }
-
-    fn selected_thread_for_focus(&self) -> Option<String> {
-        self.focus_thread_id.clone()
+        self.should_close
     }
 
     fn close(&mut self) {
@@ -143,9 +149,13 @@ impl SessionsPickerScreen {
 
     fn activate_selected(&mut self) {
         if let Some(thread_id) = self.current_thread_id() {
-            self.focus_thread_id = Some(thread_id.to_string());
+            self.pending_focus_thread_id = Some(thread_id.to_string());
             self.request_frame.schedule_frame();
         }
+    }
+
+    fn take_focus_request(&mut self) -> Option<String> {
+        self.pending_focus_thread_id.take()
     }
 
     fn handle_key(&mut self, key_event: KeyEvent) {
@@ -521,7 +531,7 @@ mod tests {
                 },
             ],
             selected_thread_id: Some("thread-1".to_string()),
-            focus_thread_id: None,
+            pending_focus_thread_id: None,
             should_close: false,
             footer_message: None,
         };

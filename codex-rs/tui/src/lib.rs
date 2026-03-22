@@ -618,7 +618,7 @@ pub async fn run_sessions_main(
     let connect_url = cli.connect.as_deref().ok_or_else(|| {
         std::io::Error::other("`codex sessions` currently requires `--connect [WS_URL]`")
     })?;
-    let selected_thread_id = async {
+    let sessions_result = async {
         let mut sessions = remote_sessions::RemoteSessionsClient::connect(connect_url)
             .await
             .map_err(|err| std::io::Error::other(err.to_string()))?;
@@ -632,11 +632,7 @@ pub async fn run_sessions_main(
     restore();
     let _ = tui.terminal.clear();
 
-    let selected_thread_id = selected_thread_id?;
-
-    if let Some(thread_id) = selected_thread_id {
-        kitty::focus_thread(&thread_id).await?;
-    }
+    sessions_result?;
 
     Ok(AppExitInfo {
         token_usage: codex_protocol::protocol::TokenUsage::default(),
