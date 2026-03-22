@@ -1144,7 +1144,7 @@ async fn handle_notification(
         Err(_) => return,
     };
     if let ServerNotification::ThreadActivationRequested(notification) = &server_notification {
-        handle_thread_activation_requested(notification, state).await;
+        handle_thread_activation_requested(notification, state, app_event_tx).await;
         return;
     }
     let Ok(events) = events_from_server_notification(server_notification) else {
@@ -1164,6 +1164,7 @@ async fn handle_notification(
 async fn handle_thread_activation_requested(
     notification: &codex_app_server_protocol::ThreadActivationRequestedNotification,
     state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
+    app_event_tx: &AppEventSender,
 ) {
     let thread_id_matches = {
         let guard = state.lock().await;
@@ -1178,6 +1179,10 @@ async fn handle_thread_activation_requested(
             thread_id = notification.thread_id,
             error = %err,
             "failed to focus current kitty window for thread activation request"
+        );
+        send_warning_event(
+            app_event_tx,
+            format!("Failed to focus this session window: {err}"),
         );
     }
 }
