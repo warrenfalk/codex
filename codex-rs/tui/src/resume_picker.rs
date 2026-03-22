@@ -51,6 +51,7 @@ pub enum SessionSelection {
     Resume(SessionTarget),
     ResumeRemote(String),
     Fork(SessionTarget),
+    ForkRemote(String),
     Exit,
 }
 
@@ -86,12 +87,15 @@ impl SessionPickerAction {
                     })
                 }),
             },
-            SessionPickerAction::Fork => row.thread_id.map(|thread_id| {
-                SessionSelection::Fork(SessionTarget {
-                    path: row.path.clone(),
-                    thread_id,
-                })
-            }),
+            SessionPickerAction::Fork => match row.remote_thread_id.as_ref() {
+                Some(thread_id) => Some(SessionSelection::ForkRemote(thread_id.clone())),
+                None => row.thread_id.map(|thread_id| {
+                    SessionSelection::Fork(SessionTarget {
+                        path: row.path.clone(),
+                        thread_id,
+                    })
+                }),
+            },
         }
     }
 }
@@ -188,6 +192,24 @@ pub async fn run_fork_picker(
         show_all,
         SessionPickerAction::Fork,
         SessionPickerBackend::Local,
+    )
+    .await
+}
+
+pub async fn run_remote_fork_picker(
+    tui: &mut Tui,
+    config: &Config,
+    url: &str,
+    show_all: bool,
+) -> Result<SessionSelection> {
+    run_session_picker(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Fork,
+        SessionPickerBackend::Remote {
+            url: url.to_string(),
+        },
     )
     .await
 }
@@ -1749,6 +1771,26 @@ mod tests {
         assert_eq!(
             SessionPickerAction::Resume.selection(&row),
             Some(SessionSelection::ResumeRemote(String::from("thread-123")))
+        );
+    }
+
+    #[test]
+    fn fork_selection_prefers_remote_thread_id_when_present() {
+        let row = Row {
+            path: PathBuf::from("/tmp/unused.jsonl"),
+            preview: String::from("first message"),
+            thread_id: None,
+            remote_thread_id: Some(String::from("thread-456")),
+            thread_name: Some(String::from("Remote session")),
+            created_at: None,
+            updated_at: None,
+            cwd: None,
+            git_branch: None,
+        };
+
+        assert_eq!(
+            SessionPickerAction::Fork.selection(&row),
+            Some(SessionSelection::ForkRemote(String::from("thread-456")))
         );
     }
 

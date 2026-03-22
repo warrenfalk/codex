@@ -707,49 +707,58 @@ async fn run_ratatui_app(
     let use_fork = cli.fork_picker || cli.fork_last || cli.fork_session_id.is_some();
     let session_selection = if use_fork {
         if let Some(id_str) = cli.fork_session_id.as_deref() {
-            let is_uuid = Uuid::parse_str(id_str).is_ok();
-            let path = if is_uuid {
-                find_thread_path_by_id_str(&config.codex_home, id_str).await?
+            if cli.connect.is_some() {
+                resume_picker::SessionSelection::ForkRemote(id_str.to_string())
             } else {
-                find_thread_path_by_name_str(&config.codex_home, id_str).await?
-            };
-            match path {
-                Some(path) => {
-                    let thread_id =
-                        match resolve_session_thread_id(path.as_path(), is_uuid.then_some(id_str))
-                            .await
+                let is_uuid = Uuid::parse_str(id_str).is_ok();
+                let path = if is_uuid {
+                    find_thread_path_by_id_str(&config.codex_home, id_str).await?
+                } else {
+                    find_thread_path_by_name_str(&config.codex_home, id_str).await?
+                };
+                match path {
+                    Some(path) => {
+                        let thread_id = match resolve_session_thread_id(
+                            path.as_path(),
+                            is_uuid.then_some(id_str),
+                        )
+                        .await
                         {
                             Some(thread_id) => thread_id,
                             None => return missing_session_exit(id_str, "fork"),
                         };
-                    resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
-                        path,
-                        thread_id,
-                    })
+                        resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
+                            path,
+                            thread_id,
+                        })
+                    }
+                    None => return missing_session_exit(id_str, "fork"),
                 }
-                None => return missing_session_exit(id_str, "fork"),
             }
         } else if cli.fork_last {
-            let provider_filter = vec![config.model_provider_id.clone()];
-            match RolloutRecorder::list_threads(
-                &config,
-                /*page_size*/ 1,
-                /*cursor*/ None,
-                ThreadSortKey::UpdatedAt,
-                INTERACTIVE_SESSION_SOURCES,
-                Some(provider_filter.as_slice()),
-                &config.model_provider_id,
-                /*search_term*/ None,
-            )
-            .await
-            {
-                Ok(page) => match page.items.first() {
-                    Some(item) => {
-                        match resolve_session_thread_id(
-                            item.path.as_path(),
-                            /*id_str_if_uuid*/ None,
-                        )
-                        .await
+            if let Some(url) = cli.connect.as_deref() {
+                match crate::connected_app_server::find_latest_thread_id(url, None).await {
+                    Ok(Some(thread_id)) => resume_picker::SessionSelection::ForkRemote(thread_id),
+                    Ok(None) => resume_picker::SessionSelection::StartFresh,
+                    Err(_) => resume_picker::SessionSelection::StartFresh,
+                }
+            } else {
+                let provider_filter = vec![config.model_provider_id.clone()];
+                match RolloutRecorder::list_threads(
+                    &config,
+                    1,
+                    None,
+                    ThreadSortKey::UpdatedAt,
+                    INTERACTIVE_SESSION_SOURCES,
+                    Some(provider_filter.as_slice()),
+                    &config.model_provider_id,
+                    None,
+                )
+                .await
+                {
+                    Ok(page) => match page.items.first() {
+                        Some(item) => match resolve_session_thread_id(item.path.as_path(), None)
+                            .await
                         {
                             Some(thread_id) => resume_picker::SessionSelection::Fork(
                                 resume_picker::SessionTarget {
@@ -775,14 +784,20 @@ async fn run_ratatui_app(
                                     )),
                                 });
                             }
-                        }
-                    }
-                    None => resume_picker::SessionSelection::StartFresh,
-                },
-                Err(_) => resume_picker::SessionSelection::StartFresh,
+                        },
+                        None => resume_picker::SessionSelection::StartFresh,
+                    },
+                    Err(_) => resume_picker::SessionSelection::StartFresh,
+                }
             }
         } else if cli.fork_picker {
-            match resume_picker::run_fork_picker(&mut tui, &config, cli.fork_show_all).await? {
+            let selection = if let Some(url) = cli.connect.as_deref() {
+                resume_picker::run_remote_fork_picker(&mut tui, &config, url, cli.fork_show_all)
+                    .await?
+            } else {
+                resume_picker::run_fork_picker(&mut tui, &config, cli.fork_show_all).await?
+            };
+            match selection {
                 resume_picker::SessionSelection::Exit => {
                     restore();
                     session_log::log_session_end();
@@ -967,7 +982,8 @@ async fn run_ratatui_app(
             )
             .await
         }
-        resume_picker::SessionSelection::ResumeRemote(_) => config,
+        resume_picker::SessionSelection::ResumeRemote(_)
+        | resume_picker::SessionSelection::ForkRemote(_) => config,
         _ => config,
     };
 
