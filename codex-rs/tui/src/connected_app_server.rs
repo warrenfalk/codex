@@ -139,6 +139,7 @@ struct PendingRequest {
 #[derive(Debug)]
 struct ConnectedSessionState {
     current_turn_id: Option<String>,
+    current_turn_last_agent_message: Option<String>,
     next_request_id: i64,
     pending_requests: HashMap<RequestId, PendingRequest>,
     pending_exec_approvals: HashMap<String, RequestId>,
@@ -152,6 +153,7 @@ impl ConnectedSessionState {
     fn new(thread_id: String, thread_cwd: PathBuf, next_request_id: i64) -> Self {
         Self {
             current_turn_id: None,
+            current_turn_last_agent_message: None,
             next_request_id,
             pending_requests: HashMap::new(),
             pending_exec_approvals: HashMap::new(),
@@ -1192,10 +1194,10 @@ async fn forward_connected_events(
     state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
     app_event_tx: &AppEventSender,
 ) {
-    for event in events {
+    for mut event in events {
         let skip = {
             let mut guard = state.lock().await;
-            match &event.msg {
+            match &mut event.msg {
                 // In connected mode, app-server sends these as server requests as well as
                 // legacy codex/event notifications. The request path is the only one that
                 // carries a JSON-RPC callback id, so processing the legacy event here
@@ -1205,22 +1207,57 @@ async fn forward_connected_events(
                 | EventMsg::RequestUserInput(_) => true,
                 EventMsg::TurnStarted(turn_started) => {
                     guard.current_turn_id = Some(turn_started.turn_id.clone());
+                    guard.current_turn_last_agent_message = None;
                     false
                 }
                 EventMsg::TurnComplete(turn_complete) => {
                     if guard.current_turn_id.as_deref() == Some(turn_complete.turn_id.as_str()) {
+                        if turn_complete.last_agent_message.is_none() {
+                            turn_complete.last_agent_message =
+                                guard.current_turn_last_agent_message.take();
+                        } else {
+                            guard.current_turn_last_agent_message = None;
+                        }
                         guard.current_turn_id = None;
+                    }
+                    false
+                }
+                EventMsg::AgentMessageContentDelta(delta) => {
+                    if guard.current_turn_id.as_deref() == Some(delta.turn_id.as_str()) {
+                        guard
+                            .current_turn_last_agent_message
+                            .get_or_insert_with(String::new)
+                            .push_str(&delta.delta);
+                    }
+                    false
+                }
+                EventMsg::ItemCompleted(ItemCompletedEvent {
+                    turn_id,
+                    item: TurnItem::AgentMessage(item),
+                    ..
+                }) => {
+                    if guard.current_turn_id.as_deref() == Some(turn_id.as_str()) {
+                        guard.current_turn_last_agent_message = Some(
+                            item.content
+                                .iter()
+                                .map(|content| match content {
+                                    AgentMessageContent::Text { text } => text.as_str(),
+                                })
+                                .collect(),
+                        );
                     }
                     false
                 }
                 EventMsg::TurnAborted(turn_aborted) => {
                     if guard.current_turn_id.as_deref() == turn_aborted.turn_id.as_deref() {
                         guard.current_turn_id = None;
+                        guard.current_turn_last_agent_message = None;
                     }
                     false
                 }
                 EventMsg::ShutdownComplete => {
                     guard.current_turn_id = None;
+                    guard.current_turn_last_agent_message = None;
                     false
                 }
                 _ => false,
@@ -3225,6 +3262,129 @@ mod tests {
             }
             other => panic!("expected AgentMessage event, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn turn_complete_includes_last_agent_message_for_connected_notifications() {
+        let thread_id = "00000000-0000-0000-0000-000000000011".to_string();
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            thread_id.clone(),
+            PathBuf::from("/repo"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "turn/started".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::TurnStartedNotification {
+                        thread_id: thread_id.clone(),
+                        turn: Turn {
+                            id: "turn-1".to_string(),
+                            items: Vec::new(),
+                            error: None,
+                            status: TurnStatus::InProgress,
+                        },
+                    })
+                    .expect("serialize turn started notification"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(
+                    serde_json::to_value(
+                        codex_app_server_protocol::AgentMessageDeltaNotification {
+                            thread_id: thread_id.clone(),
+                            turn_id: "turn-1".to_string(),
+                            item_id: "agent-1".to_string(),
+                            delta: "hello".to_string(),
+                        },
+                    )
+                    .expect("serialize agent delta notification"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "item/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(codex_app_server_protocol::ItemCompletedNotification {
+                        thread_id: thread_id.clone(),
+                        turn_id: "turn-1".to_string(),
+                        item: ThreadItem::AgentMessage {
+                            id: "agent-1".to_string(),
+                            text: "hello world".to_string(),
+                            phase: None,
+                            memory_citation: None,
+                        },
+                    })
+                    .expect("serialize agent item completion"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        handle_notification(
+            JSONRPCNotification {
+                method: "turn/completed".to_string(),
+                params: Some(
+                    serde_json::to_value(TurnCompletedNotification {
+                        thread_id,
+                        turn: Turn {
+                            id: "turn-1".to_string(),
+                            items: Vec::new(),
+                            error: None,
+                            status: TurnStatus::Completed,
+                        },
+                    })
+                    .expect("serialize turn completed notification"),
+                ),
+            },
+            &state,
+            &app_event_tx,
+        )
+        .await;
+
+        let mut turn_complete = None;
+        for _ in 0..6 {
+            let event = timeout(Duration::from_secs(1), app_event_rx.recv())
+                .await
+                .expect("app event should arrive")
+                .expect("app event should exist");
+            if let AppEvent::CodexEvent(Event {
+                msg: EventMsg::TurnComplete(event),
+                ..
+            }) = event
+            {
+                turn_complete = Some(event);
+                break;
+            }
+        }
+
+        let turn_complete = turn_complete.expect("turn complete event should be emitted");
+        assert_eq!(turn_complete.turn_id, "turn-1");
+        assert_eq!(
+            turn_complete.last_agent_message,
+            Some("hello world".to_string())
+        );
+
+        let guard = state.lock().await;
+        assert_eq!(guard.current_turn_id, None);
+        assert_eq!(guard.current_turn_last_agent_message, None);
     }
 
     #[tokio::test]
