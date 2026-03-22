@@ -5701,6 +5701,7 @@ impl ChatWidget {
                 status,
                 revised_prompt,
                 result,
+                saved_path: _,
             } => {
                 self.on_image_generation_end(ImageGenerationEndEvent {
                     call_id: id,

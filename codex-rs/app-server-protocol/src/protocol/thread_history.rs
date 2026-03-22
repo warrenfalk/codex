@@ -539,6 +539,7 @@ impl ThreadHistoryBuilder {
             status: String::new(),
             revised_prompt: None,
             result: String::new(),
+            saved_path: None,
         };
         self.upsert_item_in_current_turn(item);
     }
@@ -549,6 +550,7 @@ impl ThreadHistoryBuilder {
             status: payload.status.clone(),
             revised_prompt: payload.revised_prompt.clone(),
             result: payload.result.clone(),
+            saved_path: payload.saved_path.clone(),
         };
         self.upsert_item_in_current_turn(item);
     }
@@ -1275,6 +1277,43 @@ mod tests {
                 phase: None,
                 memory_citation: None,
             }
+        );
+    }
+
+    #[test]
+    fn image_generation_end_preserves_saved_path_in_thread_item() {
+        let mut builder = ThreadHistoryBuilder::new();
+        builder.handle_event(&EventMsg::ImageGenerationBegin(
+            codex_protocol::protocol::ImageGenerationBeginEvent {
+                call_id: "img-1".into(),
+            },
+        ));
+        builder.handle_event(&EventMsg::ImageGenerationEnd(
+            codex_protocol::protocol::ImageGenerationEndEvent {
+                call_id: "img-1".into(),
+                status: "completed".into(),
+                revised_prompt: Some("revised".into()),
+                result: "Zm9v".into(),
+                saved_path: Some("/tmp/ig-1.png".into()),
+            },
+        ));
+        builder.handle_event(&EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id: "turn-1".into(),
+            last_agent_message: None,
+        }));
+
+        let turns = builder.finish();
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(
+            turns[0].items,
+            vec![ThreadItem::ImageGeneration {
+                id: "img-1".into(),
+                status: "completed".into(),
+                revised_prompt: Some("revised".into()),
+                result: "Zm9v".into(),
+                saved_path: Some("/tmp/ig-1.png".into()),
+            }]
         );
     }
 

@@ -727,6 +727,7 @@ pub(crate) struct App {
     /// This is thread-scoped state (`Option<ThreadId>`) instead of a global bool
     /// so shutdown events from other threads still take the normal failover path.
     pending_shutdown_exit_thread_id: Option<ThreadId>,
+    connected_mode: bool,
 
     windows_sandbox: WindowsSandboxState,
 
@@ -1588,6 +1589,8 @@ impl App {
 
         if let EventMsg::SessionConfigured(session) = &event.msg {
             let thread_id = session.session_id;
+            self.config.cwd = session.cwd.clone();
+            self.file_search.update_search_dir(session.cwd.clone());
             self.primary_thread_id = Some(thread_id);
             self.primary_session_configured = Some(session.clone());
             self.upsert_agent_picker_thread(
@@ -2056,14 +2059,35 @@ impl App {
         if connect.is_some()
             && !matches!(
                 session_selection,
-                SessionSelection::StartFresh | SessionSelection::Exit
+                SessionSelection::StartFresh
+                    | SessionSelection::Exit
+                    | SessionSelection::ResumeRemote(_)
             )
         {
-            bail!("--connect currently supports only starting a new session");
+            bail!(
+                "--connect currently supports only starting a new session or resuming by thread id"
+            );
         }
+        let connected_mode = connect.is_some();
         let mut connected_session = match connect.as_deref() {
             Some(url) => Some(
-                crate::connected_app_server::connect(url, &config, app_event_tx.clone()).await?,
+                crate::connected_app_server::connect(
+                    url,
+                    &config,
+                    app_event_tx.clone(),
+                    match &session_selection {
+                        SessionSelection::ResumeRemote(thread_id) => {
+                            crate::connected_app_server::ConnectedSessionMode::Resume {
+                                thread_id: thread_id.clone(),
+                            }
+                        }
+                        SessionSelection::StartFresh | SessionSelection::Exit => {
+                            crate::connected_app_server::ConnectedSessionMode::StartFresh
+                        }
+                        SessionSelection::Resume(_) | SessionSelection::Fork(_) => unreachable!(),
+                    },
+                )
+                .await?,
             ),
             None => None,
         };
@@ -2073,7 +2097,9 @@ impl App {
             Self::should_wait_for_initial_session(&session_selection);
         let mut initial_connected_event = None;
         let mut chat_widget = match session_selection {
-            SessionSelection::StartFresh | SessionSelection::Exit => {
+            SessionSelection::StartFresh
+            | SessionSelection::Exit
+            | SessionSelection::ResumeRemote(_) => {
                 let startup_tooltip_override =
                     prepare_startup_tooltip_override(&mut config, &available_models, is_first_run)
                         .await;
@@ -2219,6 +2245,7 @@ impl App {
             pending_update_action: None,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
+            connected_mode,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -2449,6 +2476,13 @@ impl App {
                 self.start_fresh_session_with_summary_hint(tui).await;
             }
             AppEvent::OpenResumePicker => {
+                if self.connected_mode {
+                    self.chat_widget.add_error_message(
+                        "Connected mode does not support the resume picker yet; use `resume <thread-id>` or restart with `--resume-last`."
+                            .to_string(),
+                    );
+                    return Ok(AppRunControl::Continue);
+                }
                 match crate::resume_picker::run_resume_picker(
                     tui,
                     &self.config,
@@ -2541,7 +2575,8 @@ impl App {
                     }
                     SessionSelection::Exit
                     | SessionSelection::StartFresh
-                    | SessionSelection::Fork(_) => {}
+                    | SessionSelection::Fork(_)
+                    | SessionSelection::ResumeRemote(_) => {}
                 }
 
                 // Leaving alt-screen may blank the inline viewport; force a redraw either way.
@@ -6421,6 +6456,7 @@ guardian_approval = true
             pending_update_action: None,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
+            connected_mode: false,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -6481,6 +6517,7 @@ guardian_approval = true
                 pending_update_action: None,
                 suppress_shutdown_complete: false,
                 pending_shutdown_exit_thread_id: None,
+                connected_mode: false,
                 windows_sandbox: WindowsSandboxState::default(),
                 thread_event_channels: HashMap::new(),
                 thread_event_listener_tasks: HashMap::new(),
