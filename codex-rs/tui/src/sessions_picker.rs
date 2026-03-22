@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use crate::key_hint;
-use crate::kitty;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::remote_sessions::RemoteSessionsClient;
 use crate::tui::FrameRequester;
@@ -65,10 +64,10 @@ pub(crate) async fn run_sessions_picker(
         }
 
         if let Some(thread_id) = screen.take_focus_request() {
-            match kitty::focus_thread(&thread_id).await {
+            match sessions.activate_thread(&thread_id).await {
                 Ok(()) => screen.close(),
                 Err(err) => {
-                    screen.set_footer_message(format!("Failed to focus {thread_id}: {err}"));
+                    screen.set_footer_message(format!("Failed to activate {thread_id}: {err}"));
                 }
             }
         }

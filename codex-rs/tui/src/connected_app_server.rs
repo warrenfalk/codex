@@ -1143,6 +1143,10 @@ async fn handle_notification(
         Ok(server_notification) => server_notification,
         Err(_) => return,
     };
+    if let ServerNotification::ThreadActivationRequested(notification) = &server_notification {
+        handle_thread_activation_requested(notification, state).await;
+        return;
+    }
     let Ok(events) = events_from_server_notification(server_notification) else {
         send_error_event(
             app_event_tx,
@@ -1155,6 +1159,27 @@ async fn handle_notification(
     };
 
     forward_connected_events(events, state, app_event_tx).await;
+}
+
+async fn handle_thread_activation_requested(
+    notification: &codex_app_server_protocol::ThreadActivationRequestedNotification,
+    state: &std::sync::Arc<Mutex<ConnectedSessionState>>,
+) {
+    let thread_id_matches = {
+        let guard = state.lock().await;
+        guard.thread_id == notification.thread_id
+    };
+    if !thread_id_matches {
+        return;
+    }
+
+    if let Err(err) = crate::kitty::focus_current_window().await {
+        tracing::warn!(
+            thread_id = notification.thread_id,
+            error = %err,
+            "failed to focus current kitty window for thread activation request"
+        );
+    }
 }
 
 async fn forward_connected_events(
@@ -1233,6 +1258,7 @@ fn events_from_server_notification(notification: ServerNotification) -> Result<V
                 thread_name: notification.thread_name,
             })]
         }
+        ServerNotification::ThreadActivationRequested(_) => Vec::new(),
         ServerNotification::ThreadTokenUsageUpdated(notification) => {
             vec![EventMsg::TokenCount(thread_token_usage_to_token_count(
                 notification,

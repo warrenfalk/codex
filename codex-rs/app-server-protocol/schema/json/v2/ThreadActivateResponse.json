@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadActivateStatus": {
+      "enum": [
+        "notLoaded",
+        "noSubscribers",
+        "delivered"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "status": {
+      "$ref": "#/definitions/ThreadActivateStatus"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "ThreadActivateResponse",
+  "type": "object"
+}

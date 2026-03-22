@@ -937,6 +937,30 @@
             },
             "method": {
               "enum": [
+                "thread/activate"
+              ],
+              "title": "Thread/activateRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadActivateParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/activateRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/name/set"
               ],
               "title": "Thread/name/setRequestMethod",
@@ -7865,6 +7889,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/activationRequested"
+              ],
+              "title": "Thread/activationRequestedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadActivationRequestedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/activationRequestedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "skills/changed"
               ],
               "title": "Skills/changedNotificationMethod",
@@ -9395,6 +9439,53 @@
         "turns",
         "updatedAt"
       ],
+      "type": "object"
+    },
+    "ThreadActivateParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadActivateParams",
+      "type": "object"
+    },
+    "ThreadActivateResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/ThreadActivateStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ThreadActivateResponse",
+      "type": "object"
+    },
+    "ThreadActivateStatus": {
+      "enum": [
+        "notLoaded",
+        "noSubscribers",
+        "delivered"
+      ],
+      "type": "string"
+    },
+    "ThreadActivationRequestedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadActivationRequestedNotification",
       "type": "object"
     },
     "ThreadActiveFlag": {

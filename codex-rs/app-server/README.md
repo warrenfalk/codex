@@ -135,6 +135,7 @@ Example with notification opt-out:
 - `thread/metadata/update` — patch stored thread metadata in sqlite; currently supports updating persisted `gitInfo` fields and returns the refreshed `thread`.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).
 - `thread/archive` — move a thread’s rollout file into the archived directory; returns `{}` on success and emits `thread/archived`.
+- `thread/activate` — ask currently subscribed clients for a thread to bring their local UI/window to the foreground; returns a delivery status and emits `thread/activationRequested` to subscribed connections when delivered.
 - `thread/unsubscribe` — unsubscribe this connection from thread turn/item events. If this was the last subscriber, the server shuts down and unloads the thread, then emits `thread/closed`.
 - `thread/name/set` — set or update a thread’s user-facing name for either a loaded thread or a persisted rollout; returns `{}` on success and emits `thread/name/updated` to initialized, opted-in clients. Thread names are not required to be unique; name lookups resolve to the most recently updated thread.
 - `thread/unarchive` — move an archived rollout file back into the sessions directory; returns the restored `thread` on success and emits `thread/unarchived`.
@@ -325,6 +326,20 @@ If this was the last subscriber, the server unloads the thread and emits `thread
     "status": { "type": "notLoaded" }
 } }
 { "method": "thread/closed", "params": { "threadId": "thr_123" } }
+```
+
+### Example: Request local activation for a loaded thread
+
+`thread/activate` asks currently subscribed clients for a thread to activate their local UI. The response status is one of:
+
+- `delivered` when at least one subscribed connection was notified.
+- `noSubscribers` when the thread is loaded but no current connection is subscribed.
+- `notLoaded` when the thread is not loaded.
+
+```json
+{ "method": "thread/activate", "id": 23, "params": { "threadId": "thr_123" } }
+{ "id": 23, "result": { "status": "delivered" } }
+{ "method": "thread/activationRequested", "params": { "threadId": "thr_123" } }
 ```
 
 ### Example: Read a thread
@@ -765,7 +780,7 @@ All filesystem paths in this section must be absolute.
 
 ## Events
 
-Event notifications are the server-initiated event stream for thread lifecycles, turn lifecycles, and the items within them. After you start or resume a thread, keep reading stdout for `thread/started`, `thread/archived`, `thread/unarchived`, `thread/closed`, `turn/*`, and `item/*` notifications.
+Event notifications are the server-initiated event stream for thread lifecycles, turn lifecycles, and the items within them. After you start or resume a thread, keep reading stdout for `thread/started`, `thread/archived`, `thread/unarchived`, `thread/closed`, `thread/activationRequested`, `turn/*`, and `item/*` notifications.
 
 Thread realtime uses a separate thread-scoped notification surface. `thread/realtime/*` notifications are ephemeral transport events, not `ThreadItem`s, and are not returned by `thread/read`, `thread/resume`, or `thread/fork`.
 

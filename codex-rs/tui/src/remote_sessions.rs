@@ -12,6 +12,9 @@ use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadActivateParams;
+use codex_app_server_protocol::ThreadActivateResponse;
+use codex_app_server_protocol::ThreadActivateStatus;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadReadParams;
@@ -81,6 +84,26 @@ impl RemoteSessionsClient {
             )
             .await?;
         Ok(response.thread)
+    }
+
+    pub(crate) async fn activate_thread(&mut self, thread_id: &str) -> Result<()> {
+        let response: ThreadActivateResponse = self
+            .request_typed(
+                "thread/activate",
+                ThreadActivateParams {
+                    thread_id: thread_id.to_string(),
+                },
+            )
+            .await?;
+        match response.status {
+            ThreadActivateStatus::Delivered => Ok(()),
+            ThreadActivateStatus::NotLoaded => {
+                color_eyre::eyre::bail!("thread {thread_id} is not loaded")
+            }
+            ThreadActivateStatus::NoSubscribers => {
+                color_eyre::eyre::bail!("thread {thread_id} has no subscribed clients")
+            }
+        }
     }
 
     pub(crate) async fn next_notification(&mut self) -> Result<Option<ServerNotification>> {

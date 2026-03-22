@@ -108,6 +108,10 @@ use codex_app_server_protocol::SkillsConfigWriteResponse;
 use codex_app_server_protocol::SkillsListParams;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadActivateParams;
+use codex_app_server_protocol::ThreadActivateResponse;
+use codex_app_server_protocol::ThreadActivateStatus;
+use codex_app_server_protocol::ThreadActivationRequestedNotification;
 use codex_app_server_protocol::ThreadArchiveParams;
 use codex_app_server_protocol::ThreadArchiveResponse;
 use codex_app_server_protocol::ThreadArchivedNotification;
@@ -632,6 +636,10 @@ impl CodexMessageProcessor {
             }
             ClientRequest::ThreadUnsubscribe { request_id, params } => {
                 self.thread_unsubscribe(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::ThreadActivate { request_id, params } => {
+                self.thread_activate(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::ThreadResume { request_id, params } => {
@@ -4978,6 +4986,68 @@ impl CodexMessageProcessor {
             .await;
     }
 
+    async fn thread_activate(
+        &mut self,
+        request_id: ConnectionRequestId,
+        params: ThreadActivateParams,
+    ) {
+        let thread_id = match ThreadId::from_string(&params.thread_id) {
+            Ok(id) => id,
+            Err(err) => {
+                self.send_invalid_request_error(request_id, format!("invalid thread id: {err}"))
+                    .await;
+                return;
+            }
+        };
+
+        if self.thread_manager.get_thread(thread_id).await.is_err() {
+            self.outgoing
+                .send_response(
+                    request_id,
+                    ThreadActivateResponse {
+                        status: ThreadActivateStatus::NotLoaded,
+                    },
+                )
+                .await;
+            return;
+        }
+
+        let connection_ids = self
+            .thread_state_manager
+            .subscribed_connection_ids(thread_id)
+            .await;
+        if connection_ids.is_empty() {
+            self.outgoing
+                .send_response(
+                    request_id,
+                    ThreadActivateResponse {
+                        status: ThreadActivateStatus::NoSubscribers,
+                    },
+                )
+                .await;
+            return;
+        }
+
+        self.outgoing
+            .send_server_notification_to_connections(
+                &connection_ids,
+                ServerNotification::ThreadActivationRequested(
+                    ThreadActivationRequestedNotification {
+                        thread_id: thread_id.to_string(),
+                    },
+                ),
+            )
+            .await;
+        self.outgoing
+            .send_response(
+                request_id,
+                ThreadActivateResponse {
+                    status: ThreadActivateStatus::Delivered,
+                },
+            )
+            .await;
+    }
+
     async fn archive_thread_common(
         &mut self,
         thread_id: ThreadId,
@@ -8183,6 +8253,10 @@ mod tests {
     use anyhow::Result;
     use codex_app_server_protocol::ServerRequestPayload;
     use codex_app_server_protocol::ToolRequestUserInputParams;
+    use codex_core::config::ConfigBuilder;
+    use codex_core::test_support::auth_manager_from_auth;
+    use codex_core::test_support::thread_manager_with_models_provider_and_home;
+    use codex_feedback::CodexFeedback;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::SubAgentSource;
     use pretty_assertions::assert_eq;
@@ -8610,6 +8684,103 @@ mod tests {
         );
         assert!(state.cancel_tx.is_none());
         assert!(state.active_turn_snapshot().is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn thread_activate_notifies_subscribed_clients() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config = Arc::new(
+            ConfigBuilder::default()
+                .codex_home(temp_dir.path().to_path_buf())
+                .build()
+                .await?,
+        );
+        let auth_manager = auth_manager_from_auth(CodexAuth::from_api_key("dummy"));
+        let thread_manager = Arc::new(thread_manager_with_models_provider_and_home(
+            CodexAuth::from_api_key("dummy"),
+            config.model_provider.clone(),
+            config.codex_home.clone(),
+        ));
+        let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::channel(8);
+        let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
+        let mut processor = CodexMessageProcessor::new(CodexMessageProcessorArgs {
+            auth_manager,
+            thread_manager: Arc::clone(&thread_manager),
+            outgoing,
+            arg0_paths: Arg0DispatchPaths::default(),
+            config: Arc::clone(&config),
+            cli_overrides: Vec::new(),
+            cloud_requirements: Arc::new(RwLock::new(CloudRequirementsLoader::default())),
+            feedback: CodexFeedback::new(),
+            log_db: None,
+        });
+        let target_connection = ConnectionId(1);
+        let requester_connection = ConnectionId(2);
+        let request_id = ConnectionRequestId {
+            connection_id: requester_connection,
+            request_id: RequestId::Integer(7),
+        };
+
+        processor
+            .thread_state_manager
+            .connection_initialized(target_connection)
+            .await;
+        let thread_id = thread_manager
+            .start_thread((*config).clone())
+            .await?
+            .thread_id;
+        processor
+            .thread_state_manager
+            .try_ensure_connection_subscribed(thread_id, target_connection, false)
+            .await
+            .expect("target connection should be live");
+
+        processor
+            .thread_activate(
+                request_id.clone(),
+                ThreadActivateParams {
+                    thread_id: thread_id.to_string(),
+                },
+            )
+            .await;
+
+        let activation = outgoing_rx.recv().await.expect("activation should be sent");
+        let OutgoingEnvelope::ToConnection {
+            connection_id,
+            message:
+                OutgoingMessage::AppServerNotification(ServerNotification::ThreadActivationRequested(
+                    payload,
+                )),
+        } = activation
+        else {
+            panic!("expected activation notification to subscribed connection");
+        };
+        assert_eq!(connection_id, target_connection);
+        assert_eq!(
+            payload,
+            ThreadActivationRequestedNotification {
+                thread_id: thread_id.to_string(),
+            }
+        );
+
+        let response = outgoing_rx.recv().await.expect("response should be sent");
+        let OutgoingEnvelope::ToConnection {
+            connection_id,
+            message: OutgoingMessage::Response(response),
+        } = response
+        else {
+            panic!("expected activation response to requester");
+        };
+        assert_eq!(connection_id, requester_connection);
+        assert_eq!(response.id, request_id.request_id);
+        assert_eq!(
+            serde_json::from_value::<ThreadActivateResponse>(response.result)?,
+            ThreadActivateResponse {
+                status: ThreadActivateStatus::Delivered,
+            }
+        );
+        assert!(outgoing_rx.try_recv().is_err());
         Ok(())
     }
 
