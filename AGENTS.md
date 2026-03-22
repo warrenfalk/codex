@@ -37,7 +37,8 @@ In the codex-rs folder where the rust code lives:
   - This rule applies especially to high-touch files that already attract unrelated changes, such
     as `codex-rs/tui/src/app.rs`, `codex-rs/tui/src/bottom_pane/chat_composer.rs`,
     `codex-rs/tui/src/bottom_pane/footer.rs`, `codex-rs/tui/src/chatwidget.rs`,
-    `codex-rs/tui/src/bottom_pane/mod.rs`, and similarly central orchestration modules.
+    `codex-rs/tui/src/bottom_pane/mod.rs`, `codex-rs/tui/src/resume_picker.rs`,
+    `codex-rs/tui/src/connected_app_server.rs`, and similarly central orchestration modules.
   - When extracting code from a large module, move the related tests and module/type docs toward
     the new implementation so the invariants stay close to the code that owns them.
 
@@ -120,6 +121,7 @@ Run `just fmt` (in `codex-rs` directory) automatically after you have finished m
 
 1. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui`.
 2. Once those pass, if any changes were made in common, core, or protocol, run the complete test suite with `cargo test` (or `just test` if `cargo-nextest` is installed). Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. project-specific or individual tests can be run without asking the user, but do ask the user before running the complete test suite.
+- If you change `flake.nix` or `codex-rs/default.nix`, run `nix build` from the repo root before finalizing so Nix environment regressions are caught locally.
 
 Before finalizing a large change to `codex-rs`, run `just fix -p <project>` (in `codex-rs` directory) to fix any linter issues in the code. Prefer scoping with `-p` to avoid slow workspace‑wide Clippy builds; only run `just fix` without `-p` if you changed shared crates. Do not re-run tests after running `fix` or `fmt`.
 
@@ -188,6 +190,7 @@ If you don’t have the tool:
 - Tests should use pretty_assertions::assert_eq for clearer diffs. Import this at the top of the test module if it isn't already.
 - Prefer deep equals comparisons whenever possible. Perform `assert_eq!()` on entire objects, rather than individual fields.
 - Avoid mutating process environment in tests; prefer passing environment-derived flags or dependencies from above.
+- When changing Linux sandbox or seccomp behavior, add or update end-to-end coverage in `codex-rs/exec/tests/suite/sandbox.rs` so the policy change is exercised under the real sandbox harness.
 
 ### Spawning workspace binaries in tests (Cargo vs Bazel)
 
