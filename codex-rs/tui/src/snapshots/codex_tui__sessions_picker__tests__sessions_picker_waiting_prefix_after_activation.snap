@@ -1,0 +1,11 @@
+---
+source: tui/src/sessions_picker.rs
+assertion_line: 608
+expression: terminal.backend()
+---
+Active Sessions
+Press enter to focus, esc to close
+
+> insurance main Waiting: Need you to decide between option A and option B.
+
+1 loaded session(s)

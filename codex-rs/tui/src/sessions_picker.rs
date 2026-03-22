@@ -1,9 +1,12 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::key_hint;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::remote_sessions::RemoteSessionsClient;
+use crate::shimmer::shimmer_spans;
 use crate::tui::FrameRequester;
+use crate::tui::TARGET_FRAME_INTERVAL;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use codex_app_server_protocol::ServerNotification;
@@ -83,6 +86,7 @@ struct SessionsPickerScreen {
     request_frame: FrameRequester,
     entries: Vec<SessionEntry>,
     selected_thread_id: Option<String>,
+    activated_thread_ids: HashSet<String>,
     pending_focus_thread_id: Option<String>,
     should_close: bool,
     footer_message: Option<String>,
@@ -99,6 +103,7 @@ impl SessionsPickerScreen {
             request_frame,
             entries: Vec::new(),
             selected_thread_id: None,
+            activated_thread_ids: HashSet::new(),
             pending_focus_thread_id: None,
             should_close: false,
             footer_message: None,
@@ -150,8 +155,9 @@ impl SessionsPickerScreen {
     }
 
     fn activate_selected(&mut self) {
-        if let Some(thread_id) = self.current_thread_id() {
-            self.pending_focus_thread_id = Some(thread_id.to_string());
+        if let Some(thread_id) = self.current_thread_id().map(ToOwned::to_owned) {
+            self.activated_thread_ids.insert(thread_id.clone());
+            self.pending_focus_thread_id = Some(thread_id);
             self.request_frame.schedule_frame();
         }
     }
@@ -295,6 +301,13 @@ impl WidgetRef for &SessionsPickerScreen {
         if area.height == 0 || area.width == 0 {
             return;
         }
+        if self
+            .entries
+            .iter()
+            .any(|entry| session_is_working(&entry.thread))
+        {
+            self.request_frame.schedule_frame_in(TARGET_FRAME_INTERVAL);
+        }
 
         let title = Line::from(vec!["Active Sessions".bold()]);
         Paragraph::new(title).render(
@@ -361,21 +374,26 @@ impl WidgetRef for &SessionsPickerScreen {
                 };
                 let directory = session_directory_name(&entry.thread.cwd);
                 let branch = session_branch_label(&entry.thread);
-                let state = session_final_field(&entry.thread);
+                let waiting_prefix_highlighted =
+                    !self.activated_thread_ids.contains(entry.thread.id.as_str());
                 let branch_span = if branch == "-" {
                     Span::from(format!("{branch:<branch_width$}")).dim()
                 } else {
                     Span::from(format!("{branch:<branch_width$}")).cyan()
                 };
+                let mut spans = vec![
+                    marker,
+                    Span::from(format!("{directory:<dir_width$}")).bold(),
+                    " ".into(),
+                    branch_span,
+                    " ".dim(),
+                ];
+                spans.extend(session_final_field_spans(
+                    &entry.thread,
+                    waiting_prefix_highlighted,
+                ));
                 let line = truncate_line_with_ellipsis_if_overflow(
-                    Line::from(vec![
-                        marker,
-                        Span::from(format!("{directory:<dir_width$}")).bold(),
-                        " ".into(),
-                        branch_span,
-                        " ".dim(),
-                        Span::from(state),
-                    ]),
+                    Line::from(spans),
                     list_area.width as usize,
                 );
                 Paragraph::new(line).render(
@@ -417,12 +435,35 @@ fn session_branch_label(thread: &Thread) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-fn session_final_field(thread: &Thread) -> String {
+fn session_is_working(thread: &Thread) -> bool {
+    matches!(
+        &thread.status,
+        ThreadStatus::Active { active_flags } if active_flags.is_empty()
+    )
+}
+
+fn session_final_field_spans(
+    thread: &Thread,
+    waiting_prefix_highlighted: bool,
+) -> Vec<Span<'static>> {
     match &thread.status {
-        ThreadStatus::Active { active_flags } if active_flags.is_empty() => "working".to_string(),
-        ThreadStatus::SystemError => "system error".to_string(),
+        ThreadStatus::Active { active_flags } if active_flags.is_empty() => {
+            shimmer_spans("Working...")
+        }
+        ThreadStatus::SystemError => vec!["system error".into()],
         ThreadStatus::Active { .. } | ThreadStatus::Idle | ThreadStatus::NotLoaded => {
-            latest_assistant_snippet(thread).unwrap_or_else(|| "waiting".to_string())
+            let mut spans = Vec::with_capacity(2);
+            if waiting_prefix_highlighted {
+                spans.push("Waiting: ".yellow());
+            } else {
+                spans.push("Waiting: ".into());
+            }
+            spans.push(
+                latest_assistant_snippet(thread)
+                    .unwrap_or_else(|| "waiting".to_string())
+                    .into(),
+            );
+            spans
         }
     }
 }
@@ -449,6 +490,7 @@ mod tests {
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::Terminal;
+    use ratatui::style::Color;
 
     fn sample_thread(
         id: &str,
@@ -525,6 +567,7 @@ mod tests {
                 },
             ],
             selected_thread_id: Some("thread-1".to_string()),
+            activated_thread_ids: HashSet::new(),
             pending_focus_thread_id: None,
             should_close: false,
             footer_message: None,
@@ -534,6 +577,38 @@ mod tests {
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render sessions picker");
         assert_snapshot!("sessions_picker", terminal.backend());
+    }
+
+    #[test]
+    fn sessions_picker_waiting_prefix_after_activation_snapshot() {
+        let mut activated_thread_ids = HashSet::new();
+        activated_thread_ids.insert("thread-2".to_string());
+        let screen = SessionsPickerScreen {
+            request_frame: FrameRequester::test_dummy(),
+            entries: vec![SessionEntry {
+                thread: sample_thread(
+                    "thread-2",
+                    "/home/warren/insurance",
+                    Some("main"),
+                    ThreadStatus::Idle,
+                    Some("Need you to decide between option A and option B."),
+                    10,
+                ),
+            }],
+            selected_thread_id: Some("thread-2".to_string()),
+            activated_thread_ids,
+            pending_focus_thread_id: None,
+            should_close: false,
+            footer_message: None,
+        };
+        let mut terminal = Terminal::new(VT100Backend::new(80, 6)).expect("terminal");
+        terminal
+            .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
+            .expect("render sessions picker");
+        assert_snapshot!(
+            "sessions_picker_waiting_prefix_after_activation",
+            terminal.backend()
+        );
     }
 
     #[test]
@@ -562,5 +637,25 @@ mod tests {
             latest_assistant_snippet(&thread).as_deref(),
             Some("second answer")
         );
+    }
+
+    #[test]
+    fn waiting_prefix_style_changes_after_activation() {
+        let thread = sample_thread(
+            "thread-1",
+            "/tmp/project",
+            Some("main"),
+            ThreadStatus::Idle,
+            Some("Need input"),
+            1,
+        );
+
+        let highlighted = session_final_field_spans(&thread, true);
+        let activated = session_final_field_spans(&thread, false);
+
+        assert_eq!(highlighted[0].content.as_ref(), "Waiting: ");
+        assert_eq!(highlighted[0].style.fg, Some(Color::Yellow));
+        assert_eq!(activated[0].content.as_ref(), "Waiting: ");
+        assert_eq!(activated[0].style.fg, None);
     }
 }
