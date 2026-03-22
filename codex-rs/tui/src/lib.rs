@@ -104,6 +104,7 @@ mod get_git_diff;
 mod history_cell;
 pub mod insert_history;
 mod key_hint;
+mod kitty;
 mod line_truncation;
 pub mod live_wrap;
 mod markdown;
@@ -117,10 +118,12 @@ pub mod onboarding;
 mod oss_selection;
 mod pager_overlay;
 pub mod public_widgets;
+mod remote_sessions;
 mod render;
 mod resume_picker;
 mod selection_list;
 mod session_log;
+mod sessions_picker;
 mod shimmer;
 mod skills_helpers;
 mod slash_command;
@@ -573,6 +576,75 @@ pub async fn run_main(
     )
     .await
     .map_err(|err| std::io::Error::other(err.to_string()))
+}
+
+pub async fn run_sessions_main(
+    cli: Cli,
+    arg0_paths: Arg0DispatchPaths,
+    _loader_overrides: LoaderOverrides,
+) -> std::io::Result<AppExitInfo> {
+    color_eyre::install().map_err(|err| std::io::Error::other(err.to_string()))?;
+
+    let overrides_cli = codex_utils_cli::CliConfigOverrides {
+        raw_overrides: cli.config_overrides.raw_overrides.clone(),
+    };
+    let cli_kv_overrides = overrides_cli
+        .parse_overrides()
+        .map_err(|err| std::io::Error::other(format!("Error parsing -c overrides: {err}")))?;
+
+    let cwd = cli.cwd.clone();
+    let cloud_requirements = CloudRequirementsLoader::default();
+    let overrides = ConfigOverrides {
+        cwd,
+        config_profile: cli.config_profile.clone(),
+        codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
+        main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
+        ..Default::default()
+    };
+    let config = ConfigBuilder::default()
+        .cli_overrides(cli_kv_overrides.clone())
+        .harness_overrides(overrides)
+        .cloud_requirements(cloud_requirements.clone())
+        .build()
+        .await
+        .map_err(|err| std::io::Error::other(format!("Error loading configuration: {err}")))?;
+
+    let mut terminal = tui::init()?;
+    terminal.clear()?;
+    let mut tui = Tui::new(terminal);
+    let use_alt_screen = determine_alt_screen_mode(cli.no_alt_screen, config.tui_alternate_screen);
+    tui.set_alt_screen_enabled(use_alt_screen);
+
+    let connect_url = cli.connect.as_deref().ok_or_else(|| {
+        std::io::Error::other("`codex sessions` currently requires `--connect [WS_URL]`")
+    })?;
+    let selected_thread_id = async {
+        let mut sessions = remote_sessions::RemoteSessionsClient::connect(connect_url)
+            .await
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
+
+        sessions_picker::run_sessions_picker(&mut tui, &mut sessions)
+            .await
+            .map_err(|err| std::io::Error::other(err.to_string()))
+    }
+    .await;
+
+    restore();
+    let _ = tui.terminal.clear();
+
+    let selected_thread_id = selected_thread_id?;
+
+    if let Some(thread_id) = selected_thread_id {
+        kitty::focus_thread(&thread_id).await?;
+    }
+
+    Ok(AppExitInfo {
+        token_usage: codex_protocol::protocol::TokenUsage::default(),
+        thread_id: None,
+        thread_name: None,
+        update_action: None,
+        exit_reason: ExitReason::UserRequested,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

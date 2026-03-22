@@ -35,6 +35,7 @@ use codex_app_server_protocol::ThreadSortKey as RemoteThreadSortKey;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
+use codex_app_server_protocol::ThreadUnsubscribeParams;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
@@ -184,11 +185,44 @@ pub(crate) enum ConnectedSessionMode {
 
 pub(crate) struct ConnectedSessionHandle {
     cancel: CancellationToken,
+    outbound_tx: UnboundedSender<JSONRPCMessage>,
+    state: std::sync::Arc<Mutex<ConnectedSessionState>>,
     tasks: Vec<JoinHandle<()>>,
 }
 
 impl ConnectedSessionHandle {
     pub(crate) async fn shutdown(self) {
+        let request_id = {
+            let mut guard = self.state.lock().await;
+            let request_id = guard.allocate_request_id("thread/unsubscribe");
+            let request = JSONRPCMessage::Request(JSONRPCRequest {
+                id: request_id.clone(),
+                method: "thread/unsubscribe".to_string(),
+                params: Some(
+                    serde_json::to_value(ThreadUnsubscribeParams {
+                        thread_id: guard.thread_id.clone(),
+                    })
+                    .unwrap_or_default(),
+                ),
+                trace: None,
+            });
+            let _ = self.outbound_tx.send(request);
+            request_id
+        };
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(250), async {
+            loop {
+                {
+                    let guard = self.state.lock().await;
+                    if !guard.pending_requests.contains_key(&request_id) {
+                        break;
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+
         self.cancel.cancel();
         for task in self.tasks {
             task.abort();
@@ -257,8 +291,8 @@ pub(crate) async fn connect(
     ));
     let op = tokio::spawn(op_task(
         codex_op_rx,
-        outbound_tx,
-        state,
+        outbound_tx.clone(),
+        state.clone(),
         op_cancel,
         app_event_tx.clone(),
     ));
@@ -268,6 +302,8 @@ pub(crate) async fn connect(
         session_configured_event,
         handle: ConnectedSessionHandle {
             cancel,
+            outbound_tx,
+            state,
             tasks: vec![writer, reader, op],
         },
     })
@@ -2659,6 +2695,50 @@ mod tests {
             }
             other => panic!("expected session configured event, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn shutdown_sends_thread_unsubscribe_before_cancel() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            1,
+        )));
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+        let state_for_observer = state.clone();
+        let observer = tokio::spawn(async move {
+            let outbound = timeout(Duration::from_secs(1), outbound_rx.recv())
+                .await
+                .expect("unsubscribe request should arrive")
+                .expect("unsubscribe request should be present");
+            match outbound {
+                JSONRPCMessage::Request(request) => {
+                    assert_eq!(request.id, RequestId::Integer(1));
+                    assert_eq!(request.method, "thread/unsubscribe");
+                    let params: ThreadUnsubscribeParams =
+                        serde_json::from_value(request.params.expect("unsubscribe params"))
+                            .expect("decode unsubscribe params");
+                    assert_eq!(params.thread_id, "thread-1");
+                    state_for_observer
+                        .lock()
+                        .await
+                        .pending_requests
+                        .remove(&request.id);
+                }
+                other => panic!("expected unsubscribe request, got {other:?}"),
+            }
+        });
+
+        ConnectedSessionHandle {
+            cancel: CancellationToken::new(),
+            outbound_tx,
+            state,
+            tasks: Vec::new(),
+        }
+        .shutdown()
+        .await;
+
+        observer.await.expect("observer task should finish");
     }
 
     #[test]

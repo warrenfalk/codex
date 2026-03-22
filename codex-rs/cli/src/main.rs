@@ -137,6 +137,9 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
+    /// List active sessions from `--connect` and focus them in kitty.
+    Sessions(SessionsCommand),
+
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
@@ -391,6 +394,9 @@ struct GenerateTsCommand {
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
+
+#[derive(Debug, Args)]
+struct SessionsCommand;
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
@@ -746,6 +752,19 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 interactive,
                 remote.remote.or(root_remote.clone()),
                 arg0_paths.clone(),
+            )
+            .await?;
+            handle_app_exit(exit_info)?;
+        }
+        Some(Subcommand::Sessions(SessionsCommand)) => {
+            prepend_config_flags(
+                &mut interactive.config_overrides,
+                root_config_overrides.clone(),
+            );
+            let exit_info = codex_tui::run_sessions_main(
+                interactive,
+                arg0_paths.clone(),
+                codex_core::config_loader::LoaderOverrides::default(),
             )
             .await?;
             handle_app_exit(exit_info)?;
