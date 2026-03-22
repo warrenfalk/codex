@@ -34,6 +34,13 @@ use codex_core::format_exec_policy_error_with_source;
 use codex_core::path_utils;
 use codex_core::read_session_meta_line;
 use codex_core::state_db::get_state_db;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionsMode {
+    Picker,
+    List,
+    Activate { thread_id: String },
+}
 use codex_core::terminal::Multiplexer;
 use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_protocol::ThreadId;
@@ -580,6 +587,7 @@ pub async fn run_main(
 
 pub async fn run_sessions_main(
     cli: Cli,
+    mode: SessionsMode,
     arg0_paths: Arg0DispatchPaths,
     _loader_overrides: LoaderOverrides,
 ) -> std::io::Result<AppExitInfo> {
@@ -609,30 +617,51 @@ pub async fn run_sessions_main(
         .await
         .map_err(|err| std::io::Error::other(format!("Error loading configuration: {err}")))?;
 
-    let mut terminal = tui::init()?;
-    terminal.clear()?;
-    let mut tui = Tui::new(terminal);
-    let use_alt_screen = determine_alt_screen_mode(cli.no_alt_screen, config.tui_alternate_screen);
-    tui.set_alt_screen_enabled(use_alt_screen);
-
     let connect_url = cli.connect.as_deref().ok_or_else(|| {
         std::io::Error::other("`codex sessions` currently requires `--connect [WS_URL]`")
     })?;
-    let sessions_result = async {
-        let mut sessions = remote_sessions::RemoteSessionsClient::connect(connect_url)
-            .await
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
+    let mut sessions = remote_sessions::RemoteSessionsClient::connect(connect_url)
+        .await
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
 
-        sessions_picker::run_sessions_picker(&mut tui, &mut sessions)
-            .await
-            .map_err(|err| std::io::Error::other(err.to_string()))
+    match mode {
+        SessionsMode::List => {
+            let threads = sessions
+                .list_threads()
+                .await
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            let mut stdout = std::io::stdout();
+            serde_json::to_writer_pretty(&mut stdout, &threads)
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+            use std::io::Write as _;
+            stdout
+                .write_all(b"\n")
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+        }
+        SessionsMode::Activate { thread_id } => {
+            sessions
+                .activate_thread(&thread_id)
+                .await
+                .map_err(|err| std::io::Error::other(err.to_string()))?;
+        }
+        SessionsMode::Picker => {
+            let mut terminal = tui::init()?;
+            terminal.clear()?;
+            let mut tui = Tui::new(terminal);
+            let use_alt_screen =
+                determine_alt_screen_mode(cli.no_alt_screen, config.tui_alternate_screen);
+            tui.set_alt_screen_enabled(use_alt_screen);
+
+            let sessions_result = sessions_picker::run_sessions_picker(&mut tui, &mut sessions)
+                .await
+                .map_err(|err| std::io::Error::other(err.to_string()));
+
+            restore();
+            let _ = tui.terminal.clear();
+
+            sessions_result?;
+        }
     }
-    .await;
-
-    restore();
-    let _ = tui.terminal.clear();
-
-    sessions_result?;
 
     Ok(AppExitInfo {
         token_usage: codex_protocol::protocol::TokenUsage::default(),

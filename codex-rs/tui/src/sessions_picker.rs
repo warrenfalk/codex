@@ -178,15 +178,13 @@ impl SessionsPickerScreen {
     }
 
     async fn reload_all(&mut self, sessions: &mut RemoteSessionsClient) -> Result<()> {
-        let thread_ids = sessions.loaded_thread_ids().await?;
-        let mut entries = Vec::with_capacity(thread_ids.len());
-        for thread_id in thread_ids {
-            if let Some(thread) = self.read_thread(sessions, &thread_id).await? {
-                entries.push(SessionEntry { thread });
-            }
-        }
+        let entries = sessions
+            .list_threads()
+            .await?
+            .into_iter()
+            .map(|thread| SessionEntry { thread })
+            .collect();
         self.entries = entries;
-        self.sort_entries();
         self.ensure_valid_selection();
         self.footer_message = None;
         self.request_frame.schedule_frame();
@@ -251,16 +249,10 @@ impl SessionsPickerScreen {
         sessions: &mut RemoteSessionsClient,
         thread_id: &str,
     ) -> Result<Option<Thread>> {
-        match sessions.read_thread(thread_id).await {
-            Ok(thread) => Ok(Some(thread)),
+        match sessions.read_listed_thread(thread_id).await {
+            Ok(thread) => Ok(thread),
             Err(err) => {
-                if err
-                    .to_string()
-                    .contains("includeTurns is unavailable before first user message")
-                {
-                    return Ok(None);
-                }
-                self.footer_message = Some(format!("Failed to read thread {thread_id}: {err}"));
+                self.footer_message = Some(err.to_string());
                 Ok(None)
             }
         }

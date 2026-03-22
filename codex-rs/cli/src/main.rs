@@ -396,7 +396,15 @@ struct GenerateTsCommand {
 }
 
 #[derive(Debug, Args)]
-struct SessionsCommand;
+struct SessionsCommand {
+    /// Print the active sessions as JSON instead of launching the interactive picker.
+    #[arg(long = "list", default_value_t = false, conflicts_with = "activate")]
+    list: bool,
+
+    /// Ask the connected client for the given thread to bring its local UI to the foreground.
+    #[arg(long = "activate", value_name = "THREAD_ID", conflicts_with = "list")]
+    activate: Option<String>,
+}
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
@@ -756,13 +764,21 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             .await?;
             handle_app_exit(exit_info)?;
         }
-        Some(Subcommand::Sessions(SessionsCommand)) => {
+        Some(Subcommand::Sessions(SessionsCommand { list, activate })) => {
             prepend_config_flags(
                 &mut interactive.config_overrides,
                 root_config_overrides.clone(),
             );
+            let mode = if list {
+                codex_tui::SessionsMode::List
+            } else if let Some(thread_id) = activate {
+                codex_tui::SessionsMode::Activate { thread_id }
+            } else {
+                codex_tui::SessionsMode::Picker
+            };
             let exit_info = codex_tui::run_sessions_main(
                 interactive,
+                mode,
                 arg0_paths.clone(),
                 codex_core::config_loader::LoaderOverrides::default(),
             )
@@ -1429,6 +1445,14 @@ mod tests {
         cli.interactive
     }
 
+    fn sessions_command_from_args(args: &[&str]) -> SessionsCommand {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let Subcommand::Sessions(sessions) = cli.subcommand.expect("sessions present") else {
+            unreachable!()
+        };
+        sessions
+    }
+
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
         let token_usage = TokenUsage {
             output_tokens: 2,
@@ -1629,6 +1653,21 @@ mod tests {
         let interactive =
             interactive_from_args(["codex", "--connect", "ws://127.0.0.1:4555"].as_ref());
         assert_eq!(interactive.connect.as_deref(), Some("ws://127.0.0.1:4555"));
+    }
+
+    #[test]
+    fn sessions_list_flag_parses() {
+        let sessions = sessions_command_from_args(["codex", "sessions", "--list"].as_ref());
+        assert!(sessions.list);
+        assert_eq!(sessions.activate, None);
+    }
+
+    #[test]
+    fn sessions_activate_flag_parses() {
+        let sessions =
+            sessions_command_from_args(["codex", "sessions", "--activate", "thread-123"].as_ref());
+        assert!(!sessions.list);
+        assert_eq!(sessions.activate.as_deref(), Some("thread-123"));
     }
 
     #[test]

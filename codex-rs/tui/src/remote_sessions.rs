@@ -86,6 +86,32 @@ impl RemoteSessionsClient {
         Ok(response.thread)
     }
 
+    pub(crate) async fn read_listed_thread(&mut self, thread_id: &str) -> Result<Option<Thread>> {
+        match self.read_thread(thread_id).await {
+            Ok(thread) => Ok(Some(thread)),
+            Err(err) if is_unmaterialized_thread_error(&err) => Ok(None),
+            Err(err) => Err(err.wrap_err(format!("Failed to read thread {thread_id}"))),
+        }
+    }
+
+    pub(crate) async fn list_threads(&mut self) -> Result<Vec<Thread>> {
+        let thread_ids = self.loaded_thread_ids().await?;
+        let mut threads = Vec::with_capacity(thread_ids.len());
+        for thread_id in thread_ids {
+            if let Some(thread) = self.read_listed_thread(&thread_id).await? {
+                threads.push(thread);
+            }
+        }
+        threads.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| left.cwd.cmp(&right.cwd))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(threads)
+    }
+
     pub(crate) async fn activate_thread(&mut self, thread_id: &str) -> Result<()> {
         let response: ThreadActivateResponse = self
             .request_typed(
@@ -210,6 +236,11 @@ impl RemoteSessionsClient {
             .await
             .wrap_err("failed to send websocket frame")
     }
+}
+
+fn is_unmaterialized_thread_error(err: &color_eyre::Report) -> bool {
+    err.to_string()
+        .contains("includeTurns is unavailable before first user message")
 }
 
 async fn initialize_connection(ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> Result<()> {
