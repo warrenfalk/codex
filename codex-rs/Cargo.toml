@@ -368,6 +368,9 @@ ignored = [
     "codex-secrets"
 ]
 
+[profile.dev]
+debug = 1
+
 [profile.release]
 lto = "fat"
 split-debuginfo = "off"
