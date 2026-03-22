@@ -185,6 +185,13 @@ If you don’t have the tool:
 
 - `cargo install cargo-insta`
 
+- On branches where `codex-rs/Cargo.toml` still uses the placeholder
+  `0.0.0`, the Nix package build handles this by patching `Cargo.toml` in
+  `codex-rs/default.nix` before building.
+- Keep version-sensitive snapshots stable. When a TUI snapshot includes the
+  CLI version, normalize it to the test placeholder instead of baking in a
+  release tag or expecting the shell to override Cargo's compile-time value.
+
 ### Test assertions
 
 - Tests should use pretty_assertions::assert_eq for clearer diffs. Import this at the top of the test module if it isn't already.
