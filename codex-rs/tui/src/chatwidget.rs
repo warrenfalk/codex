@@ -246,6 +246,8 @@ use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
 use crate::exec_command::strip_bash_lc_and_escape;
+use crate::file_links;
+use crate::file_reference_index;
 use crate::get_git_diff::get_git_diff;
 use crate::history_cell;
 use crate::history_cell::AgentMessageCell;
@@ -1352,6 +1354,15 @@ impl ChatWidget {
         }
     }
 
+    fn refresh_file_reference_index(&self) {
+        file_reference_index::refresh(
+            self.current_cwd
+                .as_ref()
+                .unwrap_or(&self.config.cwd)
+                .clone(),
+        );
+    }
+
     // --- Small event handlers ---
     fn on_session_configured(&mut self, event: codex_protocol::protocol::SessionConfiguredEvent) {
         self.bottom_pane
@@ -1364,6 +1375,7 @@ impl ChatWidget {
         self.current_rollout_path = event.rollout_path.clone();
         self.current_cwd = Some(event.cwd.clone());
         self.config.cwd = event.cwd.clone();
+        self.refresh_file_reference_index();
         if let Err(err) = self
             .config
             .permissions
@@ -3132,7 +3144,11 @@ impl ChatWidget {
             }
             self.stream_controller = Some(StreamController::new(
                 self.last_rendered_width.get().map(|w| w.saturating_sub(2)),
-                &self.config.cwd,
+                self.current_cwd
+                    .as_ref()
+                    .unwrap_or(&self.config.cwd)
+                    .clone(),
+                self.config.file_opener,
             ));
         }
         if let Some(controller) = self.stream_controller.as_mut()
@@ -3692,6 +3708,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
+        widget.refresh_file_reference_index();
 
         widget
     }
@@ -3870,6 +3887,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
+        widget.refresh_file_reference_index();
 
         widget
     }
@@ -4059,6 +4077,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
+        widget.refresh_file_reference_index();
 
         widget
     }
@@ -5539,13 +5558,33 @@ impl ChatWidget {
                 } else {
                     // Show explanation when there are no structured findings.
                     let mut rendered: Vec<ratatui::text::Line<'static>> = vec!["".into()];
-                    append_markdown(
-                        &explanation,
-                        /*width*/ None,
-                        Some(self.config.cwd.as_path()),
-                        &mut rendered,
-                    );
-                    let body_cell = AgentMessageCell::new(rendered, /*is_first_line*/ false);
+                    let cwd = self
+                        .current_cwd
+                        .as_ref()
+                        .unwrap_or(&self.config.cwd)
+                        .clone();
+                    append_markdown(&explanation, None, Some(cwd.as_path()), &mut rendered);
+                    let body_cell = if let Some(markdown_link_targets) =
+                        file_links::extract_markdown_link_targets(
+                            &explanation,
+                            cwd.as_path(),
+                            self.config.file_opener,
+                        ) {
+                        AgentMessageCell::new_with_markdown_link_targets(
+                            rendered,
+                            false,
+                            cwd,
+                            self.config.file_opener,
+                            markdown_link_targets,
+                        )
+                    } else {
+                        AgentMessageCell::new_with_file_links(
+                            rendered,
+                            false,
+                            cwd,
+                            self.config.file_opener,
+                        )
+                    };
                     self.app_event_tx
                         .send(AppEvent::InsertHistoryCell(Box::new(body_cell)));
                 }

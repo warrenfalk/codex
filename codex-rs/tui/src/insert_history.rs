@@ -28,7 +28,9 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use unicode_width::UnicodeWidthStr;
 
+const OSC8_OPEN_PREFIX: &str = "\x1B]8;;";
 /// Insert `lines` above the viewport using the terminal's backend writer
 /// (avoids direct stdout references).
 pub fn insert_history_lines<B>(
@@ -61,15 +63,16 @@ where
     let mut wrapped_rows = 0usize;
 
     for line in &lines {
-        let line_wrapped =
-            if line_contains_url_like(line) && !line_has_mixed_url_and_non_url_tokens(line) {
-                vec![line.clone()]
-            } else {
-                adaptive_wrap_line(line, RtOptions::new(wrap_width))
-            };
+        let line_wrapped = if line_contains_osc8(line)
+            || (line_contains_url_like(line) && !line_has_mixed_url_and_non_url_tokens(line))
+        {
+            vec![line.clone()]
+        } else {
+            adaptive_wrap_line(line, RtOptions::new(wrap_width))
+        };
         wrapped_rows += line_wrapped
             .iter()
-            .map(|wrapped_line| wrapped_line.width().max(1).div_ceil(wrap_width))
+            .map(|wrapped_line| line_display_width(wrapped_line).max(1).div_ceil(wrap_width))
             .sum::<usize>();
         wrapped.extend(line_wrapped);
     }
@@ -129,7 +132,7 @@ where
         // URL lines can be wider than the terminal and will
         // character-wrap onto continuation rows. Pre-clear those rows
         // so stale content from a previously longer line is erased.
-        let physical_rows = line.width().max(1).div_ceil(wrap_width);
+        let physical_rows = line_display_width(&line).max(1).div_ceil(wrap_width);
         if physical_rows > 1 {
             queue!(writer, SavePosition)?;
             for _ in 1..physical_rows {
@@ -179,6 +182,45 @@ where
     }
 
     Ok(())
+}
+
+fn line_contains_osc8(line: &Line<'_>) -> bool {
+    line.spans
+        .iter()
+        .any(|span| span.content.contains(OSC8_OPEN_PREFIX))
+}
+
+fn line_display_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| span_display_width(span.content.as_ref()))
+        .sum()
+}
+
+fn span_display_width(content: &str) -> usize {
+    if !content.contains('\x1B') {
+        return content.width();
+    }
+
+    let mut visible = String::with_capacity(content.len());
+    let mut chars = content.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1B' && chars.clone().next() == Some(']') {
+            chars.next();
+            while let Some(c) = chars.next() {
+                if c == '\x07' {
+                    break;
+                }
+                if c == '\x1B' && matches!(chars.next(), Some('\\')) {
+                    break;
+                }
+            }
+            continue;
+        }
+        visible.push(ch);
+    }
+
+    visible.width()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,6 +405,20 @@ mod tests {
             String::from_utf8(actual).unwrap(),
             String::from_utf8(expected).unwrap()
         );
+    }
+
+    #[test]
+    fn write_spans_preserves_osc8_sequences() {
+        let url = "file:///tmp/example.rs#L12";
+        let span = Span::from(format!("\x1B]8;;{url}\x1B\\example.rs:12\x1B]8;;\x1B\\"));
+
+        let mut actual: Vec<u8> = Vec::new();
+        write_spans(&mut actual, std::iter::once(&span)).expect("write_spans should succeed");
+
+        let rendered = String::from_utf8(actual).expect("write_spans output should be utf8");
+        assert!(rendered.contains(&format!("\x1B]8;;{url}\x1B\\")));
+        assert!(rendered.contains("example.rs:12"));
+        assert!(rendered.contains("\x1B]8;;\x1B\\"));
     }
 
     #[test]

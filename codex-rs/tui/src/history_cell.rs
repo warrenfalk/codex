@@ -19,6 +19,8 @@ use crate::exec_cell::output_lines;
 use crate::exec_cell::spinner;
 use crate::exec_command::relativize_to_home;
 use crate::exec_command::strip_bash_lc_and_escape;
+use crate::file_links;
+use crate::file_links::FileLinkContext;
 use crate::live_wrap::take_prefix_by_width;
 use crate::markdown::append_markdown;
 use crate::render::line_utils::line_to_static;
@@ -39,6 +41,7 @@ use crate::wrapping::adaptive_wrap_lines;
 use base64::Engine;
 use codex_core::config::Config;
 use codex_core::config::types::McpServerTransportConfig;
+use codex_core::config::types::UriBasedFileOpener;
 use codex_core::mcp::McpManager;
 use codex_core::plugins::PluginsManager;
 use codex_core::web_search::web_search_detail;
@@ -64,7 +67,6 @@ use codex_utils_cli::format_env_display::format_env_display;
 use image::DynamicImage;
 use image::ImageReader;
 use ratatui::prelude::*;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Styled;
@@ -440,13 +442,47 @@ impl HistoryCell for ReasoningSummaryCell {
 pub(crate) struct AgentMessageCell {
     lines: Vec<Line<'static>>,
     is_first_line: bool,
+    file_link_context: Option<FileLinkContext>,
 }
 
 impl AgentMessageCell {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(lines: Vec<Line<'static>>, is_first_line: bool) -> Self {
         Self {
             lines,
             is_first_line,
+            file_link_context: None,
+        }
+    }
+
+    pub(crate) fn new_with_file_links(
+        lines: Vec<Line<'static>>,
+        is_first_line: bool,
+        cwd: PathBuf,
+        file_opener: UriBasedFileOpener,
+    ) -> Self {
+        Self {
+            lines,
+            is_first_line,
+            file_link_context: Some(FileLinkContext::new(cwd, file_opener)),
+        }
+    }
+
+    pub(crate) fn new_with_markdown_link_targets(
+        lines: Vec<Line<'static>>,
+        is_first_line: bool,
+        cwd: PathBuf,
+        file_opener: UriBasedFileOpener,
+        markdown_link_targets: Arc<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            lines,
+            is_first_line,
+            file_link_context: Some(FileLinkContext::with_markdown_link_targets(
+                cwd,
+                file_opener,
+                markdown_link_targets,
+            )),
         }
     }
 }
@@ -463,6 +499,22 @@ impl HistoryCell for AgentMessageCell {
                 })
                 .subsequent_indent("  ".into()),
         )
+    }
+
+    fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let lines = self.display_lines(width);
+        let Some(file_link_context) = self.file_link_context.as_ref() else {
+            return lines;
+        };
+        if file_link_context.file_opener() == UriBasedFileOpener::None {
+            return lines;
+        }
+
+        file_links::linkify_transcript_lines(lines, file_link_context)
+    }
+
+    fn desired_transcript_height(&self, width: u16) -> u16 {
+        self.display_lines(width).len() as u16
     }
 
     fn is_stream_continuation(&self) -> bool {
@@ -2539,10 +2591,12 @@ mod tests {
     use crate::exec_cell::CommandOutput;
     use crate::exec_cell::ExecCall;
     use crate::exec_cell::ExecCell;
+    use crate::file_reference_index;
     use codex_core::config::Config;
     use codex_core::config::ConfigBuilder;
     use codex_core::config::types::McpServerConfig;
     use codex_core::config::types::McpServerTransportConfig;
+    use codex_core::config::types::UriBasedFileOpener;
     use codex_otel::RuntimeMetricTotals;
     use codex_otel::RuntimeMetricsSummary;
     use codex_protocol::ThreadId;
@@ -2557,12 +2611,14 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::HashMap;
+    use std::fs;
     use std::path::PathBuf;
 
     use codex_protocol::mcp::CallToolResult;
     use codex_protocol::mcp::Tool;
     use codex_protocol::protocol::ExecCommandSource;
     use rmcp::model::Content;
+    use tempfile::tempdir;
 
     const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     async fn test_config() -> Config {
@@ -2590,6 +2646,18 @@ mod tests {
                     .collect::<String>()
             })
             .collect()
+    }
+
+    fn find_osc8_url(lines: &[Line<'static>]) -> Option<String> {
+        lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .find_map(|span| {
+                span.content
+                    .strip_prefix("\x1B]8;;")
+                    .and_then(|rest| rest.split("\x1B\\").next())
+                    .map(str::to_string)
+            })
     }
 
     fn render_transcript(cell: &dyn HistoryCell) -> Vec<String> {
@@ -2966,6 +3034,109 @@ mod tests {
         let cell = AgentMessageCell::new(vec![Line::default()], false);
         assert_eq!(cell.transcript_lines(80), vec![Line::from("  ")]);
         assert_eq!(cell.desired_transcript_height(80), 1);
+    }
+
+    #[test]
+    fn agent_message_cell_transcript_lines_wrap_repo_file_refs_with_osc8() {
+        let tempdir = tempdir().expect("tempdir");
+        let cwd = tempdir.path();
+        let file_path = cwd.join("src/lib.rs");
+        fs::create_dir_all(file_path.parent().expect("parent")).expect("create src dir");
+        fs::write(&file_path, "fn main() {}\n").expect("write test file");
+
+        let mut lines = Vec::new();
+        append_markdown("See `src/lib.rs:12`.\n", None, Some(cwd), &mut lines);
+        let cell = AgentMessageCell::new_with_file_links(
+            lines,
+            true,
+            cwd.to_path_buf(),
+            UriBasedFileOpener::VsCode,
+        );
+
+        let transcript = cell.transcript_lines(80);
+        let rendered = render_lines(&transcript).join("\n");
+        assert!(rendered.contains("src/lib.rs:12"));
+
+        let found_url = find_osc8_url(&transcript).expect("expected transcript OSC 8 hyperlink");
+        assert!(
+            found_url.starts_with("vscode://file/"),
+            "expected vscode URI, got: {found_url}"
+        );
+        assert!(
+            found_url.contains("/src/lib.rs:12"),
+            "expected line number in hyperlink URI, got: {found_url}"
+        );
+    }
+
+    #[test]
+    fn agent_message_cell_transcript_lines_resolve_unique_basename_file_refs_with_osc8() {
+        let tempdir = tempdir().expect("tempdir");
+        let cwd = tempdir.path();
+        let file_path = cwd.join("codex-rs/tui/src/markdown_render.rs");
+        fs::create_dir_all(file_path.parent().expect("parent")).expect("create nested dir");
+        fs::write(&file_path, "pub fn render() {}\n").expect("write test file");
+        file_reference_index::refresh_blocking(cwd.to_path_buf());
+
+        let mut lines = Vec::new();
+        append_markdown(
+            "See `markdown_render.rs:216`.\n",
+            None,
+            Some(cwd),
+            &mut lines,
+        );
+        let cell = AgentMessageCell::new_with_file_links(
+            lines,
+            true,
+            cwd.to_path_buf(),
+            UriBasedFileOpener::VsCode,
+        );
+
+        let transcript = cell.transcript_lines(80);
+        let rendered = render_lines(&transcript).join("\n");
+        assert!(rendered.contains("markdown_render.rs:216"));
+
+        let found_url = find_osc8_url(&transcript).expect("expected transcript OSC 8 hyperlink");
+        assert!(
+            found_url.contains("/codex-rs/tui/src/markdown_render.rs:216"),
+            "expected unique basename to resolve to nested file, got: {found_url}"
+        );
+    }
+
+    #[test]
+    fn agent_message_cell_transcript_lines_use_local_markdown_link_destinations() {
+        let tempdir = tempdir().expect("tempdir");
+        let cwd = tempdir.path();
+        let first_app = cwd.join("codex-rs/tui/src/app.rs");
+        let second_app = cwd.join("sdk/src/app.rs");
+        fs::create_dir_all(first_app.parent().expect("parent")).expect("create first app dir");
+        fs::create_dir_all(second_app.parent().expect("parent")).expect("create second app dir");
+        fs::write(&first_app, "pub fn first() {}\n").expect("write first app file");
+        fs::write(&second_app, "pub fn second() {}\n").expect("write second app file");
+        file_reference_index::refresh_blocking(cwd.to_path_buf());
+
+        let markdown = format!("See [app.rs]({}#L2322).\n", first_app.to_string_lossy());
+        let mut lines = Vec::new();
+        append_markdown(&markdown, None, Some(cwd), &mut lines);
+        let markdown_link_targets =
+            file_links::extract_markdown_link_targets(&markdown, cwd, UriBasedFileOpener::VsCode)
+                .expect("expected markdown link targets");
+        let cell = AgentMessageCell::new_with_markdown_link_targets(
+            lines,
+            true,
+            cwd.to_path_buf(),
+            UriBasedFileOpener::VsCode,
+            markdown_link_targets,
+        );
+
+        let transcript = cell.transcript_lines(80);
+        let rendered = render_lines(&transcript).join("\n");
+        assert!(rendered.contains("app.rs:2322"));
+
+        let found_url = find_osc8_url(&transcript).expect("expected transcript OSC 8 hyperlink");
+        assert!(
+            found_url.contains("/codex-rs/tui/src/app.rs:2322"),
+            "expected markdown link destination to drive hyperlink URI, got: {found_url}"
+        );
     }
 
     #[test]
