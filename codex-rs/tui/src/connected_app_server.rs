@@ -31,6 +31,7 @@ use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
+use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSortKey as RemoteThreadSortKey;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
@@ -823,6 +824,7 @@ async fn op_task(
                 None => break,
             },
         };
+        let op_name = op.kind();
         match op {
             Op::UserTurn {
                 items,
@@ -997,6 +999,30 @@ async fn op_task(
                     );
                 }
             }
+            Op::SetThreadName { name } => {
+                let request = {
+                    let mut guard = state.lock().await;
+                    let request_id = guard.allocate_request_id("thread/name/set");
+                    JSONRPCMessage::Request(JSONRPCRequest {
+                        id: request_id,
+                        method: "thread/name/set".to_string(),
+                        params: Some(
+                            serde_json::to_value(ThreadSetNameParams {
+                                thread_id: guard.thread_id.clone(),
+                                name,
+                            })
+                            .unwrap_or_default(),
+                        ),
+                        trace: None,
+                    })
+                };
+                if outbound_tx.send(request).is_err() {
+                    send_error_event(
+                        &app_event_tx,
+                        "failed to send thread/name/set to app-server".to_string(),
+                    );
+                }
+            }
             Op::AddToHistory { .. }
             | Op::ListCustomPrompts
             | Op::ListSkills { .. }
@@ -1005,7 +1031,7 @@ async fn op_task(
             _ => {
                 send_warning_event(
                     &app_event_tx,
-                    "connected mode POC ignores this action".to_string(),
+                    format!("{op_name} is currently ignored in connected mode"),
                 );
             }
         }
@@ -2651,6 +2677,110 @@ mod tests {
 
         let guard = state.lock().await;
         assert!(guard.pending_exec_approvals.is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_thread_name_sends_thread_set_name_request() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            14,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+        let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let task = tokio::spawn(op_task(
+            codex_op_rx,
+            outbound_tx,
+            state.clone(),
+            CancellationToken::new(),
+            app_event_tx,
+        ));
+
+        codex_op_tx
+            .send(Op::SetThreadName {
+                name: "Renamed Thread".to_string(),
+            })
+            .expect("send set_thread_name op");
+        drop(codex_op_tx);
+
+        let outbound = timeout(Duration::from_secs(1), outbound_rx.recv())
+            .await
+            .expect("thread/name/set request should arrive")
+            .expect("thread/name/set request should be present");
+        task.await.expect("op task should finish cleanly");
+
+        match outbound {
+            JSONRPCMessage::Request(request) => {
+                assert_eq!(request.id, RequestId::Integer(14));
+                assert_eq!(request.method, "thread/name/set");
+                let params: ThreadSetNameParams =
+                    serde_json::from_value(request.params.expect("thread/name/set params"))
+                        .expect("decode thread/name/set params");
+                assert_eq!(
+                    params,
+                    ThreadSetNameParams {
+                        thread_id: "thread-1".to_string(),
+                        name: "Renamed Thread".to_string(),
+                    }
+                );
+            }
+            other => panic!("expected thread/name/set request, got {other:?}"),
+        }
+
+        let guard = state.lock().await;
+        assert_eq!(guard.next_request_id, 15);
+        drop(guard);
+
+        assert!(matches!(
+            app_event_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn ignored_op_warning_names_the_action() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/repo"),
+            1,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+        let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let task = tokio::spawn(op_task(
+            codex_op_rx,
+            outbound_tx,
+            state,
+            CancellationToken::new(),
+            app_event_tx,
+        ));
+
+        codex_op_tx.send(Op::Compact).expect("send compact op");
+        drop(codex_op_tx);
+
+        let event = timeout(Duration::from_secs(1), app_event_rx.recv())
+            .await
+            .expect("warning event should arrive")
+            .expect("warning event should be present");
+        task.await.expect("op task should finish cleanly");
+
+        match event {
+            AppEvent::CodexEvent(Event {
+                msg: EventMsg::Warning(WarningEvent { message }),
+                ..
+            }) => {
+                assert_eq!(message, "compact is currently ignored in connected mode");
+            }
+            other => panic!("expected warning event, got {other:?}"),
+        }
+
+        assert!(matches!(
+            outbound_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
     }
 
     #[tokio::test]
