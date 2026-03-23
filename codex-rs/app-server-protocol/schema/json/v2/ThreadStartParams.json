@@ -79,6 +79,20 @@
       ],
       "type": "object"
     },
+    "ExecutionContext": {
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
     "Personality": {
       "enum": [
         "none",
@@ -154,6 +168,16 @@
       "type": [
         "boolean",
         "null"
+      ]
+    },
+    "executionContext": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ExecutionContext"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "model": {

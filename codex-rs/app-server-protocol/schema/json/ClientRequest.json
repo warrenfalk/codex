@@ -524,6 +524,20 @@
       ],
       "type": "object"
     },
+    "ExecutionContext": {
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
     "ExperimentalFeatureListParams": {
       "properties": {
         "cursor": {
@@ -2506,6 +2520,16 @@
         "ephemeral": {
           "type": "boolean"
         },
+        "executionContext": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutionContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model": {
           "description": "Configuration overrides for the forked thread, if any.",
           "type": [
@@ -2800,6 +2824,16 @@
             "null"
           ]
         },
+        "executionContext": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutionContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model": {
           "description": "Configuration overrides for the resumed thread, if any.",
           "type": [
@@ -2969,6 +3003,16 @@
             "null"
           ]
         },
+        "executionContext": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutionContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "model": {
           "type": [
             "string",
@@ -3105,6 +3149,17 @@
             }
           ],
           "description": "Override the reasoning effort for this turn and subsequent turns."
+        },
+        "executionContext": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExecutionContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override the execution environment overlay for this turn and subsequent turns."
         },
         "input": {
           "items": {

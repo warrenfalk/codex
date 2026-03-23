@@ -123,6 +123,20 @@
         }
       ]
     },
+    "ExecutionContext": {
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
     "FunctionCallOutputBody": {
       "anyOf": [
         {
@@ -1027,6 +1041,16 @@
       "type": [
         "string",
         "null"
+      ]
+    },
+    "executionContext": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ExecutionContext"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "model": {

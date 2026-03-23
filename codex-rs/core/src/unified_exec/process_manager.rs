@@ -13,7 +13,7 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use crate::exec_env::create_env;
+use crate::exec_env::create_env_with_execution_context;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::protocol::ExecCommandSource;
 use crate::sandboxing::ExecRequest;
@@ -583,9 +583,10 @@ impl UnifiedExecProcessManager {
         cwd: PathBuf,
         context: &UnifiedExecContext,
     ) -> Result<(UnifiedExecProcess, Option<DeferredNetworkApproval>), UnifiedExecError> {
-        let env = apply_unified_exec_env(create_env(
+        let env = apply_unified_exec_env(create_env_with_execution_context(
             &context.turn.shell_environment_policy,
             Some(context.session.conversation_id),
+            context.turn.execution_context_env.as_ref(),
         ));
         let mut orchestrator = ToolOrchestrator::new();
         let mut runtime = UnifiedExecRuntime::new(

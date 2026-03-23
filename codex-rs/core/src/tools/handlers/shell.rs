@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::codex::TurnContext;
 use crate::exec::ExecParams;
-use crate::exec_env::create_env;
+use crate::exec_env::create_env_with_execution_context;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
@@ -70,7 +70,11 @@ impl ShellHandler {
             command: params.command.clone(),
             cwd: turn_context.resolve_path(params.workdir.clone()),
             expiration: params.timeout_ms.into(),
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+            env: create_env_with_execution_context(
+                &turn_context.shell_environment_policy,
+                Some(thread_id),
+                turn_context.execution_context_env.as_ref(),
+            ),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
             windows_sandbox_level: turn_context.windows_sandbox_level,
@@ -124,7 +128,11 @@ impl ShellCommandHandler {
             command,
             cwd: turn_context.resolve_path(params.workdir.clone()),
             expiration: params.timeout_ms.into(),
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+            env: create_env_with_execution_context(
+                &turn_context.shell_environment_policy,
+                Some(thread_id),
+                turn_context.execution_context_env.as_ref(),
+            ),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
             windows_sandbox_level: turn_context.windows_sandbox_level,

@@ -213,3 +213,46 @@ fn test_inherit_none() {
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
     assert_eq!(result, expected);
 }
+
+#[test]
+fn create_env_with_execution_context_overrides_base_env() {
+    let vars = make_vars(&[
+        ("PATH", "/usr/bin"),
+        ("HOME", "/home/user"),
+        ("API_KEY", "secret"),
+    ]);
+
+    let mut policy = ShellEnvironmentPolicy {
+        ignore_default_excludes: true,
+        ..Default::default()
+    };
+    policy
+        .r#set
+        .insert("PATH".to_string(), "/base/bin".to_string());
+    policy
+        .r#set
+        .insert("BASE_ONLY".to_string(), "base".to_string());
+
+    let thread_id = ThreadId::new();
+    let execution_context_env = hashmap! {
+        "PATH".to_string() => "/nix/bin".to_string(),
+        "NIX_LDFLAGS".to_string() => "-L/nix/store/lib".to_string(),
+    };
+    let result = populate_env_with_execution_context(
+        vars,
+        &policy,
+        Some(thread_id),
+        Some(&execution_context_env),
+    );
+
+    let mut expected: HashMap<String, String> = hashmap! {
+        "PATH".to_string() => "/nix/bin".to_string(),
+        "HOME".to_string() => "/home/user".to_string(),
+        "API_KEY".to_string() => "secret".to_string(),
+        "BASE_ONLY".to_string() => "base".to_string(),
+        "NIX_LDFLAGS".to_string() => "-L/nix/store/lib".to_string(),
+    };
+    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
+
+    assert_eq!(result, expected);
+}

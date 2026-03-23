@@ -22,6 +22,7 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::sync::watch;
@@ -96,6 +97,15 @@ impl CodexThread {
     ) -> ConstraintResult<()> {
         self.codex
             .set_app_server_client_name(app_server_client_name)
+            .await
+    }
+
+    pub async fn set_execution_context_env(
+        &self,
+        execution_context_env: Option<HashMap<String, String>>,
+    ) -> ConstraintResult<()> {
+        self.codex
+            .set_execution_context_env(execution_context_env)
             .await
     }
 

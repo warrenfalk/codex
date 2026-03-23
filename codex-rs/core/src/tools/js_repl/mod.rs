@@ -35,7 +35,7 @@ use crate::client_common::tools::ToolSpec;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::exec::ExecExpiration;
-use crate::exec_env::create_env;
+use crate::exec_env::create_env_with_execution_context;
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::normalize_output_image_detail;
 use crate::sandboxing::CommandSpec;
@@ -1010,7 +1010,11 @@ impl JsReplManager {
             .await
             .map_err(|err| err.to_string())?;
 
-        let mut env = create_env(&turn.shell_environment_policy, thread_id);
+        let mut env = create_env_with_execution_context(
+            &turn.shell_environment_policy,
+            thread_id,
+            turn.execution_context_env.as_ref(),
+        );
         if !dependency_env.is_empty() {
             env.extend(dependency_env.clone());
         }

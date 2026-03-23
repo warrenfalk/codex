@@ -98,6 +98,20 @@
       ],
       "type": "object"
     },
+    "ExecutionContext": {
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
     "ModeKind": {
       "description": "Initial collaboration mode to use when the TUI starts.",
       "enum": [
@@ -538,6 +552,17 @@
         }
       ],
       "description": "Override the reasoning effort for this turn and subsequent turns."
+    },
+    "executionContext": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ExecutionContext"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Override the execution environment overlay for this turn and subsequent turns."
     },
     "input": {
       "items": {

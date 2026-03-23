@@ -79,6 +79,7 @@ export type { DynamicToolCallStatus } from "./DynamicToolCallStatus";
 export type { DynamicToolSpec } from "./DynamicToolSpec";
 export type { ErrorNotification } from "./ErrorNotification";
 export type { ExecPolicyAmendment } from "./ExecPolicyAmendment";
+export type { ExecutionContext } from "./ExecutionContext";
 export type { ExperimentalFeature } from "./ExperimentalFeature";
 export type { ExperimentalFeatureListParams } from "./ExperimentalFeatureListParams";
 export type { ExperimentalFeatureListResponse } from "./ExperimentalFeatureListResponse";

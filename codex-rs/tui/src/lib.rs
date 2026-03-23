@@ -96,6 +96,7 @@ mod clipboard_text;
 mod collaboration_modes;
 mod color;
 mod connected_app_server;
+mod connected_execution_context;
 pub mod custom_terminal;
 mod cwd_prompt;
 mod debug_config;

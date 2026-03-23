@@ -131,6 +131,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
+use crate::connected_execution_context::ExecutionContextCache;
 
 #[derive(Clone, Debug)]
 struct PendingRequest {
@@ -258,13 +259,20 @@ pub(crate) async fn connect(
     app_event_tx: AppEventSender,
     mode: ConnectedSessionMode,
 ) -> Result<ConnectedSessionBootstrap> {
+    let execution_context_cache = ExecutionContextCache::for_url(url);
     let (mut ws, _) = connect_async(url)
         .await
         .wrap_err_with(|| format!("failed to connect to app-server websocket at {url}"))?;
 
     initialize_connection(&mut ws).await?;
-    let (thread_id, thread_cwd, session_configured_event) =
-        open_thread_for_session(&mut ws, config, mode).await?;
+    let (thread_id, thread_cwd, session_configured_event) = open_thread_for_session(
+        &mut ws,
+        config,
+        &execution_context_cache,
+        &app_event_tx,
+        mode,
+    )
+    .await?;
 
     let state = std::sync::Arc::new(Mutex::new(ConnectedSessionState::new(
         thread_id.to_string(),
@@ -296,6 +304,7 @@ pub(crate) async fn connect(
         codex_op_rx,
         outbound_tx.clone(),
         state.clone(),
+        execution_context_cache,
         op_cancel,
         app_event_tx.clone(),
     ));
@@ -413,11 +422,18 @@ where
 async fn open_thread_for_session<S>(
     ws: &mut WebSocketStream<S>,
     config: &Config,
+    execution_context_cache: &ExecutionContextCache,
+    app_event_tx: &AppEventSender,
     mode: ConnectedSessionMode,
 ) -> Result<(ThreadId, PathBuf, Event)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let execution_context = execution_context_cache
+        .execution_context_for_cwd_with_feedback(config.cwd.as_path(), || {
+            send_nix_execution_context_loading_event(app_event_tx, config.cwd.as_path())
+        })
+        .await;
     match mode {
         ConnectedSessionMode::StartFresh => {
             let request_id = RequestId::Integer(2);
@@ -430,6 +446,7 @@ where
                     model_provider: None,
                     service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
+                    execution_context: execution_context.clone(),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     approvals_reviewer: Some(config.approvals_reviewer.into()),
                     sandbox: None,
@@ -480,6 +497,7 @@ where
                     model_provider: None,
                     service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
+                    execution_context: execution_context.clone(),
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     approvals_reviewer: Some(config.approvals_reviewer.into()),
                     sandbox: None,
@@ -524,6 +542,7 @@ where
                     model_provider: None,
                     service_tier: config.service_tier.map(Some),
                     cwd: Some(config.cwd.display().to_string()),
+                    execution_context,
                     approval_policy: Some(config.permissions.approval_policy.value().into()),
                     approvals_reviewer: Some(config.approvals_reviewer.into()),
                     sandbox: None,
@@ -813,6 +832,7 @@ async fn op_task(
     mut codex_op_rx: UnboundedReceiver<Op>,
     outbound_tx: UnboundedSender<JSONRPCMessage>,
     state: std::sync::Arc<Mutex<ConnectedSessionState>>,
+    execution_context_cache: ExecutionContextCache,
     cancel: CancellationToken,
     app_event_tx: AppEventSender,
 ) {
@@ -838,43 +858,47 @@ async fn op_task(
                 final_output_json_schema,
                 ..
             } => {
-                let request_id = {
+                let (request_id, thread_id) = {
                     let mut guard = state.lock().await;
                     let thread_id = guard.thread_id.clone();
                     guard.thread_cwd = PathBuf::from(&cwd);
-                    let request_id = guard.allocate_request_id("turn/start");
-                    let request = JSONRPCMessage::Request(JSONRPCRequest {
-                        id: request_id.clone(),
-                        method: "turn/start".to_string(),
-                        params: Some(
-                            serde_json::to_value(TurnStartParams {
-                                thread_id,
-                                input: items.into_iter().map(Into::into).collect(),
-                                cwd: Some(cwd),
-                                approval_policy: Some(approval_policy.into()),
-                                approvals_reviewer: None,
-                                sandbox_policy: Some(sandbox_policy.into()),
-                                model: Some(model),
-                                service_tier,
-                                effort,
-                                summary: None,
-                                personality,
-                                output_schema: final_output_json_schema,
-                                collaboration_mode: None,
-                            })
-                            .unwrap_or_default(),
-                        ),
-                        trace: None,
-                    });
-                    if outbound_tx.send(request).is_err() {
-                        send_error_event(
-                            &app_event_tx,
-                            "failed to send turn/start to app-server".to_string(),
-                        );
-                    }
-                    request_id
+                    (guard.allocate_request_id("turn/start"), thread_id)
                 };
-                let _ = request_id;
+                let execution_context = execution_context_cache
+                    .execution_context_for_cwd_with_feedback(Path::new(&cwd), || {
+                        send_nix_execution_context_loading_event(&app_event_tx, Path::new(&cwd))
+                    })
+                    .await;
+                let request = JSONRPCMessage::Request(JSONRPCRequest {
+                    id: request_id.clone(),
+                    method: "turn/start".to_string(),
+                    params: Some(
+                        serde_json::to_value(TurnStartParams {
+                            thread_id,
+                            input: items.into_iter().map(Into::into).collect(),
+                            cwd: Some(PathBuf::from(&cwd)),
+                            execution_context,
+                            approval_policy: Some(approval_policy.into()),
+                            approvals_reviewer: None,
+                            sandbox_policy: Some(sandbox_policy.into()),
+                            model: Some(model),
+                            service_tier,
+                            effort,
+                            summary: None,
+                            personality,
+                            output_schema: final_output_json_schema,
+                            collaboration_mode: None,
+                        })
+                        .unwrap_or_default(),
+                    ),
+                    trace: None,
+                });
+                if outbound_tx.send(request).is_err() {
+                    send_error_event(
+                        &app_event_tx,
+                        "failed to send turn/start to app-server".to_string(),
+                    );
+                }
             }
             Op::Interrupt => {
                 let maybe_request = {
@@ -1036,6 +1060,15 @@ async fn op_task(
             }
         }
     }
+}
+
+fn send_nix_execution_context_loading_event(app_event_tx: &AppEventSender, cwd: &Path) {
+    app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+        crate::history_cell::new_info_event(
+            format!("Running `nix print-dev-env` in {}", cwd.display()),
+            None,
+        ),
+    )));
 }
 
 async fn send_request<S>(
@@ -2334,6 +2367,7 @@ fn review_decision_to_file_change_approval_decision(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -2344,10 +2378,12 @@ mod tests {
     use codex_app_server_protocol::ApprovalsReviewer as RemoteApprovalsReviewer;
     use codex_app_server_protocol::AskForApproval as RemoteAskForApproval;
     use codex_app_server_protocol::CommandExecutionStatus;
+    use codex_app_server_protocol::ExecutionContext;
     use codex_app_server_protocol::SandboxPolicy as RemoteSandboxPolicy;
     use codex_app_server_protocol::SessionSource as RemoteSessionSource;
     use codex_app_server_protocol::ThreadStatus;
     use codex_core::config::ConfigBuilder;
+    use codex_protocol::config_types::ReasoningSummary;
     use codex_protocol::models::FileSystemPermissions;
     use codex_protocol::models::MacOsAutomationPermission;
     use codex_protocol::models::MacOsContactsPermission;
@@ -2458,11 +2494,13 @@ mod tests {
         let app_event_tx = AppEventSender::new(app_event_tx_raw);
         let (outbound_tx, mut outbound_rx) = unbounded_channel();
         let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let execution_context_cache = ExecutionContextCache::for_local_server();
 
         let task = tokio::spawn(op_task(
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            execution_context_cache,
             CancellationToken::new(),
             app_event_tx,
         ));
@@ -2506,6 +2544,7 @@ mod tests {
                         .expect("decode turn/start params");
                 assert_eq!(params.thread_id, "thread-1");
                 assert_eq!(params.cwd, Some(PathBuf::from("/repo")));
+                assert_eq!(params.execution_context, None);
                 assert_eq!(params.approval_policy, Some(RemoteAskForApproval::Never));
                 assert_eq!(
                     params.sandbox_policy,
@@ -2530,6 +2569,81 @@ mod tests {
         assert_eq!(guard.thread_cwd, PathBuf::from("/repo"));
         assert_eq!(guard.next_request_id, 4);
         drop(guard);
+
+        assert!(matches!(
+            app_event_rx.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn user_turn_op_sends_cached_execution_context() {
+        let state = Arc::new(Mutex::new(ConnectedSessionState::new(
+            "thread-1".to_string(),
+            PathBuf::from("/tmp/original"),
+            3,
+        )));
+        let (app_event_tx_raw, mut app_event_rx) = unbounded_channel();
+        let app_event_tx = AppEventSender::new(app_event_tx_raw);
+        let (outbound_tx, mut outbound_rx) = unbounded_channel();
+        let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let execution_context_cache = ExecutionContextCache::for_local_server();
+        let execution_context = ExecutionContext {
+            env: BTreeMap::from([("PATH".to_string(), "/nix/bin".to_string())]),
+        };
+        execution_context_cache
+            .insert_for_test(PathBuf::from("/repo"), Some(execution_context.clone()))
+            .await;
+
+        let task = tokio::spawn(op_task(
+            codex_op_rx,
+            outbound_tx,
+            state,
+            execution_context_cache,
+            CancellationToken::new(),
+            app_event_tx,
+        ));
+
+        codex_op_tx
+            .send(Op::UserTurn {
+                items: vec![UserInput::Text {
+                    text: "hello from connected mode".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: PathBuf::from("/repo"),
+                approval_policy: AskForApproval::Never,
+                sandbox_policy: SandboxPolicy::ReadOnly {
+                    access: ReadOnlyAccess::FullAccess,
+                    network_access: false,
+                },
+                model: "mock-model".to_string(),
+                service_tier: None,
+                effort: None,
+                summary: Some(ReasoningSummary::Auto),
+                final_output_json_schema: None,
+                collaboration_mode: None,
+                personality: None,
+            })
+            .expect("send user turn op");
+        drop(codex_op_tx);
+
+        let outbound = timeout(Duration::from_secs(1), outbound_rx.recv())
+            .await
+            .expect("turn/start request should arrive")
+            .expect("turn/start request should be present");
+        task.await.expect("op task should finish cleanly");
+
+        match outbound {
+            JSONRPCMessage::Request(request) => {
+                assert_eq!(request.method, "turn/start");
+
+                let params: TurnStartParams =
+                    serde_json::from_value(request.params.expect("turn/start params"))
+                        .expect("decode turn/start params");
+                assert_eq!(params.execution_context, Some(execution_context));
+            }
+            other => panic!("expected turn/start request, got {other:?}"),
+        }
 
         assert!(matches!(
             app_event_rx.try_recv(),
@@ -2642,10 +2756,12 @@ mod tests {
         assert!(matches!(app_event_rx.try_recv(), Err(TryRecvError::Empty)));
 
         let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let execution_context_cache = ExecutionContextCache::for_local_server();
         let task = tokio::spawn(op_task(
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            execution_context_cache,
             CancellationToken::new(),
             app_event_tx,
         ));
@@ -2690,10 +2806,12 @@ mod tests {
         let app_event_tx = AppEventSender::new(app_event_tx_raw);
         let (outbound_tx, mut outbound_rx) = unbounded_channel();
         let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let execution_context_cache = ExecutionContextCache::for_local_server();
         let task = tokio::spawn(op_task(
             codex_op_rx,
             outbound_tx,
             state.clone(),
+            execution_context_cache,
             CancellationToken::new(),
             app_event_tx,
         ));
@@ -2750,10 +2868,12 @@ mod tests {
         let app_event_tx = AppEventSender::new(app_event_tx_raw);
         let (outbound_tx, mut outbound_rx) = unbounded_channel();
         let (codex_op_tx, codex_op_rx) = unbounded_channel();
+        let execution_context_cache = ExecutionContextCache::for_local_server();
         let task = tokio::spawn(op_task(
             codex_op_rx,
             outbound_tx,
             state,
+            execution_context_cache,
             CancellationToken::new(),
             app_event_tx,
         ));
@@ -2820,6 +2940,7 @@ mod tests {
                     .expect("decode thread/fork params");
             assert_eq!(params.thread_id, "thread-source");
             assert_eq!(params.cwd, Some(server_cwd_path.display().to_string()));
+            assert_eq!(params.execution_context, None);
             assert_eq!(params.model, expected_model);
             assert_eq!(params.approval_policy, Some(expected_approval_policy));
 
@@ -2867,10 +2988,14 @@ mod tests {
                 .expect("send thread/fork response");
         });
         let mut ws = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
+        let execution_context_cache = ExecutionContextCache::for_local_server();
+        let app_event_tx = AppEventSender::noop();
 
         let (thread_id, thread_cwd, event) = open_thread_for_session(
             &mut ws,
             &config,
+            &execution_context_cache,
+            &app_event_tx,
             ConnectedSessionMode::Fork {
                 thread_id: "thread-source".to_string(),
             },

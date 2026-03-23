@@ -15,7 +15,7 @@ use crate::exec::SandboxType;
 use crate::exec::StdoutStream;
 use crate::exec::StreamOutput;
 use crate::exec::execute_exec_request;
-use crate::exec_env::create_env;
+use crate::exec_env::create_env_with_execution_context;
 use crate::parse_command::parse_command;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandBeginEvent;
@@ -157,9 +157,10 @@ pub(crate) async fn execute_user_shell_command(
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone(),
-        env: create_env(
+        env: create_env_with_execution_context(
             &turn_context.shell_environment_policy,
             Some(session.conversation_id),
+            turn_context.execution_context_env.as_ref(),
         ),
         network: turn_context.network.clone(),
         // TODO(zhao-oai): Now that we have ExecExpiration::Cancellation, we

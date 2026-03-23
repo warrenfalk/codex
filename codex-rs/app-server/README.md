@@ -196,6 +196,11 @@ Start a fresh thread when you need a new Codex conversation.
     // current config settings.
     "model": "gpt-5.1-codex",
     "cwd": "/Users/me/project",
+    "executionContext": {
+        "env": {
+            "PATH": "/Users/me/project/.nix-profile/bin:/usr/bin:/bin"
+        }
+    },
     "approvalPolicy": "never",
     "sandbox": "workspaceWrite",
     "personality": "friendly",
@@ -447,6 +452,11 @@ You can optionally specify config overrides on the new turn. If specified, these
     "input": [ { "type": "text", "text": "Run tests" } ],
     // Below are optional config overrides
     "cwd": "/Users/me/project",
+    "executionContext": {
+        "env": {
+            "PATH": "/Users/me/project/.nix-profile/bin:/usr/bin:/bin"
+        }
+    },
     "approvalPolicy": "unlessTrusted",
     "sandboxPolicy": {
         "type": "workspaceWrite",
@@ -472,6 +482,11 @@ You can optionally specify config overrides on the new turn. If specified, these
     "error": null
 } } }
 ```
+
+`executionContext.env` is an optional thread-scoped environment overlay. When
+present, the server stores it on the thread and applies it to subsequent tool
+processes for that thread. This is intended for same-machine clients that
+materialize a workspace environment locally, such as `nix print-dev-env --json`.
 
 ### Example: Start a turn (invoke a skill)
 

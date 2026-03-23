@@ -24,6 +24,14 @@ pub fn create_env(
     populate_env(std::env::vars(), policy, thread_id)
 }
 
+pub fn create_env_with_execution_context(
+    policy: &ShellEnvironmentPolicy,
+    thread_id: Option<ThreadId>,
+    execution_context_env: Option<&HashMap<String, String>>,
+) -> HashMap<String, String> {
+    populate_env_with_execution_context(std::env::vars(), policy, thread_id, execution_context_env)
+}
+
 fn populate_env<I>(
     vars: I,
     policy: &ShellEnvironmentPolicy,
@@ -91,6 +99,22 @@ where
     }
 
     env_map
+}
+
+fn populate_env_with_execution_context<I>(
+    vars: I,
+    policy: &ShellEnvironmentPolicy,
+    thread_id: Option<ThreadId>,
+    execution_context_env: Option<&HashMap<String, String>>,
+) -> HashMap<String, String>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut env = populate_env(vars, policy, thread_id);
+    if let Some(execution_context_env) = execution_context_env {
+        env.extend(execution_context_env.clone());
+    }
+    env
 }
 
 #[cfg(test)]

@@ -41,6 +41,7 @@ use codex_app_server_protocol::CommandExecWriteParams;
 use codex_app_server_protocol::ConversationGitInfo;
 use codex_app_server_protocol::ConversationSummary;
 use codex_app_server_protocol::DynamicToolSpec as ApiDynamicToolSpec;
+use codex_app_server_protocol::ExecutionContext;
 use codex_app_server_protocol::ExperimentalFeature as ApiExperimentalFeature;
 use codex_app_server_protocol::ExperimentalFeatureListParams;
 use codex_app_server_protocol::ExperimentalFeatureListResponse;
@@ -1832,6 +1833,7 @@ impl CodexMessageProcessor {
             model_provider,
             service_tier,
             cwd,
+            execution_context,
             approval_policy,
             approvals_reviewer,
             sandbox,
@@ -1878,6 +1880,7 @@ impl CodexMessageProcessor {
                 request_id,
                 config,
                 typesafe_overrides,
+                execution_context,
                 dynamic_tools,
                 persist_extended_history,
                 service_name,
@@ -1943,6 +1946,7 @@ impl CodexMessageProcessor {
         request_id: ConnectionRequestId,
         config_overrides: Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: ConfigOverrides,
+        execution_context: Option<ExecutionContext>,
         dynamic_tools: Option<Vec<ApiDynamicToolSpec>>,
         persist_extended_history: bool,
         service_name: Option<String>,
@@ -2021,6 +2025,15 @@ impl CodexMessageProcessor {
                     session_configured,
                     ..
                 } = new_conv;
+                if let Err(err) =
+                    Self::set_execution_context_env(thread.as_ref(), execution_context).await
+                {
+                    listener_task_context
+                        .outgoing
+                        .send_error(request_id, err)
+                        .await;
+                    return;
+                }
                 let config_snapshot = thread
                     .config_snapshot()
                     .instrument(tracing::info_span!(
@@ -3358,6 +3371,7 @@ impl CodexMessageProcessor {
             model_provider,
             service_tier,
             cwd,
+            execution_context,
             approval_policy,
             approvals_reviewer,
             sandbox,
@@ -3439,6 +3453,12 @@ impl CodexMessageProcessor {
                 thread,
                 session_configured,
             }) => {
+                if let Err(err) =
+                    Self::set_execution_context_env(thread.as_ref(), execution_context).await
+                {
+                    self.outgoing.send_error(request_id, err).await;
+                    return;
+                }
                 let SessionConfiguredEvent { rollout_path, .. } = session_configured;
                 let Some(rollout_path) = rollout_path else {
                     self.send_internal_error(
@@ -3837,6 +3857,7 @@ impl CodexMessageProcessor {
             model_provider,
             service_tier,
             cwd,
+            execution_context,
             approval_policy,
             approvals_reviewer,
             sandbox,
@@ -3990,6 +4011,12 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+        if let Err(err) =
+            Self::set_execution_context_env(forked_thread.as_ref(), execution_context).await
+        {
+            self.outgoing.send_error(request_id, err).await;
+            return;
+        }
 
         // Auto-attach a conversation listener when forking a thread.
         Self::log_listener_attach_result(
@@ -5940,30 +5967,51 @@ impl CodexMessageProcessor {
             return;
         }
 
+        let TurnStartParams {
+            thread_id: _,
+            input,
+            cwd,
+            execution_context,
+            approval_policy,
+            approvals_reviewer,
+            sandbox_policy,
+            model,
+            service_tier,
+            effort,
+            summary,
+            personality,
+            output_schema,
+            collaboration_mode,
+        } = params;
+
         let collaboration_modes_config = CollaborationModesConfig {
             default_mode_request_user_input: thread.enabled(Feature::DefaultModeRequestUserInput),
         };
-        let collaboration_mode = params.collaboration_mode.map(|mode| {
+        let collaboration_mode = collaboration_mode.map(|mode| {
             self.normalize_turn_start_collaboration_mode(mode, collaboration_modes_config)
         });
 
         // Map v2 input items to core input items.
-        let mapped_items: Vec<CoreInputItem> = params
-            .input
-            .into_iter()
-            .map(V2UserInput::into_core)
-            .collect();
+        let mapped_items: Vec<CoreInputItem> =
+            input.into_iter().map(V2UserInput::into_core).collect();
 
-        let has_any_overrides = params.cwd.is_some()
-            || params.approval_policy.is_some()
-            || params.approvals_reviewer.is_some()
-            || params.sandbox_policy.is_some()
-            || params.model.is_some()
-            || params.service_tier.is_some()
-            || params.effort.is_some()
-            || params.summary.is_some()
+        let has_any_overrides = cwd.is_some()
+            || approval_policy.is_some()
+            || approvals_reviewer.is_some()
+            || sandbox_policy.is_some()
+            || model.is_some()
+            || service_tier.is_some()
+            || effort.is_some()
+            || summary.is_some()
             || collaboration_mode.is_some()
-            || params.personality.is_some();
+            || personality.is_some();
+
+        if let Err(error) =
+            Self::set_execution_context_env(thread.as_ref(), execution_context).await
+        {
+            self.outgoing.send_error(request_id, error).await;
+            return;
+        }
 
         // If any overrides are provided, update the session turn context first.
         if has_any_overrides {
@@ -5972,19 +6020,18 @@ impl CodexMessageProcessor {
                     &request_id,
                     thread.as_ref(),
                     Op::OverrideTurnContext {
-                        cwd: params.cwd,
-                        approval_policy: params.approval_policy.map(AskForApproval::to_core),
-                        approvals_reviewer: params
-                            .approvals_reviewer
+                        cwd,
+                        approval_policy: approval_policy.map(AskForApproval::to_core),
+                        approvals_reviewer: approvals_reviewer
                             .map(codex_app_server_protocol::ApprovalsReviewer::to_core),
-                        sandbox_policy: params.sandbox_policy.map(|p| p.to_core()),
+                        sandbox_policy: sandbox_policy.map(|p| p.to_core()),
                         windows_sandbox_level: None,
-                        model: params.model,
-                        effort: params.effort.map(Some),
-                        summary: params.summary,
-                        service_tier: params.service_tier,
+                        model,
+                        effort: effort.map(Some),
+                        summary,
+                        service_tier,
                         collaboration_mode,
-                        personality: params.personality,
+                        personality,
                     },
                 )
                 .await;
@@ -5997,7 +6044,7 @@ impl CodexMessageProcessor {
                 thread.as_ref(),
                 Op::UserInput {
                     items: mapped_items,
-                    final_output_json_schema: params.output_schema,
+                    final_output_json_schema: output_schema,
                 },
             )
             .await;
@@ -6035,6 +6082,22 @@ impl CodexMessageProcessor {
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
                 message: format!("failed to set app server client name: {err}"),
+                data: None,
+            })
+    }
+
+    async fn set_execution_context_env(
+        thread: &CodexThread,
+        execution_context: Option<ExecutionContext>,
+    ) -> Result<(), JSONRPCErrorError> {
+        thread
+            .set_execution_context_env(
+                execution_context.map(|context| context.env.into_iter().collect()),
+            )
+            .await
+            .map_err(|err| JSONRPCErrorError {
+                code: INTERNAL_ERROR_CODE,
+                message: format!("failed to set execution context: {err}"),
                 data: None,
             })
     }
@@ -8359,6 +8422,7 @@ mod tests {
             model_provider: None,
             service_tier: Some(Some(codex_protocol::config_types::ServiceTier::Fast)),
             cwd: None,
+            execution_context: None,
             approval_policy: None,
             approvals_reviewer: None,
             sandbox: None,

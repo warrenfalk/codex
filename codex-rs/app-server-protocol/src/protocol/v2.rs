@@ -2447,6 +2447,13 @@ pub enum CommandExecOutputStream {
 
 // === Threads, Turns, and Items ===
 // Thread APIs
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ExecutionContext {
+    pub env: BTreeMap<String, String>,
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS, ExperimentalApi,
 )]
@@ -2467,6 +2474,8 @@ pub struct ThreadStartParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
+    #[ts(optional = nullable)]
+    pub execution_context: Option<ExecutionContext>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -2587,6 +2596,8 @@ pub struct ThreadResumeParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
+    #[ts(optional = nullable)]
+    pub execution_context: Option<ExecutionContext>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -2664,6 +2675,8 @@ pub struct ThreadForkParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
+    #[ts(optional = nullable)]
+    pub execution_context: Option<ExecutionContext>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -3837,6 +3850,10 @@ pub struct TurnStartParams {
     /// Override the working directory for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
+    /// Override the execution environment overlay for this turn and
+    /// subsequent turns.
+    #[ts(optional = nullable)]
+    pub execution_context: Option<ExecutionContext>,
     /// Override the approval policy for this turn and subsequent turns.
     #[experimental(nested)]
     #[ts(optional = nullable)]
@@ -7869,6 +7886,7 @@ mod tests {
             thread_id: "thread_123".to_string(),
             input: vec![],
             cwd: None,
+            execution_context: None,
             approval_policy: None,
             approvals_reviewer: None,
             sandbox_policy: None,

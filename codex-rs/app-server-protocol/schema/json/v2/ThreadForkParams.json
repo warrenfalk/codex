@@ -59,6 +59,20 @@
         }
       ]
     },
+    "ExecutionContext": {
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
     "SandboxMode": {
       "enum": [
         "read-only",
@@ -125,6 +139,16 @@
     },
     "ephemeral": {
       "type": "boolean"
+    },
+    "executionContext": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ExecutionContext"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "model": {
       "description": "Configuration overrides for the forked thread, if any.",

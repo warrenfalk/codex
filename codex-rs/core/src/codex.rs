@@ -585,6 +585,7 @@ impl Codex {
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
+            execution_context_env: None,
             session_source,
             dynamic_tools,
             persist_extended_history,
@@ -715,6 +716,22 @@ impl Codex {
             .await
     }
 
+    pub(crate) async fn set_execution_context_env(
+        &self,
+        execution_context_env: Option<HashMap<String, String>>,
+    ) -> ConstraintResult<()> {
+        let execution_context_env = execution_context_env.map_or(
+            ExecutionContextEnvUpdate::Clear,
+            ExecutionContextEnvUpdate::Replace,
+        );
+        self.session
+            .update_settings(SessionSettingsUpdate {
+                execution_context_env,
+                ..Default::default()
+            })
+            .await
+    }
+
     pub(crate) async fn agent_status(&self) -> AgentStatus {
         self.agent_status.borrow().clone()
     }
@@ -805,6 +822,7 @@ pub(crate) struct TurnContext {
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
     pub(crate) app_server_client_name: Option<String>,
+    pub(crate) execution_context_env: Option<HashMap<String, String>>,
     pub(crate) developer_instructions: Option<String>,
     pub(crate) compact_prompt: Option<String>,
     pub(crate) user_instructions: Option<String>,
@@ -912,6 +930,7 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             app_server_client_name: self.app_server_client_name.clone(),
+            execution_context_env: self.execution_context_env.clone(),
             developer_instructions: self.developer_instructions.clone(),
             compact_prompt: self.compact_prompt.clone(),
             user_instructions: self.user_instructions.clone(),
@@ -1049,6 +1068,7 @@ pub(crate) struct SessionConfiguration {
     /// Optional service name tag for session metrics.
     metrics_service_name: Option<String>,
     app_server_client_name: Option<String>,
+    execution_context_env: Option<HashMap<String, String>>,
     /// Source of the session (cli, vscode, exec, mcp, ...)
     session_source: SessionSource,
     dynamic_tools: Vec<DynamicToolSpec>,
@@ -1130,8 +1150,25 @@ impl SessionConfiguration {
         if let Some(app_server_client_name) = updates.app_server_client_name.clone() {
             next_configuration.app_server_client_name = Some(app_server_client_name);
         }
+        match &updates.execution_context_env {
+            ExecutionContextEnvUpdate::Preserve => {}
+            ExecutionContextEnvUpdate::Clear => {
+                next_configuration.execution_context_env = None;
+            }
+            ExecutionContextEnvUpdate::Replace(env) => {
+                next_configuration.execution_context_env = Some(env.clone());
+            }
+        }
         Ok(next_configuration)
     }
+}
+
+#[derive(Default, Clone)]
+pub(crate) enum ExecutionContextEnvUpdate {
+    #[default]
+    Preserve,
+    Clear,
+    Replace(HashMap<String, String>),
 }
 
 #[derive(Default, Clone)]
@@ -1147,6 +1184,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) final_output_json_schema: Option<Option<Value>>,
     pub(crate) personality: Option<Personality>,
     pub(crate) app_server_client_name: Option<String>,
+    pub(crate) execution_context_env: ExecutionContextEnvUpdate,
 }
 
 impl Session {
@@ -1358,6 +1396,7 @@ impl Session {
             current_date: Some(current_date),
             timezone: Some(timezone),
             app_server_client_name: session_configuration.app_server_client_name.clone(),
+            execution_context_env: session_configuration.execution_context_env.clone(),
             developer_instructions: session_configuration.developer_instructions.clone(),
             compact_prompt: session_configuration.compact_prompt.clone(),
             user_instructions: session_configuration.user_instructions.clone(),
@@ -4491,6 +4530,7 @@ mod handlers {
                         final_output_json_schema: Some(final_output_json_schema),
                         personality,
                         app_server_client_name: None,
+                        ..Default::default()
                     },
                 )
             }
@@ -5247,6 +5287,7 @@ async fn spawn_review_thread(
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
         app_server_client_name: parent_turn_context.app_server_client_name.clone(),
+        execution_context_env: parent_turn_context.execution_context_env.clone(),
         developer_instructions: None,
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
