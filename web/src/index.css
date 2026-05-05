@@ -345,6 +345,43 @@ a {
   justify-content: space-between;
 }
 
+.button-row {
+  align-items: stretch;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.button-row button {
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+
+.approval-decision-button {
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.approval-decision-yes {
+  background: rgba(142, 230, 168, 0.14);
+  border-color: rgba(142, 230, 168, 0.42);
+}
+
+.approval-decision-yes:hover {
+  border-color: rgba(142, 230, 168, 0.76);
+}
+
+.approval-decision-no {
+  background: rgba(255, 133, 133, 0.14);
+  border-color: rgba(255, 133, 133, 0.42);
+}
+
+.approval-decision-no:hover {
+  border-color: rgba(255, 133, 133, 0.76);
+}
+
 .thread-row h2 {
   flex: 1 1 auto;
   font-size: 1rem;
@@ -832,6 +869,12 @@ a {
   margin-top: 1.1rem;
 }
 
+.request-card .button-row {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
 .composer {
   display: grid;
   gap: 0.3rem;
@@ -912,5 +955,10 @@ a {
   .list-shell,
   .thread-shell {
     padding: 1.25rem;
+  }
+
+  .request-card .button-row {
+    padding-left: 0;
+    padding-right: 0;
   }
 }

@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Thread, Turn } from "@/types/protocol";
+import type { AnyServerRequest, Thread, Turn } from "@/types/protocol";
 
 import { ThreadView } from "./thread-view";
 
@@ -189,11 +189,42 @@ function renderThreadView(
     ...overrides,
   };
 
-  render(<ThreadView {...props} />);
-  return props;
+  const view = render(<ThreadView {...props} />);
+  return { ...view, props };
 }
 
 describe("ThreadView", () => {
+  it("hides the composer during approval prompts and preserves the draft", () => {
+    const pendingRequest: AnyServerRequest = {
+      method: "item/commandExecution/requestApproval",
+      id: 7,
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "item-1",
+        command: "printf test",
+      },
+    };
+    const view = renderThreadView();
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "draft while approval is pending" },
+    });
+
+    view.rerender(
+      <ThreadView {...view.props} pendingRequests={[pendingRequest]} />,
+    );
+
+    expect(screen.getByText("Action required")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Prompt")).not.toBeInTheDocument();
+
+    view.rerender(<ThreadView {...view.props} pendingRequests={[]} />);
+
+    expect(screen.getByLabelText("Prompt")).toHaveValue(
+      "draft while approval is pending",
+    );
+  });
+
   it("submits the prompt with Ctrl+Enter", async () => {
     scrollToEndMock.mockReset();
     scrollToItemMock.mockReset();

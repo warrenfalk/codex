@@ -115,6 +115,99 @@ function fileSystemEntryKey(entry: FileSystemSandboxEntryCompat): string {
   return JSON.stringify(entry);
 }
 
+function commandBasename(command: string): string {
+  return command.split(/[\\/]/).pop() ?? command;
+}
+
+function formatShellArg(arg: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg)) {
+    return arg;
+  }
+  return JSON.stringify(arg);
+}
+
+function escapeInlineCommand(command: string): string {
+  return command.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+}
+
+function formatExecPolicyCommand(command: string[]): string {
+  const [executable, flag, script] = command;
+  if (
+    executable &&
+    flag === "-lc" &&
+    script &&
+    ["bash", "sh", "zsh"].includes(commandBasename(executable))
+  ) {
+    return escapeInlineCommand(script);
+  }
+
+  return command.map(formatShellArg).join(" ");
+}
+
+function commandDecisionLabel(
+  decision: CommandExecutionApprovalDecision,
+  params: CommandApprovalParamsCompat,
+): string {
+  if (typeof decision === "string") {
+    switch (decision) {
+      case "accept":
+        return params.networkApprovalContext
+          ? "Yes, just this once"
+          : "Yes, proceed";
+      case "acceptForSession":
+        if (params.networkApprovalContext) {
+          return "Yes, and allow this host for this conversation";
+        }
+        if (params.additionalPermissions) {
+          return "Yes, and allow these permissions for this session";
+        }
+        return "Yes, and don't ask again for this command in this session";
+      case "decline":
+        return "No, continue without running it";
+      case "cancel":
+        return "No, and tell Codex what to do differently";
+    }
+  }
+
+  if ("acceptWithExecpolicyAmendment" in decision) {
+    const prefix = formatExecPolicyCommand(
+      decision.acceptWithExecpolicyAmendment.execpolicy_amendment,
+    );
+    return `Yes, and don't ask again for commands that start with \`${prefix}\``;
+  }
+
+  const amendment =
+    decision.applyNetworkPolicyAmendment.network_policy_amendment;
+  if (amendment.action === "allow") {
+    return `Yes, and allow \`${amendment.host}\` in the future`;
+  }
+  return `No, and block \`${amendment.host}\` in the future`;
+}
+
+function commandDecisionClassName(
+  decision: CommandExecutionApprovalDecision,
+): string {
+  if (typeof decision === "string") {
+    switch (decision) {
+      case "accept":
+      case "acceptForSession":
+        return "approval-decision-button approval-decision-yes";
+      case "decline":
+      case "cancel":
+        return "approval-decision-button approval-decision-no";
+    }
+  }
+
+  if ("acceptWithExecpolicyAmendment" in decision) {
+    return "approval-decision-button approval-decision-yes";
+  }
+
+  return decision.applyNetworkPolicyAmendment.network_policy_amendment
+    .action === "allow"
+    ? "approval-decision-button approval-decision-yes"
+    : "approval-decision-button approval-decision-no";
+}
+
 function CardShell({
   title,
   children,
@@ -162,12 +255,11 @@ function CommandApprovalCard({
         {decisions.map((decision, index) => (
           <button
             key={`${request.id}-${index}`}
+            className={commandDecisionClassName(decision)}
             type="button"
             onClick={() => onRespond(request, { decision })}
           >
-            {typeof decision === "string"
-              ? decision
-              : (Object.keys(decision)[0] ?? "respond")}
+            {commandDecisionLabel(decision, params)}
           </button>
         ))}
       </div>

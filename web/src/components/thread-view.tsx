@@ -100,6 +100,7 @@ export function ThreadView({
   const interruptMode = trimmedPrompt.length === 0 && canInterrupt;
   const statusDetail =
     initializeSummary ?? connectionError ?? "version unknown";
+  const hasPendingRequests = pendingRequests.length > 0;
   const previousUserMessageLocationsByItemId = thread
     ? (() => {
         const previousLocationsByItemId = new Map<
@@ -388,7 +389,7 @@ export function ThreadView({
         )}
       </div>
 
-      {pendingRequests.length > 0 && (
+      {hasPendingRequests && (
         <section className="request-section">
           <div className="section-header">
             <div>
@@ -408,78 +409,80 @@ export function ThreadView({
         </section>
       )}
 
-      <form
-        className="composer"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          await submitPrompt();
-        }}
-      >
-        <p className="composer-status">
-          <span
-            className={`composer-status-state ${connectionStatusClass(
-              connectionState,
-            )}`}
-          >
-            [{connectionState}]
-          </span>
-          <span className="composer-status-detail">{statusDetail}</span>
-        </p>
-        <div className="composer-row">
-          <textarea
-            aria-label="Prompt"
-            className="composer-input"
-            id="composer-input"
-            placeholder="Ask Codex to continue working…"
-            ref={promptInputRef}
-            rows={1}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.ctrlKey &&
-                event.shiftKey &&
-                event.key === "ArrowDown"
-              ) {
-                event.preventDefault();
-                scrollThreadToBottom();
-                return;
-              }
+      {!hasPendingRequests && (
+        <form
+          className="composer"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await submitPrompt();
+          }}
+        >
+          <p className="composer-status">
+            <span
+              className={`composer-status-state ${connectionStatusClass(
+                connectionState,
+              )}`}
+            >
+              [{connectionState}]
+            </span>
+            <span className="composer-status-detail">{statusDetail}</span>
+          </p>
+          <div className="composer-row">
+            <textarea
+              aria-label="Prompt"
+              className="composer-input"
+              id="composer-input"
+              placeholder="Ask Codex to continue working…"
+              ref={promptInputRef}
+              rows={1}
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.ctrlKey &&
+                  event.shiftKey &&
+                  event.key === "ArrowDown"
+                ) {
+                  event.preventDefault();
+                  scrollThreadToBottom();
+                  return;
+                }
 
-              if (event.ctrlKey && event.key === "Enter") {
-                event.preventDefault();
-                void submitPrompt();
+                if (event.ctrlKey && event.key === "Enter") {
+                  event.preventDefault();
+                  void submitPrompt();
+                }
+              }}
+            />
+            <button
+              aria-label={
+                interruptMode ? "Interrupt current turn" : "Send prompt"
               }
-            }}
-          />
-          <button
-            aria-label={
-              interruptMode ? "Interrupt current turn" : "Send prompt"
-            }
-            className="composer-button"
-            disabled={interruptMode ? false : sending || !trimmedPrompt}
-            type={interruptMode ? "button" : "submit"}
-            onClick={
-              interruptMode
-                ? () => {
-                    onInterrupt();
-                  }
-                : undefined
-            }
-          >
-            {interruptMode ? (
-              <ButtonIcon>
-                <rect height="9" rx="1.5" width="9" x="7.5" y="7.5" />
-              </ButtonIcon>
-            ) : (
-              <ButtonIcon>
-                <path d="M12 5v14" />
-                <path d="m6.5 10.5 5.5-5.5 5.5 5.5" />
-              </ButtonIcon>
-            )}
-          </button>
-        </div>
-      </form>
+              className="composer-button"
+              disabled={interruptMode ? false : sending || !trimmedPrompt}
+              type={interruptMode ? "button" : "submit"}
+              onClick={
+                interruptMode
+                  ? () => {
+                      onInterrupt();
+                    }
+                  : undefined
+              }
+            >
+              {interruptMode ? (
+                <ButtonIcon>
+                  <rect height="9" rx="1.5" width="9" x="7.5" y="7.5" />
+                </ButtonIcon>
+              ) : (
+                <ButtonIcon>
+                  <path d="M12 5v14" />
+                  <path d="m6.5 10.5 5.5-5.5 5.5 5.5" />
+                </ButtonIcon>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
