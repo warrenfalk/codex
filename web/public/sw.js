@@ -1,5 +1,6 @@
 const CACHE_NAME = "codex-web-shell-v1";
 const CACHE_PREFIX = "codex-web-shell-";
+const NOTIFICATION_CLICK_MESSAGE_TYPE = "codex-notification-click";
 const PRECACHE_URLS = [
   "/",
   "/manifest.webmanifest",
@@ -161,15 +162,31 @@ async function openOrFocusWindow(targetUrl) {
       continue;
     }
 
+    let targetClient = client;
     if ("navigate" in client) {
-      await client.navigate(targetUrl);
+      targetClient = (await client.navigate(targetUrl)) ?? client;
     }
-    return await client.focus();
+    notifyClientOfNotificationClick(targetClient, targetUrl);
+    if ("focus" in targetClient) {
+      return await targetClient.focus();
+    }
+    return targetClient;
   }
 
   if (clients.openWindow) {
-    return await clients.openWindow(targetUrl);
+    const client = await clients.openWindow(targetUrl);
+    if (client) {
+      notifyClientOfNotificationClick(client, targetUrl);
+    }
+    return client;
   }
+}
+
+function notifyClientOfNotificationClick(client, targetUrl) {
+  client.postMessage({
+    type: NOTIFICATION_CLICK_MESSAGE_TYPE,
+    url: targetUrl,
+  });
 }
 
 async function refreshPushSubscription() {

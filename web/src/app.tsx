@@ -28,6 +28,8 @@ import type { AnyServerRequest } from "@/types/protocol";
 import { ThreadList } from "./components/thread-list";
 import { ThreadView } from "./components/thread-view";
 
+const NOTIFICATION_CLICK_MESSAGE_TYPE = "codex-notification-click";
+
 export function App() {
   return (
     <Routes>
@@ -78,6 +80,32 @@ function AppRoute() {
       void setForegroundThreadId(null);
     };
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) {
+      return;
+    }
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const path = notificationClickPath(event.data);
+      if (!path) {
+        return;
+      }
+
+      navigate(path);
+    };
+
+    navigator.serviceWorker.addEventListener(
+      "message",
+      handleServiceWorkerMessage,
+    );
+    return () => {
+      navigator.serviceWorker.removeEventListener(
+        "message",
+        handleServiceWorkerMessage,
+      );
+    };
+  }, [navigate]);
 
   const thread = threadState?.thread ?? null;
   const active = useMemo(() => activeTurn(thread), [thread]);
@@ -190,4 +218,26 @@ function AppRoute() {
       )}
     </main>
   );
+}
+
+function notificationClickPath(data: unknown): string | null {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("type" in data) ||
+    data.type !== NOTIFICATION_CLICK_MESSAGE_TYPE ||
+    !("url" in data) ||
+    typeof data.url !== "string"
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(data.url, window.location.origin);
+    return url.origin === window.location.origin
+      ? `${url.pathname}${url.search}${url.hash}`
+      : null;
+  } catch {
+    return null;
+  }
 }
