@@ -15,6 +15,7 @@ export type StoredPushSubscription = PushSubscription & {
 export type PushStorageData = {
   subscriptions: StoredPushSubscription[];
   vapidKeys: VapidKeys | null;
+  vapidSubject: string | null;
   version: typeof STORAGE_VERSION;
 };
 
@@ -27,6 +28,7 @@ function emptyStorageData(): PushStorageData {
   return {
     subscriptions: [],
     vapidKeys: null,
+    vapidSubject: null,
     version: STORAGE_VERSION,
   };
 }
@@ -101,6 +103,8 @@ function parseStorageData(value: unknown): PushStorageData {
   return {
     subscriptions,
     vapidKeys: isVapidKeys(value.vapidKeys) ? value.vapidKeys : null,
+    vapidSubject:
+      typeof value.vapidSubject === "string" ? value.vapidSubject : null,
     version: STORAGE_VERSION,
   };
 }

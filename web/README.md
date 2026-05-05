@@ -48,9 +48,11 @@ and it does not handle `/rpc` or non-GET requests.
 
 Web Push notifications are opt-in from the thread list. Push subscriptions and
 the relay's generated VAPID key pair are persisted in
-`~/.codex/codex-web-push.json` by default. The relay sends push notifications
-for pending server requests, completed turns, and turn errors to subscribed
-browsers that do not currently have a connected websocket session.
+`~/.codex/codex-web-push.json` by default. The saved data also includes the
+public HTTPS origin used as the VAPID subject unless
+`CODEX_WEB_PUSH_VAPID_SUBJECT` is set. The relay sends push notifications for
+pending server requests, completed turns, and turn errors to subscribed browsers
+that do not currently have a connected websocket session.
 
 ## Environment
 
@@ -73,4 +75,5 @@ browsers that do not currently have a connected websocket session.
 - `CODEX_WEB_PUSH_VAPID_SUBJECT`
   - VAPID contact subject used by the relay when sending Web Push messages
   - must be a `mailto:` address or HTTPS URL
-  - defaults to `mailto:codex-web@localhost`
+  - defaults to the public HTTPS origin captured when the browser saves a push
+    subscription

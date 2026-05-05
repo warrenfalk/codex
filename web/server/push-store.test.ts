@@ -29,6 +29,7 @@ describe("PushStorage", () => {
     expect(await store.read()).toEqual({
       subscriptions: [],
       vapidKeys: null,
+      vapidSubject: null,
       version: 1,
     });
   });
@@ -56,6 +57,7 @@ describe("PushStorage", () => {
           privateKey: "private",
           publicKey: "public",
         },
+        vapidSubject: "https://agent.example",
       },
       result: undefined,
     }));
@@ -78,6 +80,7 @@ describe("PushStorage", () => {
         privateKey: "private",
         publicKey: "public",
       },
+      vapidSubject: "https://agent.example",
       version: 1,
     });
   });
