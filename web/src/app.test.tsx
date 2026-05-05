@@ -21,6 +21,7 @@ const backendStore = vi.hoisted(() => ({
   renameThread: vi.fn(),
   refreshThreadList: vi.fn(),
   respondToServerRequest: vi.fn(),
+  setForegroundThreadId: vi.fn(),
   sendPrompt: vi.fn(),
   subscribeThread: vi.fn(),
   subscribeThreadList: vi.fn(),
@@ -129,6 +130,7 @@ describe("App routing", () => {
     backendStore.renameThread.mockResolvedValue(undefined);
     backendStore.refreshThreadList.mockResolvedValue(undefined);
     backendStore.respondToServerRequest.mockResolvedValue(undefined);
+    backendStore.setForegroundThreadId.mockResolvedValue(undefined);
     backendStore.sendPrompt.mockResolvedValue(undefined);
     backendStore.subscribeThread.mockReturnValue(() => undefined);
     backendStore.subscribeThreadList.mockReturnValue(() => undefined);

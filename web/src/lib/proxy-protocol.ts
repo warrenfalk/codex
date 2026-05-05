@@ -19,6 +19,7 @@ export type ProxyThreadListUpdatedNotification = {
 export type ProxyPushSubscriptionUpdatedNotification = {
   method: typeof PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD;
   params: {
+    foregroundThreadId: string | null;
     pushSubscriptionEndpoint: string | null;
   };
 };

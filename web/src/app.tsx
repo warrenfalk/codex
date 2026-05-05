@@ -16,6 +16,7 @@ import {
   refreshThreadList,
   respondToServerRequest,
   sendPrompt,
+  setForegroundThreadId,
   subscribeThread,
   subscribeThreadList,
   type ThreadDetailsSnapshot,
@@ -61,6 +62,21 @@ function AppRoute() {
 
     setThreadState(getThreadSnapshot(selectedThreadId));
     return subscribeThread(selectedThreadId, setThreadState);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    const reportForegroundThread = () => {
+      void setForegroundThreadId(
+        document.visibilityState === "visible" ? selectedThreadId : null,
+      );
+    };
+
+    reportForegroundThread();
+    document.addEventListener("visibilitychange", reportForegroundThread);
+    return () => {
+      document.removeEventListener("visibilitychange", reportForegroundThread);
+      void setForegroundThreadId(null);
+    };
   }, [selectedThreadId]);
 
   const thread = threadState?.thread ?? null;

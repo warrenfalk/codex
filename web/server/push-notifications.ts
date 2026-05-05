@@ -8,6 +8,7 @@ import type {
 export type BrowserPushMessage = {
   body: string;
   tag: string;
+  threadId: string | null;
   title: string;
   url: string;
 };
@@ -230,6 +231,7 @@ export function pushMessageForServerRequest(
   return {
     body: requestBody(serverRequest),
     tag: `codex-request-${String(serverRequest.id)}`,
+    threadId,
     title: requestTitle(serverRequest),
     url: threadUrl(threadId),
   };
@@ -272,6 +274,7 @@ export function pushMessageForServerNotification(
               "Thread is ready.",
           ),
           tag: `codex-turn-${threadId}-${turn.id}-completed`,
+          threadId,
           title: "Codex finished",
           url: threadUrl(threadId),
         };
@@ -281,6 +284,7 @@ export function pushMessageForServerNotification(
         return {
           body: turn.error?.message ?? "The turn failed.",
           tag: `codex-turn-${threadId}-${turn.id}-failed`,
+          threadId,
           title: "Codex hit an error",
           url: threadUrl(threadId),
         };
@@ -293,6 +297,7 @@ export function pushMessageForServerNotification(
       return {
         body: error.message,
         tag: `codex-turn-${threadId}-${turnId}-failed`,
+        threadId,
         title: notification.params.willRetry
           ? "Codex is retrying"
           : "Codex hit an error",
