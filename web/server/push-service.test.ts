@@ -176,6 +176,7 @@ describe("PushNotificationService", () => {
         payload: {
           body: "The agent finished the requested work.",
           tag: "codex-turn-thread-1-turn-1-completed",
+          threadId: "thread-1",
           timestamp: expect.any(Number),
           title: "Codex finished",
           url: "/threads/thread-1",
@@ -184,10 +185,11 @@ describe("PushNotificationService", () => {
       },
     ]);
     expect(logger.info).toHaveBeenCalledWith("Sending Web Push notification.", {
-      connectedSubscriptions: 0,
+      foregroundSubscriptions: 0,
       storedSubscriptions: 1,
       subscriptions: 1,
       tag: "codex-turn-thread-1-turn-1-completed",
+      threadId: "thread-1",
       title: "Codex finished",
       url: "/threads/thread-1",
     });
@@ -276,24 +278,25 @@ describe("PushNotificationService", () => {
       "Web Push notification skipped: missing VAPID subject. Set CODEX_WEB_PUSH_VAPID_SUBJECT or re-save the subscription from the public HTTPS origin.",
       {
         tag: "codex-turn-thread-1-turn-1-completed",
+        threadId: "thread-1",
         title: "Codex finished",
         url: "/threads/thread-1",
       },
     );
   });
 
-  it("sends only to subscriptions without connected websocket clients", async () => {
+  it("sends only to subscriptions without the notified thread in the foreground", async () => {
     const sent: PushSubscription[] = [];
     const store = await tempStorage();
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
     };
-    const connectedSubscription = subscription(
-      "https://push.example/connected",
+    const foregroundSubscription = subscription(
+      "https://push.example/foreground",
     );
-    const disconnectedSubscription = subscription(
-      "https://push.example/disconnected",
+    const backgroundSubscription = subscription(
+      "https://push.example/background",
     );
     const service = new PushNotificationService(
       store,
@@ -314,39 +317,43 @@ describe("PushNotificationService", () => {
     );
 
     await service.saveSubscription(
-      connectedSubscription,
-      "connected-agent",
+      foregroundSubscription,
+      "foreground-agent",
       null,
     );
     await service.saveSubscription(
-      disconnectedSubscription,
-      "disconnected-agent",
+      backgroundSubscription,
+      "background-agent",
       null,
     );
     await service.notifyServerNotification(turnCompletedNotification(), {
-      connectedEndpoints: new Set([connectedSubscription.endpoint]),
+      foregroundThreadIdsByEndpoint: new Map([
+        [foregroundSubscription.endpoint, new Set(["thread-1"])],
+        [backgroundSubscription.endpoint, new Set(["thread-2"])],
+      ]),
     });
 
-    expect(sent).toEqual([expect.objectContaining(disconnectedSubscription)]);
+    expect(sent).toEqual([expect.objectContaining(backgroundSubscription)]);
     expect(logger.info).toHaveBeenCalledWith("Sending Web Push notification.", {
-      connectedSubscriptions: 1,
+      foregroundSubscriptions: 1,
       storedSubscriptions: 2,
       subscriptions: 1,
       tag: "codex-turn-thread-1-turn-1-completed",
+      threadId: "thread-1",
       title: "Codex finished",
       url: "/threads/thread-1",
     });
   });
 
-  it("skips when every subscribed client is connected", async () => {
+  it("skips when every subscribed client has the notified thread in the foreground", async () => {
     const sent: PushSubscription[] = [];
     const store = await tempStorage();
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
     };
-    const connectedSubscription = subscription(
-      "https://push.example/connected",
+    const foregroundSubscription = subscription(
+      "https://push.example/foreground",
     );
     const service = new PushNotificationService(
       store,
@@ -367,21 +374,24 @@ describe("PushNotificationService", () => {
     );
 
     await service.saveSubscription(
-      connectedSubscription,
-      "connected-agent",
+      foregroundSubscription,
+      "foreground-agent",
       null,
     );
     await service.notifyServerNotification(turnCompletedNotification(), {
-      connectedEndpoints: new Set([connectedSubscription.endpoint]),
+      foregroundThreadIdsByEndpoint: new Map([
+        [foregroundSubscription.endpoint, new Set(["thread-1"])],
+      ]),
     });
 
     expect(sent).toEqual([]);
     expect(logger.info).toHaveBeenCalledWith(
-      "Web Push notification skipped: all subscribed clients connected.",
+      "Web Push notification skipped: thread is foreground on all subscribed clients.",
       {
-        connectedSubscriptions: 1,
+        foregroundSubscriptions: 1,
         storedSubscriptions: 1,
         tag: "codex-turn-thread-1-turn-1-completed",
+        threadId: "thread-1",
         title: "Codex finished",
         url: "/threads/thread-1",
       },
@@ -421,6 +431,7 @@ describe("PushNotificationService", () => {
       "Web Push notification skipped: recently sent.",
       {
         tag: "codex-turn-thread-1-turn-1-completed",
+        threadId: "thread-1",
         title: "Codex finished",
         url: "/threads/thread-1",
       },

@@ -348,7 +348,7 @@ describe("attachRelay", () => {
     client.close();
   });
 
-  it("notifies push service with connected subscription endpoints", async () => {
+  it("notifies push service with foreground thread state by subscription endpoint", async () => {
     const backendServer = http.createServer();
     servers.push(backendServer);
     const backendWss = new WebSocketServer({ server: backendServer });
@@ -396,14 +396,19 @@ describe("attachRelay", () => {
     const backendPort = await listen(backendServer);
 
     const notifiedRequests: Array<{
-      connectedEndpoints: string[];
+      foregroundThreadIdsByEndpoint: Array<[string, string[]]>;
       request: JsonRpcRequestMessage;
     }> = [];
     const notifiedNotifications: Array<{
-      connectedEndpoints: string[];
+      foregroundThreadIdsByEndpoint: Array<[string, string[]]>;
       notification: ServerNotification;
       notificationContext: PushNotifyOptions["notificationContext"] | null;
     }> = [];
+    const foregroundThreadIdsByEndpoint = (options?: PushNotifyOptions) =>
+      [...(options?.foregroundThreadIdsByEndpoint ?? new Map()).entries()].map(
+        ([endpoint, threadIds]) =>
+          [endpoint, [...threadIds].sort()] as [string, string[]],
+      );
     const pushNotifier = {
       notifyServerNotification: vi.fn(
         async (
@@ -411,7 +416,8 @@ describe("attachRelay", () => {
           options?: PushNotifyOptions,
         ) => {
           notifiedNotifications.push({
-            connectedEndpoints: [...(options?.connectedEndpoints ?? [])],
+            foregroundThreadIdsByEndpoint:
+              foregroundThreadIdsByEndpoint(options),
             notification,
             notificationContext: options?.notificationContext ?? null,
           });
@@ -420,7 +426,8 @@ describe("attachRelay", () => {
       notifyServerRequest: vi.fn(
         async (request: JsonRpcRequestMessage, options?: PushNotifyOptions) => {
           notifiedRequests.push({
-            connectedEndpoints: [...(options?.connectedEndpoints ?? [])],
+            foregroundThreadIdsByEndpoint:
+              foregroundThreadIdsByEndpoint(options),
             request,
           });
         },
@@ -453,7 +460,7 @@ describe("attachRelay", () => {
     );
 
     expect(await waitFor(() => notifiedRequests[0] ?? null)).toMatchObject({
-      connectedEndpoints: [],
+      foregroundThreadIdsByEndpoint: [],
       request: {
         id: "request-1",
         method: "item/commandExecution/requestApproval",
@@ -494,6 +501,7 @@ describe("attachRelay", () => {
       JSON.stringify({
         method: "initialized",
         params: {
+          foregroundThreadId: "thread-1",
           pushSubscriptionEndpoint: "https://push.example/phone",
         },
       }),
@@ -560,7 +568,9 @@ describe("attachRelay", () => {
           ) ?? null,
       ),
     ).toMatchObject({
-      connectedEndpoints: ["https://push.example/phone"],
+      foregroundThreadIdsByEndpoint: [
+        ["https://push.example/phone", ["thread-1"]],
+      ],
       notification: {
         method: "turn/completed",
         params: {
@@ -581,6 +591,7 @@ describe("attachRelay", () => {
       JSON.stringify({
         method: PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
         params: {
+          foregroundThreadId: null,
           pushSubscriptionEndpoint: "https://push.example/phone-updated",
         },
       }),
@@ -615,7 +626,7 @@ describe("attachRelay", () => {
           : null;
       }),
     ).toMatchObject({
-      connectedEndpoints: ["https://push.example/phone-updated"],
+      foregroundThreadIdsByEndpoint: [],
       notification: {
         method: "turn/completed",
         params: {

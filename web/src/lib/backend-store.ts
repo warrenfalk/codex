@@ -76,6 +76,7 @@ export interface BackendTransport {
   renameThread(threadId: string, name: string): Promise<void>;
   resumeThread(threadId: string): Promise<Thread>;
   sendPrompt(threadId: string, text: string): Promise<void>;
+  setForegroundThreadId(threadId: string | null): void;
   setPushSubscriptionEndpoint(endpoint: string | null): void;
   subscribe(listener: (message: BackendMessage) => void): () => void;
   subscribeStatus(
@@ -675,6 +676,11 @@ export class BackendStateStore {
     this.client.setPushSubscriptionEndpoint(endpoint);
   }
 
+  async setForegroundThreadId(threadId: string | null): Promise<void> {
+    this.client.setForegroundThreadId(threadId);
+    await this.ensureConnected();
+  }
+
   private ensureThreadEntry(threadId: string): ThreadEntry {
     const existing = this.threadEntries.get(threadId);
     if (existing) {
@@ -1155,4 +1161,8 @@ export function setPushSubscriptionEndpoint(
   endpoint: string | null,
 ): Promise<void> {
   return backendStore.setPushSubscriptionEndpoint(endpoint);
+}
+
+export function setForegroundThreadId(threadId: string | null): Promise<void> {
+  return backendStore.setForegroundThreadId(threadId);
 }

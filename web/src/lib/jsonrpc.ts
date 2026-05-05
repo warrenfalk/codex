@@ -120,6 +120,10 @@ export class JsonRpcConnection {
     this.socket?.close();
   }
 
+  isOpen(): boolean {
+    return this.status === "open";
+  }
+
   subscribe(listener: MessageListener): () => void {
     this.messageListeners.add(listener);
     return () => {

@@ -63,6 +63,11 @@ type ForwardedBrowserRequest = {
   socket: WebSocket;
 };
 
+type BrowserPushState = {
+  foregroundThreadId: string | null;
+  pushSubscriptionEndpoint: string | null;
+};
+
 const CLIENT_INFO = {
   name: "codex_web_proxy",
   title: "Codex Web Proxy",
@@ -130,17 +135,20 @@ function requestIdKey(id: RequestId): string {
   return typeof id === "string" ? `string:${id}` : `number:${id}`;
 }
 
-function pushSubscriptionEndpointFromParams(params: unknown): string | null {
-  if (!isObject(params)) {
-    return null;
-  }
-
-  const endpoint = params.pushSubscriptionEndpoint;
-  return typeof endpoint === "string" && endpoint.length > 0 ? endpoint : null;
-}
-
 function canSend(socket: WebSocket): boolean {
   return socket.readyState === WebSocket.OPEN;
+}
+
+function optionalStringParam(
+  params: unknown,
+  key: string,
+): string | null | undefined {
+  if (!isObject(params) || !(key in params)) {
+    return undefined;
+  }
+
+  const value = params[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function sendJson(socket: WebSocket, message: JsonRpcMessage): void {
@@ -231,9 +239,9 @@ class RelayController {
   >();
   private readonly pendingServerRequestIds = new Set<string>();
   private readonly respondedServerRequestIds = new Set<string>();
-  private readonly pushSubscriptionEndpointsBySocket = new Map<
+  private readonly browserPushStatesBySocket = new Map<
     WebSocket,
-    string
+    BrowserPushState
   >();
   private upstreamSocket: WebSocket | null = null;
 
@@ -346,7 +354,7 @@ class RelayController {
 
     socket.on("close", () => {
       this.browserSockets.delete(socket);
-      this.pushSubscriptionEndpointsBySocket.delete(socket);
+      this.browserPushStatesBySocket.delete(socket);
       for (const [requestKey, pending] of this.forwardedBrowserRequests) {
         if (pending.socket === socket) {
           this.forwardedBrowserRequests.delete(requestKey);
@@ -356,7 +364,7 @@ class RelayController {
 
     socket.on("error", () => {
       this.browserSockets.delete(socket);
-      this.pushSubscriptionEndpointsBySocket.delete(socket);
+      this.browserPushStatesBySocket.delete(socket);
       closeIfOpen(socket, 1011, "browser socket errored");
     });
   }
@@ -427,14 +435,14 @@ class RelayController {
     await this.ensureUpstreamConnected();
 
     if (message.method === "initialized") {
-      this.updateSocketPushSubscriptionEndpoint(socket, message.params);
+      this.updateSocketPushState(socket, message.params);
       this.sendThreadListSnapshotToSocket(socket);
       this.sendPendingServerRequestsToSocket(socket);
       return;
     }
 
     if (message.method === PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD) {
-      this.updateSocketPushSubscriptionEndpoint(socket, message.params);
+      this.updateSocketPushState(socket, message.params);
       return;
     }
 
@@ -636,24 +644,57 @@ class RelayController {
     }
   }
 
-  private updateSocketPushSubscriptionEndpoint(
-    socket: WebSocket,
-    params: unknown,
-  ): void {
-    const endpoint = pushSubscriptionEndpointFromParams(params);
-    if (endpoint) {
-      this.pushSubscriptionEndpointsBySocket.set(socket, endpoint);
+  private updateSocketPushState(socket: WebSocket, params: unknown): void {
+    const current = this.browserPushStatesBySocket.get(socket) ?? {
+      foregroundThreadId: null,
+      pushSubscriptionEndpoint: null,
+    };
+    const pushSubscriptionEndpoint = optionalStringParam(
+      params,
+      "pushSubscriptionEndpoint",
+    );
+    const foregroundThreadId = optionalStringParam(
+      params,
+      "foregroundThreadId",
+    );
+    const next = {
+      foregroundThreadId:
+        foregroundThreadId === undefined
+          ? current.foregroundThreadId
+          : foregroundThreadId,
+      pushSubscriptionEndpoint:
+        pushSubscriptionEndpoint === undefined
+          ? current.pushSubscriptionEndpoint
+          : pushSubscriptionEndpoint,
+    };
+
+    if (next.pushSubscriptionEndpoint || next.foregroundThreadId) {
+      this.browserPushStatesBySocket.set(socket, next);
       return;
     }
 
-    this.pushSubscriptionEndpointsBySocket.delete(socket);
+    this.browserPushStatesBySocket.delete(socket);
   }
 
   private buildPushNotifyOptions(): PushNotifyOptions {
+    const foregroundThreadIdsByEndpoint = new Map<string, Set<string>>();
+    for (const state of this.browserPushStatesBySocket.values()) {
+      if (!state.pushSubscriptionEndpoint || !state.foregroundThreadId) {
+        continue;
+      }
+
+      const foregroundThreadIds =
+        foregroundThreadIdsByEndpoint.get(state.pushSubscriptionEndpoint) ??
+        new Set<string>();
+      foregroundThreadIds.add(state.foregroundThreadId);
+      foregroundThreadIdsByEndpoint.set(
+        state.pushSubscriptionEndpoint,
+        foregroundThreadIds,
+      );
+    }
+
     return {
-      connectedEndpoints: new Set(
-        this.pushSubscriptionEndpointsBySocket.values(),
-      ),
+      foregroundThreadIdsByEndpoint,
     };
   }
 
@@ -712,7 +753,7 @@ class RelayController {
     this.pendingServerRequests.clear();
     this.pendingServerRequestIds.clear();
     this.respondedServerRequestIds.clear();
-    this.pushSubscriptionEndpointsBySocket.clear();
+    this.browserPushStatesBySocket.clear();
 
     for (const socket of this.browserSockets) {
       closeIfOpen(socket, 1011, reason || "upstream connection closed");

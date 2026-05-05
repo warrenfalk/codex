@@ -35,7 +35,7 @@ export type PushNotifier = {
 };
 
 export type PushNotifyOptions = {
-  connectedEndpoints?: ReadonlySet<string>;
+  foregroundThreadIdsByEndpoint?: ReadonlyMap<string, ReadonlySet<string>>;
   notificationContext?: PushNotificationContext;
 };
 
@@ -206,25 +206,33 @@ export class PushNotificationService implements PushNotifier {
     if (data.subscriptions.length === 0) {
       this.logger.info("Web Push notification skipped: no subscriptions.", {
         tag: message.tag,
+        threadId: message.threadId,
         title: message.title,
         url: message.url,
       });
       return;
     }
 
-    const connectedEndpoints = options.connectedEndpoints ?? new Set<string>();
+    const foregroundThreadIdsByEndpoint =
+      options.foregroundThreadIdsByEndpoint ??
+      new Map<string, ReadonlySet<string>>();
     const targetSubscriptions = data.subscriptions.filter(
-      (subscription) => !connectedEndpoints.has(subscription.endpoint),
+      (subscription) =>
+        !message.threadId ||
+        !foregroundThreadIdsByEndpoint
+          .get(subscription.endpoint)
+          ?.has(message.threadId),
     );
-    const connectedSubscriptionCount =
+    const foregroundSubscriptionCount =
       data.subscriptions.length - targetSubscriptions.length;
     if (targetSubscriptions.length === 0) {
       this.logger.info(
-        "Web Push notification skipped: all subscribed clients connected.",
+        "Web Push notification skipped: thread is foreground on all subscribed clients.",
         {
-          connectedSubscriptions: connectedSubscriptionCount,
+          foregroundSubscriptions: foregroundSubscriptionCount,
           storedSubscriptions: data.subscriptions.length,
           tag: message.tag,
+          threadId: message.threadId,
           title: message.title,
           url: message.url,
         },
@@ -238,6 +246,7 @@ export class PushNotificationService implements PushNotifier {
         "Web Push notification skipped: missing VAPID subject. Set CODEX_WEB_PUSH_VAPID_SUBJECT or re-save the subscription from the public HTTPS origin.",
         {
           tag: message.tag,
+          threadId: message.threadId,
           title: message.title,
           url: message.url,
         },
@@ -248,6 +257,7 @@ export class PushNotificationService implements PushNotifier {
     if (!this.shouldSend(message.tag)) {
       this.logger.info("Web Push notification skipped: recently sent.", {
         tag: message.tag,
+        threadId: message.threadId,
         title: message.title,
         url: message.url,
       });
@@ -264,10 +274,11 @@ export class PushNotificationService implements PushNotifier {
     let sentCount = 0;
 
     this.logger.info("Sending Web Push notification.", {
-      connectedSubscriptions: connectedSubscriptionCount,
+      foregroundSubscriptions: foregroundSubscriptionCount,
       storedSubscriptions: data.subscriptions.length,
       subscriptions: targetSubscriptions.length,
       tag: message.tag,
+      threadId: message.threadId,
       title: message.title,
       url: message.url,
     });

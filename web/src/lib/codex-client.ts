@@ -74,6 +74,8 @@ function isMethodNotFoundError(
 }
 
 export class CodexClient {
+  private foregroundThreadId: string | null = null;
+  private pushSubscriptionEndpoint: string | null = null;
   private readonly rpc = new JsonRpcConnection();
   private readonly listeners = new Set<MessageListener>();
 
@@ -100,11 +102,8 @@ export class CodexClient {
       clientInfo: CLIENT_INFO,
       capabilities: CAPABILITIES,
     });
-    const pushSubscriptionEndpoint = await this.readPushSubscriptionEndpoint();
-    this.rpc.notify(
-      "initialized",
-      pushSubscriptionEndpoint ? { pushSubscriptionEndpoint } : {},
-    );
+    this.pushSubscriptionEndpoint = await this.readPushSubscriptionEndpoint();
+    this.rpc.notify("initialized", this.clientStateParams());
     return response;
   }
 
@@ -224,9 +223,13 @@ export class CodexClient {
   }
 
   setPushSubscriptionEndpoint(endpoint: string | null): void {
-    this.rpc.notify(PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD, {
-      pushSubscriptionEndpoint: endpoint,
-    });
+    this.pushSubscriptionEndpoint = endpoint;
+    this.notifyClientState();
+  }
+
+  setForegroundThreadId(threadId: string | null): void {
+    this.foregroundThreadId = threadId;
+    this.notifyClientState();
   }
 
   private async readPushSubscriptionEndpoint(): Promise<string | null> {
@@ -236,5 +239,26 @@ export class CodexClient {
       console.warn("Could not read active push subscription endpoint.", error);
       return null;
     }
+  }
+
+  private clientStateParams(): {
+    foregroundThreadId: string | null;
+    pushSubscriptionEndpoint: string | null;
+  } {
+    return {
+      foregroundThreadId: this.foregroundThreadId,
+      pushSubscriptionEndpoint: this.pushSubscriptionEndpoint,
+    };
+  }
+
+  private notifyClientState(): void {
+    if (!this.rpc.isOpen()) {
+      return;
+    }
+
+    this.rpc.notify(
+      PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
+      this.clientStateParams(),
+    );
   }
 }
