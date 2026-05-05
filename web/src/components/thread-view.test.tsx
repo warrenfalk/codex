@@ -193,6 +193,18 @@ function renderThreadView(
   return { ...view, props };
 }
 
+function changePrompt(
+  value: string,
+  selectionStart = value.length,
+  selectionEnd = selectionStart,
+): HTMLTextAreaElement {
+  const prompt = screen.getByLabelText("Prompt") as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value } });
+  prompt.setSelectionRange(selectionStart, selectionEnd);
+  fireEvent.select(prompt);
+  return prompt;
+}
+
 describe("ThreadView", () => {
   it("hides the composer during approval prompts and preserves the draft", () => {
     const pendingRequest: AnyServerRequest = {
@@ -244,6 +256,58 @@ describe("ThreadView", () => {
         behavior: "smooth",
       });
     });
+  });
+
+  it("submits the prompt instead of adding a third trailing line ending", async () => {
+    const onSendPrompt = vi.fn().mockResolvedValue(undefined);
+    renderThreadView({ onSendPrompt });
+
+    const cursorIndex = "continue working\n\n".length;
+    const prompt = changePrompt("continue working\n\n   ", cursorIndex);
+
+    expect(screen.getByRole("button", { name: "Send prompt" })).toHaveClass(
+      "composer-button-enter-submit",
+    );
+
+    fireEvent.keyDown(prompt, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(onSendPrompt).toHaveBeenCalledWith("continue working");
+    });
+    expect(prompt).toHaveValue("");
+  });
+
+  it("keeps Enter as a newline before the third trailing line ending", () => {
+    const onSendPrompt = vi.fn().mockResolvedValue(undefined);
+    const { rerender, props } = renderThreadView({ onSendPrompt });
+
+    const prompt = changePrompt("continue working\n");
+
+    expect(screen.getByRole("button", { name: "Send prompt" })).not.toHaveClass(
+      "composer-button-enter-submit",
+    );
+
+    fireEvent.keyDown(prompt, { key: "Enter" });
+
+    expect(onSendPrompt).not.toHaveBeenCalled();
+
+    const cursorBeforeText = "continue working\n\n".length;
+    changePrompt("continue working\n\nmore context", cursorBeforeText);
+
+    expect(screen.getByRole("button", { name: "Send prompt" })).not.toHaveClass(
+      "composer-button-enter-submit",
+    );
+
+    fireEvent.keyDown(prompt, { key: "Enter" });
+
+    expect(onSendPrompt).not.toHaveBeenCalled();
+
+    rerender(<ThreadView {...props} sending />);
+    changePrompt("continue working\n\n");
+
+    expect(screen.getByRole("button", { name: "Send prompt" })).not.toHaveClass(
+      "composer-button-enter-submit",
+    );
   });
 
   it("scrolls the thread output to the bottom with Ctrl+Shift+Down", () => {
