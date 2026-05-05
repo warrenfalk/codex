@@ -64,6 +64,7 @@ class FakeTransport implements BackendTransport {
   resumeThreadGate: Promise<void> | null = null;
   resumeCalls = new Map<string, number>();
   renameThreadCalls: Array<{ name: string; threadId: string }> = [];
+  pushSubscriptionEndpointUpdates: Array<string | null> = [];
   private readonly messageListeners = new Set<MessageListener>();
   private readonly statusListeners = new Set<StatusListener>();
 
@@ -129,6 +130,10 @@ class FakeTransport implements BackendTransport {
   }
 
   async sendPrompt(): Promise<void> {}
+
+  setPushSubscriptionEndpoint(endpoint: string | null): void {
+    this.pushSubscriptionEndpointUpdates.push(endpoint);
+  }
 
   subscribe(listener: MessageListener): () => void {
     this.messageListeners.add(listener);
@@ -221,6 +226,20 @@ describe("BackendStateStore", () => {
         ],
       }),
     );
+  });
+
+  it("sends push subscription endpoint updates through the transport", async () => {
+    const transport = new FakeTransport([makeThread("thr_1", "Thread 1")]);
+    const store = new BackendStateStore(transport);
+
+    await store.setPushSubscriptionEndpoint("https://push.example/phone");
+    await store.setPushSubscriptionEndpoint(null);
+
+    expect(transport.connectCalls).toBe(1);
+    expect(transport.pushSubscriptionEndpointUpdates).toEqual([
+      "https://push.example/phone",
+      null,
+    ]);
   });
 
   it("hydrates thread list previews from the latest user or agent message", async () => {

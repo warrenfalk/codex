@@ -6,6 +6,7 @@ import {
   readPushNotificationState,
   type PushNotificationState,
 } from "@/lib/push-notifications";
+import { setPushSubscriptionEndpoint } from "@/lib/backend-store";
 
 function buttonLabel(
   state: PushNotificationState | null,
@@ -38,6 +39,9 @@ export function PushNotificationControl() {
       (nextState) => {
         if (!cancelled) {
           setState(nextState);
+          if (nextState.type === "enabled") {
+            void setPushSubscriptionEndpoint(nextState.endpoint);
+          }
         }
       },
       (error: unknown) => {
@@ -67,6 +71,9 @@ export function PushNotificationControl() {
           ? await disablePushNotifications()
           : await enablePushNotifications();
       setState(nextState);
+      void setPushSubscriptionEndpoint(
+        nextState.type === "enabled" ? nextState.endpoint : null,
+      );
     } catch (error) {
       setState({ type: "error", message: String(error) });
     } finally {

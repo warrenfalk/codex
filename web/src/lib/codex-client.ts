@@ -19,11 +19,13 @@ import { isKnownServerRequestMethod } from "@/types/protocol";
 
 import { type IncomingJsonRpcMessage, JsonRpcConnection } from "./jsonrpc";
 import {
+  PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
   isProxyThreadListUpdatedNotification,
   type ProxyThreadListResponse,
   type ProxyThreadListSnapshot,
   type ProxyThreadListUpdatedNotification,
 } from "./proxy-protocol";
+import { getPushSubscriptionEndpoint } from "./push-notifications";
 
 export type BackendMessage =
   | AnyServerRequest
@@ -98,7 +100,11 @@ export class CodexClient {
       clientInfo: CLIENT_INFO,
       capabilities: CAPABILITIES,
     });
-    this.rpc.notify("initialized", {});
+    const pushSubscriptionEndpoint = await this.readPushSubscriptionEndpoint();
+    this.rpc.notify(
+      "initialized",
+      pushSubscriptionEndpoint ? { pushSubscriptionEndpoint } : {},
+    );
     return response;
   }
 
@@ -215,5 +221,20 @@ export class CodexClient {
 
   respondToServerRequest(id: RequestId, response: unknown): void {
     this.rpc.respond(id, response);
+  }
+
+  setPushSubscriptionEndpoint(endpoint: string | null): void {
+    this.rpc.notify(PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD, {
+      pushSubscriptionEndpoint: endpoint,
+    });
+  }
+
+  private async readPushSubscriptionEndpoint(): Promise<string | null> {
+    try {
+      return await getPushSubscriptionEndpoint();
+    } catch (error) {
+      console.warn("Could not read active push subscription endpoint.", error);
+      return null;
+    }
   }
 }

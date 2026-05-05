@@ -141,6 +141,8 @@ describe("PushNotificationService", () => {
       },
     ]);
     expect(logger.info).toHaveBeenCalledWith("Sending Web Push notification.", {
+      connectedSubscriptions: 0,
+      storedSubscriptions: 1,
       subscriptions: 1,
       tag: "codex-turn-thread-1-turn-1-completed",
       title: "Codex finished",
@@ -156,6 +158,103 @@ describe("PushNotificationService", () => {
       },
     );
     expect(await service.getPublicKey()).toBe("public");
+  });
+
+  it("sends only to subscriptions without connected websocket clients", async () => {
+    const sent: PushSubscription[] = [];
+    const store = await tempStorage();
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const connectedSubscription = subscription(
+      "https://push.example/connected",
+    );
+    const disconnectedSubscription = subscription(
+      "https://push.example/disconnected",
+    );
+    const service = new PushNotificationService(
+      store,
+      "mailto:test@example.com",
+      async (targetSubscription): Promise<SendResult> => {
+        sent.push(targetSubscription);
+        return {
+          body: "",
+          headers: {},
+          statusCode: 201,
+        };
+      },
+      () => ({
+        privateKey: "private",
+        publicKey: "public",
+      }),
+      logger,
+    );
+
+    await service.saveSubscription(connectedSubscription, "connected-agent");
+    await service.saveSubscription(
+      disconnectedSubscription,
+      "disconnected-agent",
+    );
+    await service.notifyServerNotification(turnCompletedNotification(), {
+      connectedEndpoints: new Set([connectedSubscription.endpoint]),
+    });
+
+    expect(sent).toEqual([expect.objectContaining(disconnectedSubscription)]);
+    expect(logger.info).toHaveBeenCalledWith("Sending Web Push notification.", {
+      connectedSubscriptions: 1,
+      storedSubscriptions: 2,
+      subscriptions: 1,
+      tag: "codex-turn-thread-1-turn-1-completed",
+      title: "Codex finished",
+      url: "/threads/thread-1",
+    });
+  });
+
+  it("skips when every subscribed client is connected", async () => {
+    const sent: PushSubscription[] = [];
+    const store = await tempStorage();
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const connectedSubscription = subscription(
+      "https://push.example/connected",
+    );
+    const service = new PushNotificationService(
+      store,
+      "mailto:test@example.com",
+      async (targetSubscription): Promise<SendResult> => {
+        sent.push(targetSubscription);
+        return {
+          body: "",
+          headers: {},
+          statusCode: 201,
+        };
+      },
+      () => ({
+        privateKey: "private",
+        publicKey: "public",
+      }),
+      logger,
+    );
+
+    await service.saveSubscription(connectedSubscription, "connected-agent");
+    await service.notifyServerNotification(turnCompletedNotification(), {
+      connectedEndpoints: new Set([connectedSubscription.endpoint]),
+    });
+
+    expect(sent).toEqual([]);
+    expect(logger.info).toHaveBeenCalledWith(
+      "Web Push notification skipped: all subscribed clients connected.",
+      {
+        connectedSubscriptions: 1,
+        storedSubscriptions: 1,
+        tag: "codex-turn-thread-1-turn-1-completed",
+        title: "Codex finished",
+        url: "/threads/thread-1",
+      },
+    );
   });
 
   it("dedupes repeated notifications by tag", async () => {

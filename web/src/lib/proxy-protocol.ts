@@ -3,6 +3,8 @@ import type { ThreadListResponse } from "../types/protocol";
 
 export const PROXY_THREAD_LIST_UPDATED_METHOD =
   "codex-web/threadListUpdated" as const;
+export const PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD =
+  "codex-web/pushSubscriptionUpdated" as const;
 
 export type ProxyThreadListSnapshot = {
   previewsByThreadId: Record<string, string>;
@@ -12,6 +14,13 @@ export type ProxyThreadListSnapshot = {
 export type ProxyThreadListUpdatedNotification = {
   method: typeof PROXY_THREAD_LIST_UPDATED_METHOD;
   params: ProxyThreadListSnapshot;
+};
+
+export type ProxyPushSubscriptionUpdatedNotification = {
+  method: typeof PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD;
+  params: {
+    pushSubscriptionEndpoint: string | null;
+  };
 };
 
 export type ProxyThreadListResponse = ThreadListResponse & {

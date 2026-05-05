@@ -5,11 +5,15 @@ import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PROXY_THREAD_LIST_UPDATED_METHOD } from "../src/lib/proxy-protocol";
+import {
+  PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
+  PROXY_THREAD_LIST_UPDATED_METHOD,
+} from "../src/lib/proxy-protocol";
 import type { JsonRpcRequestMessage } from "../src/lib/jsonrpc";
-import type { Thread } from "../src/types/protocol";
+import type { ServerNotification, Thread } from "../src/types/protocol";
 
 import { attachRelay } from "./relay.js";
+import type { PushNotifyOptions } from "./push-service.js";
 
 type JsonRpcMessage = {
   error?: { code: number; message: string };
@@ -344,7 +348,7 @@ describe("attachRelay", () => {
     client.close();
   });
 
-  it("notifies the push service for server requests when no browser is connected", async () => {
+  it("notifies push service with connected subscription endpoints", async () => {
     const backendServer = http.createServer();
     servers.push(backendServer);
     const backendWss = new WebSocketServer({ server: backendServer });
@@ -391,12 +395,34 @@ describe("attachRelay", () => {
 
     const backendPort = await listen(backendServer);
 
-    const notifiedRequests: JsonRpcRequestMessage[] = [];
+    const notifiedRequests: Array<{
+      connectedEndpoints: string[];
+      request: JsonRpcRequestMessage;
+    }> = [];
+    const notifiedNotifications: Array<{
+      connectedEndpoints: string[];
+      notification: ServerNotification;
+    }> = [];
     const pushNotifier = {
-      notifyServerNotification: vi.fn(async () => undefined),
-      notifyServerRequest: vi.fn(async (request: JsonRpcRequestMessage) => {
-        notifiedRequests.push(request);
-      }),
+      notifyServerNotification: vi.fn(
+        async (
+          notification: ServerNotification,
+          options?: PushNotifyOptions,
+        ) => {
+          notifiedNotifications.push({
+            connectedEndpoints: [...(options?.connectedEndpoints ?? [])],
+            notification,
+          });
+        },
+      ),
+      notifyServerRequest: vi.fn(
+        async (request: JsonRpcRequestMessage, options?: PushNotifyOptions) => {
+          notifiedRequests.push({
+            connectedEndpoints: [...(options?.connectedEndpoints ?? [])],
+            request,
+          });
+        },
+      ),
     };
     const relayApp = express();
     const relayServer = http.createServer(relayApp);
@@ -425,10 +451,13 @@ describe("attachRelay", () => {
     );
 
     expect(await waitFor(() => notifiedRequests[0] ?? null)).toMatchObject({
-      id: "request-1",
-      method: "item/commandExecution/requestApproval",
-      params: {
-        threadId: "thread-1",
+      connectedEndpoints: [],
+      request: {
+        id: "request-1",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          threadId: "thread-1",
+        },
       },
     });
 
@@ -462,7 +491,9 @@ describe("attachRelay", () => {
     client.send(
       JSON.stringify({
         method: "initialized",
-        params: {},
+        params: {
+          pushSubscriptionEndpoint: "https://push.example/phone",
+        },
       }),
     );
 
@@ -472,5 +503,75 @@ describe("attachRelay", () => {
       id: "request-1",
       method: "item/commandExecution/requestApproval",
     });
+
+    backendSocket!.send(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: {
+            completedAt: 2,
+            durationMs: 1,
+            error: null,
+            id: "turn-1",
+            items: [],
+            startedAt: 1,
+            status: "completed",
+          },
+        },
+      }),
+    );
+
+    expect(await waitFor(() => notifiedNotifications[0] ?? null)).toMatchObject(
+      {
+        connectedEndpoints: ["https://push.example/phone"],
+        notification: {
+          method: "turn/completed",
+          params: {
+            threadId: "thread-1",
+          },
+        },
+      },
+    );
+
+    client.send(
+      JSON.stringify({
+        method: PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
+        params: {
+          pushSubscriptionEndpoint: "https://push.example/phone-updated",
+        },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    backendSocket!.send(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: {
+            completedAt: 3,
+            durationMs: 1,
+            error: null,
+            id: "turn-2",
+            items: [],
+            startedAt: 2,
+            status: "completed",
+          },
+        },
+      }),
+    );
+
+    expect(await waitFor(() => notifiedNotifications[1] ?? null)).toMatchObject(
+      {
+        connectedEndpoints: ["https://push.example/phone-updated"],
+        notification: {
+          method: "turn/completed",
+          params: {
+            threadId: "thread-1",
+          },
+        },
+      },
+    );
   });
 });
