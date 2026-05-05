@@ -109,4 +109,32 @@ describe("ThreadList", () => {
     expect(screen.queryByText("Remote control thread")).not.toBeInTheDocument();
     expect(screen.getByText("Unrelated thread")).toBeInTheDocument();
   });
+
+  it("keeps list actions behind the thread actions menu", () => {
+    const onRefresh = vi.fn();
+
+    render(
+      <ThreadList
+        loading={false}
+        onRefresh={onRefresh}
+        onSelect={vi.fn()}
+        previewsByThreadId={{}}
+        threads={[buildThread()]}
+      />,
+    );
+
+    const actionsTrigger = screen.getByLabelText("Thread list actions");
+
+    expect(actionsTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+
+    fireEvent.click(actionsTrigger);
+
+    expect(actionsTrigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(actionsTrigger).toHaveAttribute("aria-expanded", "false");
+  });
 });
