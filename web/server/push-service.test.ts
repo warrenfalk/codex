@@ -156,7 +156,11 @@ describe("PushNotificationService", () => {
     );
 
     await service.saveSubscription(subscription(), "test-agent", null);
-    await service.notifyServerNotification(turnCompletedNotification());
+    await service.notifyServerNotification(turnCompletedNotification(), {
+      notificationContext: {
+        completedTurnAgentMessage: "The agent finished the requested work.",
+      },
+    });
 
     expect(sent).toEqual([
       {
@@ -170,7 +174,7 @@ describe("PushNotificationService", () => {
           },
         },
         payload: {
-          body: "Thread is ready.",
+          body: "The agent finished the requested work.",
           tag: "codex-turn-thread-1-turn-1-completed",
           timestamp: expect.any(Number),
           title: "Codex finished",

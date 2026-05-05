@@ -402,6 +402,7 @@ describe("attachRelay", () => {
     const notifiedNotifications: Array<{
       connectedEndpoints: string[];
       notification: ServerNotification;
+      notificationContext: PushNotifyOptions["notificationContext"] | null;
     }> = [];
     const pushNotifier = {
       notifyServerNotification: vi.fn(
@@ -412,6 +413,7 @@ describe("attachRelay", () => {
           notifiedNotifications.push({
             connectedEndpoints: [...(options?.connectedEndpoints ?? [])],
             notification,
+            notificationContext: options?.notificationContext ?? null,
           });
         },
       ),
@@ -506,6 +508,34 @@ describe("attachRelay", () => {
 
     backendSocket!.send(
       JSON.stringify({
+        method: "turn/started",
+        params: {
+          threadId: "thread-1",
+          turn: {
+            completedAt: null,
+            durationMs: null,
+            error: null,
+            id: "turn-1",
+            items: [],
+            startedAt: 1,
+            status: "inProgress",
+          },
+        },
+      }),
+    );
+    backendSocket!.send(
+      JSON.stringify({
+        method: "item/agentMessage/delta",
+        params: {
+          delta: "Finished checking the notification content.",
+          itemId: "agent-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      }),
+    );
+    backendSocket!.send(
+      JSON.stringify({
         method: "turn/completed",
         params: {
           threadId: "thread-1",
@@ -522,17 +552,30 @@ describe("attachRelay", () => {
       }),
     );
 
-    expect(await waitFor(() => notifiedNotifications[0] ?? null)).toMatchObject(
-      {
-        connectedEndpoints: ["https://push.example/phone"],
-        notification: {
-          method: "turn/completed",
-          params: {
-            threadId: "thread-1",
-          },
+    expect(
+      await waitFor(
+        () =>
+          notifiedNotifications.find(
+            (entry) => entry.notification.method === "turn/completed",
+          ) ?? null,
+      ),
+    ).toMatchObject({
+      connectedEndpoints: ["https://push.example/phone"],
+      notification: {
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
         },
       },
-    );
+      notificationContext: {
+        completedTurnAgentMessage:
+          "Finished checking the notification content.",
+      },
+    });
+
+    const completedNotificationCount = notifiedNotifications.filter(
+      (entry) => entry.notification.method === "turn/completed",
+    ).length;
 
     client.send(
       JSON.stringify({
@@ -562,16 +605,26 @@ describe("attachRelay", () => {
       }),
     );
 
-    expect(await waitFor(() => notifiedNotifications[1] ?? null)).toMatchObject(
-      {
-        connectedEndpoints: ["https://push.example/phone-updated"],
-        notification: {
-          method: "turn/completed",
-          params: {
-            threadId: "thread-1",
-          },
+    expect(
+      await waitFor(() => {
+        const completedNotifications = notifiedNotifications.filter(
+          (entry) => entry.notification.method === "turn/completed",
+        );
+        return completedNotifications.length > completedNotificationCount
+          ? completedNotifications.at(-1)!
+          : null;
+      }),
+    ).toMatchObject({
+      connectedEndpoints: ["https://push.example/phone-updated"],
+      notification: {
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
         },
       },
-    );
+      notificationContext: {
+        completedTurnAgentMessage: null,
+      },
+    });
   });
 });

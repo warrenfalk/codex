@@ -18,12 +18,18 @@ import type {
 
 import type { ProxyThreadListSnapshot } from "../src/lib/proxy-protocol";
 
+type AgentMessageItem = Extract<ThreadItem, { type: "agentMessage" }>;
+
 function sortThreads(threads: Thread[]): Thread[] {
   return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
 function trimPreviewMarkdown(text: string): string {
   return text.trim();
+}
+
+function isNonEmptyAgentMessage(item: ThreadItem): item is AgentMessageItem {
+  return item.type === "agentMessage" && Boolean(item.text.trim());
 }
 
 function previewFromItem(item: ThreadItem): string | null {
@@ -408,6 +414,25 @@ export class ThreadCache {
       mergeThread(this.threadsById.get(thread.id), thread),
     );
     return this.rebuildPreviews();
+  }
+
+  latestAgentMessageForTurn(threadId: string, turnId: string): string | null {
+    const turn = this.threadsById
+      .get(threadId)
+      ?.turns.find((candidate) => candidate.id === turnId);
+    if (!turn) {
+      return null;
+    }
+
+    const messages = turn.items.filter(isNonEmptyAgentMessage);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!;
+      if (message.phase === "final_answer" || message.phase === null) {
+        return message.text.trim();
+      }
+    }
+
+    return messages.at(-1)?.text.trim() ?? null;
   }
 
   applyNotification(notification: ServerNotification): boolean {

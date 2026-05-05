@@ -15,6 +15,7 @@ import {
   pushMessageForServerNotification,
   pushMessageForServerRequest,
   type BrowserPushMessage,
+  type PushNotificationContext,
 } from "./push-notifications.js";
 import { isPushSubscription, PushStorage } from "./push-store.js";
 
@@ -35,6 +36,7 @@ export type PushNotifier = {
 
 export type PushNotifyOptions = {
   connectedEndpoints?: ReadonlySet<string>;
+  notificationContext?: PushNotificationContext;
 };
 
 type PushSender = (
@@ -184,7 +186,10 @@ export class PushNotificationService implements PushNotifier {
     options: PushNotifyOptions = {},
   ): Promise<void> {
     await this.sendPushMessage(
-      pushMessageForServerNotification(notification),
+      pushMessageForServerNotification(
+        notification,
+        options.notificationContext,
+      ),
       options,
     );
   }
