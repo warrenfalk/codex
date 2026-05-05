@@ -15,12 +15,17 @@ import {
   type ProxyThreadListUpdatedNotification,
 } from "../src/lib/proxy-protocol";
 
+import {
+  pushMessageForServerNotification,
+  pushMessageForServerRequest,
+} from "./push-notifications.js";
+import type { PushNotifier } from "./push-service.js";
 import { ThreadCache } from "./thread-cache";
 
 type JsonRpcRequestMessage = {
   id: RequestId;
   method: string;
-  params?: unknown;
+  params: unknown;
 };
 
 type JsonRpcNotificationMessage = {
@@ -214,11 +219,18 @@ class RelayController {
     string,
     PendingProxyRequest
   >();
+  private readonly pendingServerRequests = new Map<
+    string,
+    JsonRpcRequestMessage
+  >();
   private readonly pendingServerRequestIds = new Set<string>();
   private readonly respondedServerRequestIds = new Set<string>();
   private upstreamSocket: WebSocket | null = null;
 
-  constructor(private readonly backendUrl: string) {}
+  constructor(
+    private readonly backendUrl: string,
+    private readonly pushNotifier: PushNotifier | null,
+  ) {}
 
   async start(): Promise<void> {
     await this.ensureUpstreamConnected();
@@ -404,6 +416,7 @@ class RelayController {
 
     if (message.method === "initialized") {
       this.sendThreadListSnapshotToSocket(socket);
+      this.sendPendingServerRequestsToSocket(socket);
       return;
     }
 
@@ -443,13 +456,36 @@ class RelayController {
     }
 
     if (isRequestMessage(message)) {
-      this.pendingServerRequestIds.add(requestIdKey(message.id));
+      const requestKey = requestIdKey(message.id);
+      this.pendingServerRequestIds.add(requestKey);
+      this.pendingServerRequests.set(requestKey, message);
       this.broadcast(message);
+      if (this.browserSockets.size === 0) {
+        void this.pushNotifier
+          ?.notifyServerRequest(message)
+          .catch((error: unknown) => {
+            console.warn(
+              "Failed to send server-request push notification.",
+              error,
+            );
+          });
+      } else if (pushMessageForServerRequest(message)) {
+        console.info(
+          "Web Push notification skipped: browser clients connected.",
+          {
+            browserClients: this.browserSockets.size,
+            method: message.method,
+            requestId: message.id,
+          },
+        );
+      }
       return;
     }
 
     this.broadcast(message);
-    void this.handleUpstreamNotification(message);
+    void this.handleUpstreamNotification(message).catch((error: unknown) => {
+      console.warn("Failed to handle upstream notification.", error);
+    });
   }
 
   private handleUpstreamResponse(
@@ -504,6 +540,7 @@ class RelayController {
     if (notification.method === "serverRequest/resolved") {
       const requestKey = requestIdKey(notification.params.requestId);
       this.pendingServerRequestIds.delete(requestKey);
+      this.pendingServerRequests.delete(requestKey);
       this.respondedServerRequestIds.delete(requestKey);
       return;
     }
@@ -517,6 +554,18 @@ class RelayController {
 
     if (changed) {
       this.broadcastThreadListSnapshot();
+    }
+
+    if (this.browserSockets.size === 0) {
+      await this.pushNotifier?.notifyServerNotification(notification);
+    } else if (pushMessageForServerNotification(notification)) {
+      console.info(
+        "Web Push notification skipped: browser clients connected.",
+        {
+          browserClients: this.browserSockets.size,
+          method: notification.method,
+        },
+      );
     }
   }
 
@@ -564,6 +613,14 @@ class RelayController {
       params: this.cache.snapshot(),
     };
     sendJson(socket, notification);
+  }
+
+  private sendPendingServerRequestsToSocket(socket: WebSocket): void {
+    for (const [requestKey, request] of this.pendingServerRequests) {
+      if (!this.respondedServerRequestIds.has(requestKey)) {
+        sendJson(socket, request);
+      }
+    }
   }
 
   private broadcast(message: JsonRpcMessage): void {
@@ -618,6 +675,7 @@ class RelayController {
     }
     this.pendingProxyRequests.clear();
     this.forwardedBrowserRequests.clear();
+    this.pendingServerRequests.clear();
     this.pendingServerRequestIds.clear();
     this.respondedServerRequestIds.clear();
 
@@ -627,11 +685,16 @@ class RelayController {
   }
 }
 
+export type RelayOptions = {
+  pushNotifier?: PushNotifier | null;
+};
+
 export async function attachRelay(
   server: HttpServer,
   backendUrl: string,
+  options: RelayOptions = {},
 ): Promise<void> {
-  const relay = new RelayController(backendUrl);
+  const relay = new RelayController(backendUrl, options.pushNotifier ?? null);
   await relay.start();
   relay.attach(server);
 }

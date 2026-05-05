@@ -3,6 +3,8 @@ import { Streamdown, type StreamdownProps } from "streamdown";
 
 import type { Thread } from "@/types/protocol";
 
+import { PushNotificationControl } from "./push-notification-control";
+
 type Props = {
   threads: Thread[];
   previewsByThreadId: Record<string, string>;
@@ -94,9 +96,12 @@ export function ThreadList({
           <p className="eyebrow">Live session list</p>
           <h1>Threads</h1>
         </div>
-        <button type="button" onClick={onRefresh}>
-          Refresh
-        </button>
+        <div className="list-actions">
+          <PushNotificationControl />
+          <button type="button" onClick={onRefresh}>
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="thread-search">
         <input

@@ -3,9 +3,10 @@ import { AddressInfo } from "node:net";
 
 import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PROXY_THREAD_LIST_UPDATED_METHOD } from "../src/lib/proxy-protocol";
+import type { JsonRpcRequestMessage } from "../src/lib/jsonrpc";
 import type { Thread } from "../src/types/protocol";
 
 import { attachRelay } from "./relay.js";
@@ -52,6 +53,20 @@ function createCollector(socket: WebSocket) {
       }
     },
   };
+}
+
+async function waitFor<T>(read: () => T | null): Promise<T> {
+  const startedAt = Date.now();
+  while (true) {
+    const value = read();
+    if (value) {
+      return value;
+    }
+    if (Date.now() - startedAt > 1000) {
+      throw new Error("timed out waiting for value");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 function buildThread(id: string, name = id): Thread {
@@ -327,5 +342,135 @@ describe("attachRelay", () => {
     });
 
     client.close();
+  });
+
+  it("notifies the push service for server requests when no browser is connected", async () => {
+    const backendServer = http.createServer();
+    servers.push(backendServer);
+    const backendWss = new WebSocketServer({ server: backendServer });
+    webSocketServers.push(backendWss);
+    let backendSocket: WebSocket | null = null;
+
+    backendWss.on("connection", async (socket) => {
+      backendSocket = socket;
+      sockets.push(socket);
+      const backendCollector = createCollector(socket);
+
+      const initializeRequest = await backendCollector.waitFor(
+        (message) => message.method === "initialize",
+      );
+      socket.send(
+        JSON.stringify({
+          id: initializeRequest.id,
+          result: {
+            codexHome: "/tmp/codex",
+            platformFamily: "unix",
+            platformOs: "linux",
+            userAgent: "codex-test",
+          },
+        }),
+      );
+
+      await backendCollector.waitFor(
+        (message) => message.method === "initialized",
+      );
+
+      const listRequest = await backendCollector.waitFor(
+        (message) => message.method === "thread/list",
+      );
+      socket.send(
+        JSON.stringify({
+          id: listRequest.id,
+          result: {
+            data: [buildThread("thread-1", "Thread 1")],
+            nextCursor: null,
+          },
+        }),
+      );
+    });
+
+    const backendPort = await listen(backendServer);
+
+    const notifiedRequests: JsonRpcRequestMessage[] = [];
+    const pushNotifier = {
+      notifyServerNotification: vi.fn(async () => undefined),
+      notifyServerRequest: vi.fn(async (request: JsonRpcRequestMessage) => {
+        notifiedRequests.push(request);
+      }),
+    };
+    const relayApp = express();
+    const relayServer = http.createServer(relayApp);
+    servers.push(relayServer);
+    await attachRelay(relayServer, `ws://127.0.0.1:${backendPort}`, {
+      pushNotifier,
+    });
+    const relayPort = await listen(relayServer);
+
+    expect(backendSocket).not.toBeNull();
+    backendSocket!.send(
+      JSON.stringify({
+        id: "request-1",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          approvalId: null,
+          command: "echo hi",
+          cwd: "/workspace",
+          itemId: "item-1",
+          parsedCmd: [],
+          reason: null,
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      }),
+    );
+
+    expect(await waitFor(() => notifiedRequests[0] ?? null)).toMatchObject({
+      id: "request-1",
+      method: "item/commandExecution/requestApproval",
+      params: {
+        threadId: "thread-1",
+      },
+    });
+
+    const client = new WebSocket(`ws://127.0.0.1:${relayPort}/rpc`);
+    sockets.push(client);
+    const collector = createCollector(client);
+
+    await new Promise<void>((resolve, reject) => {
+      client.on("open", () => resolve());
+      client.on("error", reject);
+    });
+
+    client.send(
+      JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          capabilities: { experimentalApi: true },
+          clientInfo: {
+            name: "codex_web",
+            title: "Codex Web",
+            version: "0.0.0",
+          },
+        },
+      }),
+    );
+    await collector.waitFor(
+      (message) => message.id === 1 && "result" in message,
+    );
+
+    client.send(
+      JSON.stringify({
+        method: "initialized",
+        params: {},
+      }),
+    );
+
+    expect(
+      await collector.waitFor((message) => message.id === "request-1"),
+    ).toMatchObject({
+      id: "request-1",
+      method: "item/commandExecution/requestApproval",
+    });
   });
 });
