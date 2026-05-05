@@ -1,0 +1,53 @@
+{
+  "name": "codex-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.29.3",
+  "scripts": {
+    "build": "vite build",
+    "dev": "concurrently -k \"pnpm run dev:relay\" \"pnpm run dev:ui\"",
+    "dev:relay": "tsx server/index.ts",
+    "dev:ui": "vite",
+    "preview": "pnpm run start",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier --check \"{src,server}/**/*.{ts,tsx,css}\" \"public/**/*.{js,webmanifest}\" \"*.{json,md,html}\" && prettier --check --parser html public/icon.svg",
+    "format:fix": "prettier --write \"{src,server}/**/*.{ts,tsx,css}\" \"public/**/*.{js,webmanifest}\" \"*.{json,md,html}\" && prettier --write --parser html public/icon.svg"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "react-bottom-anchored-list"
+    ]
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "react": "^19.1.0",
+    "react-bottom-anchored-list": "github:warrenfalk/react-bottom-anchored-list#b8f5ccfb4c54530e8ae1fc0c96acc77c1069db49",
+    "react-dom": "^19.1.0",
+    "react-router": "^7.14.2",
+    "streamdown": "^2.5.0",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/coverage-v8": "^3.1.2",
+    "concurrently": "^9.1.2",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.5.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.2"
+  }
+}
