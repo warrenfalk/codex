@@ -942,6 +942,12 @@ a {
   width: 2.5rem;
 }
 
+.composer-button-enter-submit {
+  background: rgba(255, 133, 133, 0.14);
+  border-color: rgba(255, 133, 133, 0.74);
+  color: var(--danger);
+}
+
 .list-warning-section {
   margin: 1rem;
 }

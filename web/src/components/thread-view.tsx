@@ -40,8 +40,33 @@ type UserMessageLocation = {
   turnIndex: number;
 };
 
+type TextSelection = {
+  start: number;
+  end: number;
+};
+
 function userMessageAnchorId(itemId: string): string {
   return `user-message-anchor-${itemId}`;
+}
+
+function shouldSubmitPromptOnEnter(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+): boolean {
+  if (selectionStart !== selectionEnd || value.trim().length === 0) {
+    return false;
+  }
+
+  const afterCursor = value.slice(selectionEnd);
+  if (afterCursor.trim().length > 0) {
+    return false;
+  }
+
+  const beforeCursor = value
+    .slice(0, selectionStart)
+    .replace(/[^\S\r\n]+$/u, "");
+  return /(?:\r\n|\r|\n)[^\S\r\n]*(?:\r\n|\r|\n)$/u.test(beforeCursor);
 }
 
 function connectionStatusClass(connectionState: ConnectionViewState): string {
@@ -87,6 +112,10 @@ export function ThreadView({
   loading,
 }: Props) {
   const [prompt, setPrompt] = useState("");
+  const [promptSelection, setPromptSelection] = useState<TextSelection>({
+    start: 0,
+    end: 0,
+  });
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [editingThreadTitle, setEditingThreadTitle] = useState(false);
@@ -94,10 +123,18 @@ export function ThreadView({
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const turnListRef = useRef<BottomAnchoredListHandle>(null);
-  const trimmedPrompt = prompt.trim();
+  const promptHasContent = prompt.trim().length > 0;
+  const promptToSend = prompt.trimEnd();
   const trimmedRenameDraft = renameDraft.trim();
   const canInterrupt = !interruptDisabled;
-  const interruptMode = trimmedPrompt.length === 0 && canInterrupt;
+  const interruptMode = !promptHasContent && canInterrupt;
+  const willSubmitPromptOnEnter =
+    !sending &&
+    shouldSubmitPromptOnEnter(
+      prompt,
+      promptSelection.start,
+      promptSelection.end,
+    );
   const statusDetail =
     initializeSummary ?? connectionError ?? "version unknown";
   const hasPendingRequests = pendingRequests.length > 0;
@@ -169,6 +206,19 @@ export function ThreadView({
     });
   };
 
+  const syncPromptSelection = (input: HTMLTextAreaElement) => {
+    const nextSelection = {
+      start: input.selectionStart,
+      end: input.selectionEnd,
+    };
+
+    setPromptSelection((current) =>
+      current.start === nextSelection.start && current.end === nextSelection.end
+        ? current
+        : nextSelection,
+    );
+  };
+
   const scrollToPreviousUserTurn = ({
     itemId,
     turnIndex,
@@ -185,12 +235,13 @@ export function ThreadView({
   };
 
   const submitPrompt = async () => {
-    if (!trimmedPrompt || sending) {
+    if (!promptHasContent || sending) {
       return;
     }
 
-    await onSendPrompt(trimmedPrompt);
+    await onSendPrompt(promptToSend);
     setPrompt("");
+    setPromptSelection({ start: 0, end: 0 });
     scrollThreadToBottomAfterLayout();
   };
 
@@ -436,7 +487,11 @@ export function ThreadView({
               ref={promptInputRef}
               rows={1}
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => {
+                setPrompt(event.currentTarget.value);
+                syncPromptSelection(event.currentTarget);
+              }}
+              onFocus={(event) => syncPromptSelection(event.currentTarget)}
               onKeyDown={(event) => {
                 if (
                   event.ctrlKey &&
@@ -451,15 +506,33 @@ export function ThreadView({
                 if (event.ctrlKey && event.key === "Enter") {
                   event.preventDefault();
                   void submitPrompt();
+                  return;
+                }
+
+                if (
+                  !sending &&
+                  event.key === "Enter" &&
+                  shouldSubmitPromptOnEnter(
+                    event.currentTarget.value,
+                    event.currentTarget.selectionStart,
+                    event.currentTarget.selectionEnd,
+                  )
+                ) {
+                  event.preventDefault();
+                  void submitPrompt();
                 }
               }}
+              onKeyUp={(event) => syncPromptSelection(event.currentTarget)}
+              onSelect={(event) => syncPromptSelection(event.currentTarget)}
             />
             <button
               aria-label={
                 interruptMode ? "Interrupt current turn" : "Send prompt"
               }
-              className="composer-button"
-              disabled={interruptMode ? false : sending || !trimmedPrompt}
+              className={`composer-button${
+                willSubmitPromptOnEnter ? " composer-button-enter-submit" : ""
+              }`}
+              disabled={interruptMode ? false : sending || !promptHasContent}
               type={interruptMode ? "button" : "submit"}
               onClick={
                 interruptMode
