@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   });
 
   process.stdout.write(
-    `codex-web relay listening on http://127.0.0.1:${config.port}\n`,
+    `codex-web relay listening on http://${config.host}:${config.port}\n`,
   );
   process.stdout.write(
     `proxying websocket traffic to ${config.backendUrl.toString()}\n`,

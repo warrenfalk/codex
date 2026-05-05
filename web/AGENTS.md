@@ -35,4 +35,4 @@ Prefix commits for this project with `[web] `. Use concise, imperative commit su
 
 ## Security & Configuration Tips
 
-Default ports are production UI/static+relay `4200`, HMR dev UI `4202`, HMR dev relay `4203`, and backend websocket `ws://127.0.0.1:4222`. Override with `CODEX_WEB_UI_PORT`, `CODEX_WEB_PROXY_PORT`, and `CODEX_WEB_BACKEND_WS_URL`. Do not add persistence, auth, or bridge protocol complexity unless the task explicitly calls for it.
+Default ports are production UI/static+relay `4200`, HMR dev UI `4202`, HMR dev relay `4203`, and backend websocket `ws://127.0.0.1:4222`. Development servers bind to `0.0.0.0`; production binds to `127.0.0.1`. Override with `CODEX_WEB_HOST`, `CODEX_WEB_UI_PORT`, `CODEX_WEB_PROXY_PORT`, and `CODEX_WEB_BACKEND_WS_URL`. Do not add persistence, auth, or bridge protocol complexity unless the task explicitly calls for it.

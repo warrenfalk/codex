@@ -20,6 +20,8 @@ The Vite dev server proxies `/rpc` to that relay, so the browser always talks
 to the same-origin `/rpc` websocket.
 The Vite dev server listens on `CODEX_WEB_UI_PORT` (default `4202`) so it can
 run beside the production build with HMR enabled.
+Development servers bind to all interfaces by default, so LAN devices can open
+`http://<this-machine-ip>:4202/`.
 The Vite dev server is configured to accept requests for `agent.warrenfalk.com`.
 
 ## Production build
@@ -49,6 +51,10 @@ handle `/rpc` or non-GET requests.
 - `CODEX_WEB_BACKEND_WS_URL`
   - backend websocket URL for the relay
   - defaults to `ws://127.0.0.1:4222`
+- `CODEX_WEB_HOST`
+  - host address for the Vite dev server and relay
+  - defaults to `0.0.0.0` during development
+  - defaults to `127.0.0.1` in production
 - `CODEX_WEB_PROXY_PORT`
   - relay HTTP/websocket port
   - defaults to `4203` during development

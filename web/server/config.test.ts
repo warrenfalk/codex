@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BACKEND_WS_URL,
+  DEFAULT_DEV_HOST,
   DEFAULT_DEV_PROXY_PORT,
+  DEFAULT_PROD_HOST,
   DEFAULT_PROD_UI_PORT,
   resolveRelayConfig,
 } from "./config.js";
@@ -15,10 +17,22 @@ describe("resolveRelayConfig", () => {
     expect(config.port).toBe(DEFAULT_DEV_PROXY_PORT);
   });
 
+  it("listens on all interfaces by default during development", () => {
+    const config = resolveRelayConfig({});
+
+    expect(config.host).toBe(DEFAULT_DEV_HOST);
+  });
+
   it("uses the UI port by default in production", () => {
     const config = resolveRelayConfig({ NODE_ENV: "production" });
 
     expect(config.port).toBe(DEFAULT_PROD_UI_PORT);
+  });
+
+  it("listens on localhost by default in production", () => {
+    const config = resolveRelayConfig({ NODE_ENV: "production" });
+
+    expect(config.host).toBe(DEFAULT_PROD_HOST);
   });
 
   it("accepts a production UI port", () => {
