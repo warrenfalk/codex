@@ -2,6 +2,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_BACKEND_WS_URL = "ws://127.0.0.1:4222";
+export const DEFAULT_DEV_UI_PORT = 4202;
+export const DEFAULT_DEV_PROXY_PORT = 4203;
+export const DEFAULT_PROD_UI_PORT = 4200;
 
 export type RelayConfig = {
   backendUrl: URL;
@@ -27,8 +30,8 @@ function parsePort(raw: string | undefined, fallback: number): number {
 function resolvePort(env: NodeJS.ProcessEnv): number {
   const defaultPort =
     env.NODE_ENV === "production"
-      ? parsePort(env.CODEX_WEB_UI_PORT, 4200)
-      : 4201;
+      ? parsePort(env.CODEX_WEB_UI_PORT, DEFAULT_PROD_UI_PORT)
+      : DEFAULT_DEV_PROXY_PORT;
 
   return parsePort(env.CODEX_WEB_PROXY_PORT, defaultPort);
 }
@@ -59,7 +62,7 @@ export function resolveRelayConfig(
 
   return {
     backendUrl,
-    host: process.env.CODEX_WEB_HOST ?? "127.0.0.1",
+    host: env.CODEX_WEB_HOST ?? "127.0.0.1",
     port: resolvePort(env),
     projectRoot,
     staticDir: path.join(projectRoot, "dist"),

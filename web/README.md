@@ -15,9 +15,11 @@ This package is intentionally standalone:
 2. Optionally set `CODEX_WEB_BACKEND_WS_URL` if the backend is not listening on `ws://127.0.0.1:4222`.
 3. Run `pnpm dev`.
 
-The relay process listens on `CODEX_WEB_PROXY_PORT` (default `4201`).
+The relay process listens on `CODEX_WEB_PROXY_PORT` (default `4203`).
 The Vite dev server proxies `/rpc` to that relay, so the browser always talks
 to the same-origin `/rpc` websocket.
+The Vite dev server listens on `CODEX_WEB_UI_PORT` (default `4202`) so it can
+run beside the production build with HMR enabled.
 The Vite dev server is configured to accept requests for `agent.warrenfalk.com`.
 
 ## Production build
@@ -49,9 +51,10 @@ handle `/rpc` or non-GET requests.
   - defaults to `ws://127.0.0.1:4222`
 - `CODEX_WEB_PROXY_PORT`
   - relay HTTP/websocket port
-  - defaults to `4201` during development
+  - defaults to `4203` during development
   - overrides `CODEX_WEB_UI_PORT` in production when set
 - `CODEX_WEB_UI_PORT`
   - Vite dev server port
-  - defaults to `4200`
+  - defaults to `4202` during development
   - production static server port unless `CODEX_WEB_PROXY_PORT` is set
+  - defaults to `4200` in production
