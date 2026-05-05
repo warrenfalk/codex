@@ -293,14 +293,16 @@ export function pushMessageForServerNotification(
       return null;
     }
     case "error": {
+      if (notification.params.willRetry) {
+        return null;
+      }
+
       const { error, threadId, turnId } = notification.params;
       return {
         body: error.message,
         tag: `codex-turn-${threadId}-${turnId}-failed`,
         threadId,
-        title: notification.params.willRetry
-          ? "Codex is retrying"
-          : "Codex hit an error",
+        title: "Codex hit an error",
         url: threadUrl(threadId),
       };
     }
