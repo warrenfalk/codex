@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown, type StreamdownProps } from "streamdown";
 
 import type { Thread } from "@/types/protocol";
@@ -65,6 +65,82 @@ function searchTextForThread(thread: Thread, latestPreview: string): string {
     .toLocaleLowerCase();
 }
 
+function ThreadActionsMenu({ onRefresh }: { onRefresh: () => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const closeMenu = () => {
+    setIsOpen(false);
+  };
+
+  const handleRefresh = () => {
+    onRefresh();
+    closeMenu();
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="thread-actions-menu" ref={menuRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+        aria-label="Thread list actions"
+        className="icon-button thread-actions-trigger"
+        title="Thread list actions"
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <svg
+          aria-hidden="true"
+          className="button-icon"
+          fill="currentColor"
+          focusable="false"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="12" cy="5" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="12" cy="19" r="1.8" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="thread-actions-popover">
+          <PushNotificationControl onAction={closeMenu} />
+          <button type="button" onClick={handleRefresh}>
+            Refresh
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ThreadList({
   threads,
   previewsByThreadId,
@@ -97,10 +173,7 @@ export function ThreadList({
           <h1>Threads</h1>
         </div>
         <div className="list-actions">
-          <PushNotificationControl />
-          <button type="button" onClick={onRefresh}>
-            Refresh
-          </button>
+          <ThreadActionsMenu onRefresh={onRefresh} />
         </div>
       </div>
       <div className="thread-search">

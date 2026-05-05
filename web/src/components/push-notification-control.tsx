@@ -28,7 +28,11 @@ function buttonLabel(
   }
 }
 
-export function PushNotificationControl() {
+type Props = {
+  onAction?: () => void;
+};
+
+export function PushNotificationControl({ onAction }: Props) {
   const [state, setState] = useState<PushNotificationState | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -78,6 +82,7 @@ export function PushNotificationControl() {
       setState({ type: "error", message: String(error) });
     } finally {
       setBusy(false);
+      onAction?.();
     }
   };
 

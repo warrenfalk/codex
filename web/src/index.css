@@ -164,6 +164,36 @@ a {
   max-width: 12rem;
 }
 
+.thread-actions-menu {
+  position: relative;
+}
+
+.thread-actions-trigger {
+  user-select: none;
+}
+
+.thread-actions-popover {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.4rem;
+  min-width: min(14rem, calc(100vw - 2rem));
+  padding: 0.45rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 5;
+}
+
+.thread-actions-popover button {
+  border-radius: 10px;
+  max-width: none;
+  text-align: left;
+  width: 100%;
+}
+
 .thread-header {
   align-items: center;
   display: grid;
