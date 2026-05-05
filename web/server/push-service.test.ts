@@ -2,16 +2,30 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import type { Request } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as webPush from "web-push";
 import type { PushSubscription, RequestOptions, SendResult } from "web-push";
 
 import type { ServerNotification } from "../src/types/protocol";
 
-import { PushNotificationService } from "./push-service";
+import {
+  PushNotificationService,
+  vapidSubjectFromRequest,
+} from "./push-service";
 import { PushStorage } from "./push-store";
 
 const tempDirs: string[] = [];
+
+function requestWithHeaders(
+  headers: Record<string, string>,
+): Pick<Request, "get"> {
+  return {
+    get(name: string): string | undefined {
+      return headers[name.toLowerCase()];
+    },
+  } as Pick<Request, "get">;
+}
 
 async function tempStorage(): Promise<PushStorage> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-web-push-"));
@@ -68,6 +82,31 @@ afterEach(async () => {
 });
 
 describe("PushNotificationService", () => {
+  it("uses a public HTTPS request origin as a VAPID subject hint", () => {
+    expect(
+      vapidSubjectFromRequest(
+        requestWithHeaders({
+          origin: "https://agent.example/threads/thread-1",
+        }),
+      ),
+    ).toBe("https://agent.example");
+    expect(
+      vapidSubjectFromRequest(
+        requestWithHeaders({
+          "x-forwarded-host": "agent.example",
+          "x-forwarded-proto": "https",
+        }),
+      ),
+    ).toBe("https://agent.example");
+    expect(
+      vapidSubjectFromRequest(
+        requestWithHeaders({
+          origin: "http://localhost:4200",
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("generates and persists VAPID keys with the runtime web-push module", async () => {
     const store = await tempStorage();
     const service = new PushNotificationService(store);
@@ -116,7 +155,7 @@ describe("PushNotificationService", () => {
       logger,
     );
 
-    await service.saveSubscription(subscription(), "test-agent");
+    await service.saveSubscription(subscription(), "test-agent", null);
     await service.notifyServerNotification(turnCompletedNotification());
 
     expect(sent).toEqual([
@@ -160,6 +199,85 @@ describe("PushNotificationService", () => {
     expect(await service.getPublicKey()).toBe("public");
   });
 
+  it("uses the saved public origin as the VAPID subject when no subject is configured", async () => {
+    const sent: RequestOptions[] = [];
+    const store = await tempStorage();
+    const service = new PushNotificationService(
+      store,
+      null,
+      async (_targetSubscription, _payload, options): Promise<SendResult> => {
+        sent.push(options);
+        return {
+          body: "",
+          headers: {},
+          statusCode: 201,
+        };
+      },
+      () => ({
+        privateKey: "private",
+        publicKey: "public",
+      }),
+      {
+        info: vi.fn(),
+        warn: vi.fn(),
+      },
+    );
+
+    await service.saveSubscription(
+      subscription(),
+      "test-agent",
+      "https://agent.example",
+    );
+    await service.notifyServerNotification(turnCompletedNotification());
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        vapidDetails: expect.objectContaining({
+          subject: "https://agent.example",
+        }),
+      }),
+    ]);
+    expect((await store.read()).vapidSubject).toBe("https://agent.example");
+  });
+
+  it("skips sends until a VAPID subject is configured or saved", async () => {
+    const sent: RequestOptions[] = [];
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const service = new PushNotificationService(
+      await tempStorage(),
+      null,
+      async (_targetSubscription, _payload, options): Promise<SendResult> => {
+        sent.push(options);
+        return {
+          body: "",
+          headers: {},
+          statusCode: 201,
+        };
+      },
+      () => ({
+        privateKey: "private",
+        publicKey: "public",
+      }),
+      logger,
+    );
+
+    await service.saveSubscription(subscription(), "test-agent", null);
+    await service.notifyServerNotification(turnCompletedNotification());
+
+    expect(sent).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Web Push notification skipped: missing VAPID subject. Set CODEX_WEB_PUSH_VAPID_SUBJECT or re-save the subscription from the public HTTPS origin.",
+      {
+        tag: "codex-turn-thread-1-turn-1-completed",
+        title: "Codex finished",
+        url: "/threads/thread-1",
+      },
+    );
+  });
+
   it("sends only to subscriptions without connected websocket clients", async () => {
     const sent: PushSubscription[] = [];
     const store = await tempStorage();
@@ -191,10 +309,15 @@ describe("PushNotificationService", () => {
       logger,
     );
 
-    await service.saveSubscription(connectedSubscription, "connected-agent");
+    await service.saveSubscription(
+      connectedSubscription,
+      "connected-agent",
+      null,
+    );
     await service.saveSubscription(
       disconnectedSubscription,
       "disconnected-agent",
+      null,
     );
     await service.notifyServerNotification(turnCompletedNotification(), {
       connectedEndpoints: new Set([connectedSubscription.endpoint]),
@@ -239,7 +362,11 @@ describe("PushNotificationService", () => {
       logger,
     );
 
-    await service.saveSubscription(connectedSubscription, "connected-agent");
+    await service.saveSubscription(
+      connectedSubscription,
+      "connected-agent",
+      null,
+    );
     await service.notifyServerNotification(turnCompletedNotification(), {
       connectedEndpoints: new Set([connectedSubscription.endpoint]),
     });
@@ -281,7 +408,7 @@ describe("PushNotificationService", () => {
       logger,
     );
 
-    await service.saveSubscription(subscription(), "test-agent");
+    await service.saveSubscription(subscription(), "test-agent", null);
     await service.notifyServerNotification(turnCompletedNotification());
     await service.notifyServerNotification(turnCompletedNotification());
 
@@ -321,7 +448,7 @@ describe("PushNotificationService", () => {
       logger,
     );
 
-    await service.saveSubscription(subscription(), "test-agent");
+    await service.saveSubscription(subscription(), "test-agent", null);
     await service.notifyServerNotification(turnCompletedNotification("failed"));
 
     expect((await store.read()).subscriptions).toEqual([]);

@@ -1,4 +1,5 @@
 import express from "express";
+import type { Request } from "express";
 import { createRequire } from "node:module";
 import type {
   PushSubscription,
@@ -17,7 +18,6 @@ import {
 } from "./push-notifications.js";
 import { isPushSubscription, PushStorage } from "./push-store.js";
 
-const DEFAULT_VAPID_SUBJECT = "mailto:codex-web@localhost";
 const RECENT_NOTIFICATION_TTL_MS = 10 * 60 * 1000;
 const require = createRequire(import.meta.url);
 const webPush = require("web-push") as typeof import("web-push");
@@ -56,13 +56,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function firstHeaderValue(value: string | undefined): string | null {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function isLocalHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]"
+  );
+}
+
+function publicHttpsOrigin(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || isLocalHostname(url.hostname)) {
+      return null;
+    }
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function vapidSubjectFromRequest(
+  request: Pick<Request, "get">,
+): string | null {
+  const originSubject = publicHttpsOrigin(request.get("origin") ?? null);
+  if (originSubject) {
+    return originSubject;
+  }
+
+  const forwardedProto = firstHeaderValue(request.get("x-forwarded-proto"));
+  const forwardedHost = firstHeaderValue(request.get("x-forwarded-host"));
+  if (forwardedProto === "https" && forwardedHost) {
+    return publicHttpsOrigin(`https://${forwardedHost}`);
+  }
+
+  return null;
+}
+
 export class PushNotificationService implements PushNotifier {
   private readonly recentNotifications = new Map<string, number>();
 
   constructor(
     private readonly store = new PushStorage(),
-    private readonly vapidSubject = process.env.CODEX_WEB_PUSH_VAPID_SUBJECT ??
-      DEFAULT_VAPID_SUBJECT,
+    private readonly configuredVapidSubject = process.env
+      .CODEX_WEB_PUSH_VAPID_SUBJECT ?? null,
     private readonly sendNotification: PushSender = (
       subscription,
       payload,
@@ -79,6 +126,7 @@ export class PushNotificationService implements PushNotifier {
   async saveSubscription(
     subscription: PushSubscription,
     userAgent: string | null,
+    vapidSubjectHint: string | null,
   ): Promise<void> {
     await this.store.update((data) => {
       const now = new Date().toJSON();
@@ -102,6 +150,10 @@ export class PushNotificationService implements PushNotifier {
         data: {
           ...data,
           subscriptions,
+          vapidSubject:
+            this.configuredVapidSubject ??
+            vapidSubjectHint ??
+            data.vapidSubject,
         },
         result: undefined,
       };
@@ -175,6 +227,19 @@ export class PushNotificationService implements PushNotifier {
       return;
     }
 
+    const vapidSubject = this.configuredVapidSubject ?? data.vapidSubject;
+    if (!vapidSubject) {
+      this.logger.warn(
+        "Web Push notification skipped: missing VAPID subject. Set CODEX_WEB_PUSH_VAPID_SUBJECT or re-save the subscription from the public HTTPS origin.",
+        {
+          tag: message.tag,
+          title: message.title,
+          url: message.url,
+        },
+      );
+      return;
+    }
+
     if (!this.shouldSend(message.tag)) {
       this.logger.info("Web Push notification skipped: recently sent.", {
         tag: message.tag,
@@ -211,7 +276,7 @@ export class PushNotificationService implements PushNotifier {
             vapidDetails: {
               privateKey: vapidKeys.privateKey,
               publicKey: vapidKeys.publicKey,
-              subject: this.vapidSubject,
+              subject: vapidSubject,
             },
           });
           sentCount += 1;
@@ -315,6 +380,7 @@ export function createPushRouter(pushService: PushNotificationService) {
       await pushService.saveSubscription(
         subscription,
         request.get("user-agent") ?? null,
+        vapidSubjectFromRequest(request),
       );
       response.status(204).end();
     } catch (error) {
