@@ -51,8 +51,8 @@ the relay's generated VAPID key pair are persisted in
 `~/.codex/codex-web-push.json` by default. The saved data also includes the
 public HTTPS origin used as the VAPID subject unless
 `CODEX_WEB_PUSH_VAPID_SUBJECT` is set. The relay sends push notifications for
-pending server requests, completed turns, and turn errors to subscribed browsers
-that do not currently have a connected websocket session.
+pending server requests, completed turns, and non-retrying turn errors to
+subscribed browsers that do not currently have a connected websocket session.
 
 ## Environment
 

@@ -26,6 +26,22 @@ function turnCompletedNotification(items: ThreadItem[]): ServerNotification {
   };
 }
 
+function errorNotification(willRetry: boolean): ServerNotification {
+  return {
+    method: "error",
+    params: {
+      error: {
+        additionalDetails: null,
+        codexErrorInfo: null,
+        message: "Reconnecting... 1/5",
+      },
+      threadId: "thread-1",
+      turnId: "turn-1",
+      willRetry,
+    },
+  };
+}
+
 describe("push notification payloads", () => {
   it("uses the final agent message as the completed-turn body", () => {
     expect(
@@ -63,6 +79,23 @@ describe("push notification payloads", () => {
     ).toMatchObject({
       body: "The agent finished from relay-cached message text.",
       title: "Codex finished",
+    });
+  });
+
+  it("skips retry-progress errors", () => {
+    expect(
+      pushMessageForServerNotification(errorNotification(true)),
+    ).toBeNull();
+  });
+
+  it("includes non-retrying errors", () => {
+    expect(
+      pushMessageForServerNotification(errorNotification(false)),
+    ).toMatchObject({
+      body: "Reconnecting... 1/5",
+      tag: "codex-turn-thread-1-turn-1-failed",
+      title: "Codex hit an error",
+      url: "/threads/thread-1",
     });
   });
 
