@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import type {
   AnyServerRequest,
   ChatgptAuthTokensRefreshResponse,
+  CommandExecutionApprovalDecision,
   DynamicToolCallOutputContentItem,
   GrantedPermissionProfile,
   JsonValue,
@@ -20,6 +21,98 @@ function isRequestMethod<TMethod extends AnyServerRequest["method"]>(
 
 function JsonPreview({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
+}
+
+type CommandApprovalRequest = Extract<
+  AnyServerRequest,
+  { method: "item/commandExecution/requestApproval" }
+>;
+
+type CommandApprovalParamsCompat = CommandApprovalRequest["params"] & {
+  additionalPermissions?: unknown;
+  availableDecisions?: CommandExecutionApprovalDecision[] | null;
+};
+
+type FileSystemSpecialPathCompat =
+  | { kind: "root" }
+  | { kind: "minimal" }
+  | { kind: "project_roots"; subpath: string | null }
+  | { kind: "tmpdir" }
+  | { kind: "slash_tmp" }
+  | { kind: "unknown"; path: string; subpath: string | null };
+
+type FileSystemPathCompat =
+  | { type: "path"; path: string }
+  | { type: "glob_pattern"; pattern: string }
+  | { type: "special"; value: FileSystemSpecialPathCompat };
+
+type FileSystemSandboxEntryCompat = {
+  path: FileSystemPathCompat;
+  access: "read" | "write" | "none";
+};
+
+type FileSystemPermissionsCompat = {
+  read: string[] | null;
+  write: string[] | null;
+  globScanMaxDepth?: number;
+  entries?: FileSystemSandboxEntryCompat[];
+};
+
+type PermissionsRequest = Extract<
+  AnyServerRequest,
+  { method: "item/permissions/requestApproval" }
+>;
+
+type PermissionsParamsCompat = Omit<
+  PermissionsRequest["params"],
+  "permissions"
+> & {
+  permissions: Omit<
+    PermissionsRequest["params"]["permissions"],
+    "fileSystem"
+  > & {
+    fileSystem: FileSystemPermissionsCompat | null;
+  };
+};
+
+type PermissionsResponseCompat = {
+  permissions: Omit<GrantedPermissionProfile, "fileSystem"> & {
+    fileSystem?: FileSystemPermissionsCompat;
+  };
+  scope: PermissionGrantScope;
+  strictAutoReview?: boolean;
+};
+
+function formatSpecialPath(path: FileSystemSpecialPathCompat): string {
+  switch (path.kind) {
+    case "root":
+      return "root";
+    case "minimal":
+      return "minimal";
+    case "project_roots":
+      return path.subpath ? `project roots/${path.subpath}` : "project roots";
+    case "tmpdir":
+      return "temporary directory";
+    case "slash_tmp":
+      return "/tmp";
+    case "unknown":
+      return path.subpath ? `${path.path}/${path.subpath}` : path.path;
+  }
+}
+
+function formatFileSystemPath(path: FileSystemPathCompat): string {
+  switch (path.type) {
+    case "path":
+      return path.path;
+    case "glob_pattern":
+      return `glob ${path.pattern}`;
+    case "special":
+      return formatSpecialPath(path.value);
+  }
+}
+
+function fileSystemEntryKey(entry: FileSystemSandboxEntryCompat): string {
+  return JSON.stringify(entry);
 }
 
 function CardShell({
@@ -46,7 +139,8 @@ function CommandApprovalCard({
     { method: "item/commandExecution/requestApproval" }
   >;
 }) {
-  const decisions = request.params.availableDecisions ?? [
+  const params = request.params as CommandApprovalParamsCompat;
+  const decisions = params.availableDecisions ?? [
     "accept",
     "acceptForSession",
     "decline",
@@ -55,19 +149,14 @@ function CommandApprovalCard({
 
   return (
     <CardShell title="Command approval">
-      {request.params.reason && <p>{request.params.reason}</p>}
-      {request.params.command && (
-        <pre className="output-block">{request.params.command}</pre>
+      {params.reason && <p>{params.reason}</p>}
+      {params.command && <pre className="output-block">{params.command}</pre>}
+      {params.cwd && <p className="detail-meta">cwd: {params.cwd}</p>}
+      {params.commandActions && params.commandActions.length > 0 && (
+        <JsonPreview value={params.commandActions} />
       )}
-      {request.params.cwd && (
-        <p className="detail-meta">cwd: {request.params.cwd}</p>
-      )}
-      {request.params.commandActions &&
-        request.params.commandActions.length > 0 && (
-          <JsonPreview value={request.params.commandActions} />
-        )}
-      {request.params.additionalPermissions && (
-        <JsonPreview value={request.params.additionalPermissions} />
+      {params.additionalPermissions && (
+        <JsonPreview value={params.additionalPermissions} />
       )}
       <div className="button-row">
         {decisions.map((decision, index) => (
@@ -124,7 +213,9 @@ function PermissionsCard({
     { method: "item/permissions/requestApproval" }
   >;
 }) {
-  const { permissions } = request.params;
+  const params = request.params as PermissionsParamsCompat;
+  const { permissions } = params;
+  const fileSystemEntries = permissions.fileSystem?.entries ?? [];
   const [networkEnabled, setNetworkEnabled] = useState(
     permissions.network?.enabled ?? false,
   );
@@ -135,12 +226,12 @@ function PermissionsCard({
   const [selectedRead, setSelectedRead] = useState<string[]>(
     permissions.fileSystem?.read ?? [],
   );
+  const [selectedEntryKeys, setSelectedEntryKeys] = useState<string[]>(
+    fileSystemEntries.map(fileSystemEntryKey),
+  );
 
   const buildResponse = (denyAll: boolean) => {
-    const response: {
-      permissions: GrantedPermissionProfile;
-      scope: PermissionGrantScope;
-    } = {
+    const response: PermissionsResponseCompat = {
       permissions: {},
       scope,
     };
@@ -150,16 +241,25 @@ function PermissionsCard({
     }
 
     if (!denyAll && permissions.fileSystem) {
-      response.permissions.fileSystem = {
+      const fileSystem: FileSystemPermissionsCompat = {
         read: null,
         write: null,
       };
       if (selectedRead.length > 0) {
-        response.permissions.fileSystem.read = selectedRead;
+        fileSystem.read = selectedRead;
       }
       if (selectedWrite.length > 0) {
-        response.permissions.fileSystem.write = selectedWrite;
+        fileSystem.write = selectedWrite;
       }
+      if (fileSystemEntries.length > 0) {
+        fileSystem.entries = fileSystemEntries.filter((entry) =>
+          selectedEntryKeys.includes(fileSystemEntryKey(entry)),
+        );
+      }
+      if (typeof permissions.fileSystem.globScanMaxDepth === "number") {
+        fileSystem.globScanMaxDepth = permissions.fileSystem.globScanMaxDepth;
+      }
+      response.permissions.fileSystem = fileSystem;
     }
 
     return response;
@@ -174,6 +274,14 @@ function PermissionsCard({
       values.includes(nextValue)
         ? values.filter((value) => value !== nextValue)
         : [...values, nextValue],
+    );
+  };
+
+  const toggleEntry = (entry: FileSystemSandboxEntryCompat) => {
+    togglePath(
+      selectedEntryKeys,
+      fileSystemEntryKey(entry),
+      setSelectedEntryKeys,
     );
   };
 
@@ -222,6 +330,26 @@ function PermissionsCard({
               <span className="mono">{entry}</span>
             </label>
           ))}
+        </div>
+      )}
+      {fileSystemEntries.length > 0 && (
+        <div>
+          <h4>Filesystem entries</h4>
+          {fileSystemEntries.map((entry) => {
+            const key = fileSystemEntryKey(entry);
+            return (
+              <label key={key} className="field-row">
+                <input
+                  checked={selectedEntryKeys.includes(key)}
+                  type="checkbox"
+                  onChange={() => toggleEntry(entry)}
+                />
+                <span className="mono">
+                  {entry.access}: {formatFileSystemPath(entry.path)}
+                </span>
+              </label>
+            );
+          })}
         </div>
       )}
       <label className="field-stack">
