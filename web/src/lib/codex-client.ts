@@ -179,6 +179,7 @@ export class CodexClient {
     const response = await this.rpc.request<ThreadResumeResponse>(
       "thread/resume",
       {
+        excludeTurns: true,
         threadId,
       },
     );
