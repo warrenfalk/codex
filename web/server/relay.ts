@@ -563,9 +563,22 @@ class RelayController {
       this.broadcastThreadListSnapshot();
     }
 
+    const pushOptions = this.buildPushNotifyOptions();
+    if (
+      notification.method === "turn/completed" &&
+      notification.params.turn.status === "completed"
+    ) {
+      pushOptions.notificationContext = {
+        completedTurnAgentMessage: this.cache.latestAgentMessageForTurn(
+          notification.params.threadId,
+          notification.params.turn.id,
+        ),
+      };
+    }
+
     await this.pushNotifier?.notifyServerNotification(
       notification,
-      this.buildPushNotifyOptions(),
+      pushOptions,
     );
   }
 

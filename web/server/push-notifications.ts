@@ -2,6 +2,7 @@ import type { JsonRpcRequestMessage } from "../src/lib/jsonrpc";
 import type {
   AnyServerRequest,
   ServerNotification,
+  ThreadItem,
 } from "../src/types/protocol";
 
 export type BrowserPushMessage = {
@@ -10,6 +11,12 @@ export type BrowserPushMessage = {
   title: string;
   url: string;
 };
+
+export type PushNotificationContext = {
+  completedTurnAgentMessage?: string | null;
+};
+
+type AgentMessageItem = Extract<ThreadItem, { type: "agentMessage" }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -48,7 +55,23 @@ function stringParam(params: unknown, key: string): string | null {
   }
 
   const value = params[key];
-  return typeof value === "string" && value.trim() ? value : null;
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function stringArrayValue(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const strings = value
+    .map((part) => (typeof part === "string" ? part.trim() : null))
+    .filter((part): part is string => Boolean(part));
+  return strings.length > 0 && strings.length === value.length ? strings : null;
 }
 
 function stringArrayParam(params: unknown, key: string): string[] | null {
@@ -56,15 +79,7 @@ function stringArrayParam(params: unknown, key: string): string[] | null {
     return null;
   }
 
-  const value = params[key];
-  if (!Array.isArray(value)) {
-    return null;
-  }
-
-  const strings = value.filter(
-    (part): part is string => typeof part === "string",
-  );
-  return strings.length === value.length ? strings : null;
+  return stringArrayValue(params[key]);
 }
 
 function trimBody(text: string): string {
@@ -72,27 +87,111 @@ function trimBody(text: string): string {
   return trimmed.length > 140 ? `${trimmed.slice(0, 137)}...` : trimmed;
 }
 
+function isNonEmptyAgentMessage(item: ThreadItem): item is AgentMessageItem {
+  return item.type === "agentMessage" && Boolean(item.text.trim());
+}
+
+function summarizeList(label: string, values: string[]): string | null {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const shown = values.slice(0, 3).join(", ");
+  const suffix = values.length > 3 ? `, +${values.length - 3} more` : "";
+  return `${label}: ${shown}${suffix}`;
+}
+
+function approvalBody(
+  what: string | null,
+  why: string | null,
+  fallback: string,
+): string {
+  const parts = [why, what].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? trimBody(parts.join(". ")) : fallback;
+}
+
+function fileChangeSummary(params: unknown): string | null {
+  if (!isRecord(params)) {
+    return null;
+  }
+
+  const grantRoot = stringParam(params, "grantRoot");
+  if (grantRoot) {
+    return `Write root: ${grantRoot}`;
+  }
+
+  const fileChanges = params.fileChanges;
+  if (isRecord(fileChanges)) {
+    return summarizeList("Files", Object.keys(fileChanges));
+  }
+
+  return null;
+}
+
+function permissionsSummary(params: unknown): string | null {
+  if (!isRecord(params) || !isRecord(params.permissions)) {
+    return null;
+  }
+
+  const { permissions } = params;
+  const parts: string[] = [];
+  if (isRecord(permissions.network) && permissions.network.enabled === true) {
+    parts.push("Network access");
+  }
+
+  if (isRecord(permissions.fileSystem)) {
+    const read = stringArrayValue(permissions.fileSystem.read);
+    const write = stringArrayValue(permissions.fileSystem.write);
+    const readSummary = read ? summarizeList("Read", read) : null;
+    const writeSummary = write ? summarizeList("Write", write) : null;
+    if (readSummary) {
+      parts.push(readSummary);
+    }
+    if (writeSummary) {
+      parts.push(writeSummary);
+    }
+  }
+
+  return parts.length > 0 ? parts.join(". ") : null;
+}
+
 function requestBody(request: AnyServerRequest): string {
   switch (request.method) {
     case "item/commandExecution/requestApproval": {
       const command = stringParam(request.params, "command");
-      return command ? trimBody(command) : "Review a command before it runs.";
+      return approvalBody(
+        command ? `Command: ${command}` : null,
+        stringParam(request.params, "reason"),
+        "Review a command before it runs.",
+      );
     }
     case "execCommandApproval": {
       const command = stringArrayParam(request.params, "command")?.join(" ");
-      return command ? trimBody(command) : "Review a command before it runs.";
+      return approvalBody(
+        command ? `Command: ${command}` : null,
+        stringParam(request.params, "reason"),
+        "Review a command before it runs.",
+      );
     }
     case "item/fileChange/requestApproval":
     case "applyPatchApproval":
-      return stringParam(request.params, "reason") ?? "Review file changes.";
+      return approvalBody(
+        fileChangeSummary(request.params),
+        stringParam(request.params, "reason"),
+        "Review file changes.",
+      );
     case "item/permissions/requestApproval":
-      return (
-        stringParam(request.params, "reason") ?? "Review a permission request."
+      return approvalBody(
+        permissionsSummary(request.params),
+        stringParam(request.params, "reason"),
+        "Review a permission request.",
       );
     case "item/tool/requestUserInput":
       return "Answer a question from Codex.";
     case "mcpServer/elicitation/request":
-      return "Answer an MCP server prompt.";
+      return (
+        stringParam(request.params, "message") ?? "Answer an MCP server prompt."
+      );
     case "item/tool/call":
       return "A browser tool call needs the web app.";
     case "account/chatgptAuthTokens/refresh":
@@ -136,15 +235,42 @@ export function pushMessageForServerRequest(
   };
 }
 
+function latestCompletedAgentMessageText(
+  notification: ServerNotification,
+  context: PushNotificationContext,
+): string | null {
+  const contextText = context.completedTurnAgentMessage?.trim();
+  if (contextText) {
+    return contextText;
+  }
+
+  if (notification.method !== "turn/completed") {
+    return null;
+  }
+
+  const agentMessages = notification.params.turn.items.filter(
+    isNonEmptyAgentMessage,
+  );
+  const finalMessage = agentMessages
+    .slice()
+    .reverse()
+    .find((item) => item.phase === "final_answer" || item.phase === null);
+  return (finalMessage ?? agentMessages.at(-1))?.text.trim() ?? null;
+}
+
 export function pushMessageForServerNotification(
   notification: ServerNotification,
+  context: PushNotificationContext = {},
 ): BrowserPushMessage | null {
   switch (notification.method) {
     case "turn/completed": {
       const { threadId, turn } = notification.params;
       if (turn.status === "completed") {
         return {
-          body: "Thread is ready.",
+          body: trimBody(
+            latestCompletedAgentMessageText(notification, context) ??
+              "Thread is ready.",
+          ),
           tag: `codex-turn-${threadId}-${turn.id}-completed`,
           title: "Codex finished",
           url: threadUrl(threadId),
