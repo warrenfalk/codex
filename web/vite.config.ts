@@ -4,11 +4,18 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+import {
+  DEFAULT_DEV_PROXY_PORT,
+  DEFAULT_DEV_UI_PORT,
+} from "./server/config";
+
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const devHost = process.env.CODEX_WEB_HOST ?? "127.0.0.1";
 const allowedHosts = ["agent.warrenfalk.com"];
-const relayPort = Number(process.env.CODEX_WEB_PROXY_PORT ?? "4201");
-const uiPort = Number(process.env.CODEX_WEB_UI_PORT ?? "4200");
+const relayPort = Number(
+  process.env.CODEX_WEB_PROXY_PORT ?? DEFAULT_DEV_PROXY_PORT,
+);
+const uiPort = Number(process.env.CODEX_WEB_UI_PORT ?? DEFAULT_DEV_UI_PORT);
 
 export default defineConfig({
   plugins: [react()],
