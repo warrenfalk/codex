@@ -58,6 +58,7 @@ vi.mock("react-bottom-anchored-list", async () => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(navigator, "serviceWorker");
   window.history.replaceState(null, "", "/");
 });
 
@@ -98,6 +99,15 @@ function renderBrowserApp(pathname: string) {
       <App />
     </BrowserRouter>,
   );
+}
+
+function installMockServiceWorker(): EventTarget {
+  const serviceWorker = new EventTarget();
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: serviceWorker,
+  });
+  return serviceWorker;
 }
 
 describe("App routing", () => {
@@ -178,6 +188,29 @@ describe("App routing", () => {
 
     expect(
       screen.getByRole("heading", { name: "Threads" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the thread from service worker notification click messages", async () => {
+    const serviceWorker = installMockServiceWorker();
+    renderBrowserApp("/");
+
+    act(() => {
+      serviceWorker.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "codex-notification-click",
+            url: "/threads/thread-1",
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/threads/thread-1");
+    });
+    expect(
+      screen.getByRole("heading", { name: "Routing thread" }),
     ).toBeInTheDocument();
   });
 });
