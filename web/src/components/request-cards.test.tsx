@@ -27,11 +27,53 @@ describe("RequestCard", () => {
 
     render(<RequestCard onRespond={onRespond} request={request} />);
 
-    await user.click(screen.getByRole("button", { name: "accept" }));
+    const acceptButton = screen.getByRole("button", { name: "Yes, proceed" });
+    expect(acceptButton).toHaveClass("approval-decision-yes");
+    await user.click(acceptButton);
 
     expect(onRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), {
       decision: "accept",
     });
+  });
+
+  it("labels persistent command approvals with the command prefix", async () => {
+    const user = userEvent.setup();
+    const onRespond = vi.fn();
+    const persistentDecision = {
+      acceptWithExecpolicyAmendment: {
+        execpolicy_amendment: ["printf", "approval protocol smoke test\n"],
+      },
+    };
+    const request: ServerRequest = {
+      method: "item/commandExecution/requestApproval",
+      id: 5,
+      params: {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        itemId: "item_1",
+        command: 'printf "approval protocol smoke test\\n"',
+        availableDecisions: ["accept", persistentDecision, "cancel"],
+      },
+    };
+
+    render(<RequestCard onRespond={onRespond} request={request} />);
+
+    const label =
+      'Yes, and don\'t ask again for commands that start with `printf "approval protocol smoke test\\n"`';
+    await user.click(
+      screen.getByRole("button", {
+        name: label,
+      }),
+    );
+
+    expect(onRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }), {
+      decision: persistentDecision,
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "No, and tell Codex what to do differently",
+      }),
+    ).toHaveClass("approval-decision-no");
   });
 
   it("submits permission grants with selected scope", async () => {
