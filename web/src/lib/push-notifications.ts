@@ -2,7 +2,7 @@ export type PushNotificationState =
   | { type: "unsupported" }
   | { type: "permissionDenied" }
   | { type: "disabled" }
-  | { type: "enabled" }
+  | { type: "enabled"; endpoint: string }
   | { type: "error"; message: string };
 
 type PublicKeyResponse = {
@@ -77,6 +77,10 @@ async function saveSubscription(subscription: PushSubscription): Promise<void> {
   }
 }
 
+export async function getPushSubscriptionEndpoint(): Promise<string | null> {
+  return (await getExistingSubscription())?.endpoint ?? null;
+}
+
 export async function readPushNotificationState(): Promise<PushNotificationState> {
   if (!isPushSupported()) {
     return { type: "unsupported" };
@@ -89,7 +93,7 @@ export async function readPushNotificationState(): Promise<PushNotificationState
   const subscription = await getExistingSubscription();
   if (subscription) {
     await saveSubscription(subscription);
-    return { type: "enabled" };
+    return { type: "enabled", endpoint: subscription.endpoint };
   }
 
   return { type: "disabled" };
@@ -113,7 +117,7 @@ export async function enablePushNotifications(): Promise<PushNotificationState> 
   const existing = await registration.pushManager.getSubscription();
   if (existing) {
     await saveSubscription(existing);
-    return { type: "enabled" };
+    return { type: "enabled", endpoint: existing.endpoint };
   }
 
   const publicKey = await fetchPublicKey();
@@ -122,7 +126,7 @@ export async function enablePushNotifications(): Promise<PushNotificationState> 
     userVisibleOnly: true,
   });
   await saveSubscription(subscription);
-  return { type: "enabled" };
+  return { type: "enabled", endpoint: subscription.endpoint };
 }
 
 export async function disablePushNotifications(): Promise<PushNotificationState> {

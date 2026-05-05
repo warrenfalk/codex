@@ -76,6 +76,7 @@ export interface BackendTransport {
   renameThread(threadId: string, name: string): Promise<void>;
   resumeThread(threadId: string): Promise<Thread>;
   sendPrompt(threadId: string, text: string): Promise<void>;
+  setPushSubscriptionEndpoint(endpoint: string | null): void;
   subscribe(listener: (message: BackendMessage) => void): () => void;
   subscribeStatus(
     listener: (status: string, error?: string) => void,
@@ -669,6 +670,11 @@ export class BackendStateStore {
     this.client.respondToServerRequest(id, response);
   }
 
+  async setPushSubscriptionEndpoint(endpoint: string | null): Promise<void> {
+    await this.ensureConnected();
+    this.client.setPushSubscriptionEndpoint(endpoint);
+  }
+
   private ensureThreadEntry(threadId: string): ThreadEntry {
     const existing = this.threadEntries.get(threadId);
     if (existing) {
@@ -1143,4 +1149,10 @@ export function respondToServerRequest(
   response: unknown,
 ): Promise<void> {
   return backendStore.respondToServerRequest(id, response);
+}
+
+export function setPushSubscriptionEndpoint(
+  endpoint: string | null,
+): Promise<void> {
+  return backendStore.setPushSubscriptionEndpoint(endpoint);
 }

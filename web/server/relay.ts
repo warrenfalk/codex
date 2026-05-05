@@ -10,16 +10,13 @@ import type {
   ThreadListResponse,
 } from "../src/types/protocol";
 import {
+  PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
   PROXY_THREAD_LIST_UPDATED_METHOD,
   type ProxyThreadListResponse,
   type ProxyThreadListUpdatedNotification,
 } from "../src/lib/proxy-protocol";
 
-import {
-  pushMessageForServerNotification,
-  pushMessageForServerRequest,
-} from "./push-notifications.js";
-import type { PushNotifier } from "./push-service.js";
+import type { PushNotifier, PushNotifyOptions } from "./push-service.js";
 import { ThreadCache } from "./thread-cache";
 
 type JsonRpcRequestMessage = {
@@ -133,6 +130,15 @@ function requestIdKey(id: RequestId): string {
   return typeof id === "string" ? `string:${id}` : `number:${id}`;
 }
 
+function pushSubscriptionEndpointFromParams(params: unknown): string | null {
+  if (!isObject(params)) {
+    return null;
+  }
+
+  const endpoint = params.pushSubscriptionEndpoint;
+  return typeof endpoint === "string" && endpoint.length > 0 ? endpoint : null;
+}
+
 function canSend(socket: WebSocket): boolean {
   return socket.readyState === WebSocket.OPEN;
 }
@@ -225,6 +231,10 @@ class RelayController {
   >();
   private readonly pendingServerRequestIds = new Set<string>();
   private readonly respondedServerRequestIds = new Set<string>();
+  private readonly pushSubscriptionEndpointsBySocket = new Map<
+    WebSocket,
+    string
+  >();
   private upstreamSocket: WebSocket | null = null;
 
   constructor(
@@ -336,6 +346,7 @@ class RelayController {
 
     socket.on("close", () => {
       this.browserSockets.delete(socket);
+      this.pushSubscriptionEndpointsBySocket.delete(socket);
       for (const [requestKey, pending] of this.forwardedBrowserRequests) {
         if (pending.socket === socket) {
           this.forwardedBrowserRequests.delete(requestKey);
@@ -345,6 +356,7 @@ class RelayController {
 
     socket.on("error", () => {
       this.browserSockets.delete(socket);
+      this.pushSubscriptionEndpointsBySocket.delete(socket);
       closeIfOpen(socket, 1011, "browser socket errored");
     });
   }
@@ -415,8 +427,14 @@ class RelayController {
     await this.ensureUpstreamConnected();
 
     if (message.method === "initialized") {
+      this.updateSocketPushSubscriptionEndpoint(socket, message.params);
       this.sendThreadListSnapshotToSocket(socket);
       this.sendPendingServerRequestsToSocket(socket);
+      return;
+    }
+
+    if (message.method === PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD) {
+      this.updateSocketPushSubscriptionEndpoint(socket, message.params);
       return;
     }
 
@@ -460,25 +478,14 @@ class RelayController {
       this.pendingServerRequestIds.add(requestKey);
       this.pendingServerRequests.set(requestKey, message);
       this.broadcast(message);
-      if (this.browserSockets.size === 0) {
-        void this.pushNotifier
-          ?.notifyServerRequest(message)
-          .catch((error: unknown) => {
-            console.warn(
-              "Failed to send server-request push notification.",
-              error,
-            );
-          });
-      } else if (pushMessageForServerRequest(message)) {
-        console.info(
-          "Web Push notification skipped: browser clients connected.",
-          {
-            browserClients: this.browserSockets.size,
-            method: message.method,
-            requestId: message.id,
-          },
-        );
-      }
+      void this.pushNotifier
+        ?.notifyServerRequest(message, this.buildPushNotifyOptions())
+        .catch((error: unknown) => {
+          console.warn(
+            "Failed to send server-request push notification.",
+            error,
+          );
+        });
       return;
     }
 
@@ -556,17 +563,10 @@ class RelayController {
       this.broadcastThreadListSnapshot();
     }
 
-    if (this.browserSockets.size === 0) {
-      await this.pushNotifier?.notifyServerNotification(notification);
-    } else if (pushMessageForServerNotification(notification)) {
-      console.info(
-        "Web Push notification skipped: browser clients connected.",
-        {
-          browserClients: this.browserSockets.size,
-          method: notification.method,
-        },
-      );
-    }
+    await this.pushNotifier?.notifyServerNotification(
+      notification,
+      this.buildPushNotifyOptions(),
+    );
   }
 
   private async refreshThread(threadId: string): Promise<boolean> {
@@ -621,6 +621,27 @@ class RelayController {
         sendJson(socket, request);
       }
     }
+  }
+
+  private updateSocketPushSubscriptionEndpoint(
+    socket: WebSocket,
+    params: unknown,
+  ): void {
+    const endpoint = pushSubscriptionEndpointFromParams(params);
+    if (endpoint) {
+      this.pushSubscriptionEndpointsBySocket.set(socket, endpoint);
+      return;
+    }
+
+    this.pushSubscriptionEndpointsBySocket.delete(socket);
+  }
+
+  private buildPushNotifyOptions(): PushNotifyOptions {
+    return {
+      connectedEndpoints: new Set(
+        this.pushSubscriptionEndpointsBySocket.values(),
+      ),
+    };
   }
 
   private broadcast(message: JsonRpcMessage): void {
@@ -678,6 +699,7 @@ class RelayController {
     this.pendingServerRequests.clear();
     this.pendingServerRequestIds.clear();
     this.respondedServerRequestIds.clear();
+    this.pushSubscriptionEndpointsBySocket.clear();
 
     for (const socket of this.browserSockets) {
       closeIfOpen(socket, 1011, reason || "upstream connection closed");

@@ -49,8 +49,8 @@ and it does not handle `/rpc` or non-GET requests.
 Web Push notifications are opt-in from the thread list. Push subscriptions and
 the relay's generated VAPID key pair are persisted in
 `~/.codex/codex-web-push.json` by default. The relay sends push notifications
-for pending server requests, completed turns, and turn errors when no browser
-websocket client is connected.
+for pending server requests, completed turns, and turn errors to subscribed
+browsers that do not currently have a connected websocket session.
 
 ## Environment
 

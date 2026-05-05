@@ -23,8 +23,18 @@ const require = createRequire(import.meta.url);
 const webPush = require("web-push") as typeof import("web-push");
 
 export type PushNotifier = {
-  notifyServerNotification(notification: ServerNotification): Promise<void>;
-  notifyServerRequest(request: JsonRpcRequestMessage): Promise<void>;
+  notifyServerNotification(
+    notification: ServerNotification,
+    options?: PushNotifyOptions,
+  ): Promise<void>;
+  notifyServerRequest(
+    request: JsonRpcRequestMessage,
+    options?: PushNotifyOptions,
+  ): Promise<void>;
+};
+
+export type PushNotifyOptions = {
+  connectedEndpoints?: ReadonlySet<string>;
 };
 
 type PushSender = (
@@ -110,25 +120,34 @@ export class PushNotificationService implements PushNotifier {
     }));
   }
 
-  async notifyServerRequest(request: JsonRpcRequestMessage): Promise<void> {
-    await this.sendPushMessage(pushMessageForServerRequest(request));
+  async notifyServerRequest(
+    request: JsonRpcRequestMessage,
+    options: PushNotifyOptions = {},
+  ): Promise<void> {
+    await this.sendPushMessage(pushMessageForServerRequest(request), options);
   }
 
   async notifyServerNotification(
     notification: ServerNotification,
+    options: PushNotifyOptions = {},
   ): Promise<void> {
-    await this.sendPushMessage(pushMessageForServerNotification(notification));
+    await this.sendPushMessage(
+      pushMessageForServerNotification(notification),
+      options,
+    );
   }
 
   private async sendPushMessage(
     message: BrowserPushMessage | null,
+    options: PushNotifyOptions,
   ): Promise<void> {
     if (!message) {
       return;
     }
 
-    if (!this.shouldSend(message.tag)) {
-      this.logger.info("Web Push notification skipped: recently sent.", {
+    const data = await this.store.read();
+    if (data.subscriptions.length === 0) {
+      this.logger.info("Web Push notification skipped: no subscriptions.", {
         tag: message.tag,
         title: message.title,
         url: message.url,
@@ -136,9 +155,28 @@ export class PushNotificationService implements PushNotifier {
       return;
     }
 
-    const data = await this.store.read();
-    if (data.subscriptions.length === 0) {
-      this.logger.info("Web Push notification skipped: no subscriptions.", {
+    const connectedEndpoints = options.connectedEndpoints ?? new Set<string>();
+    const targetSubscriptions = data.subscriptions.filter(
+      (subscription) => !connectedEndpoints.has(subscription.endpoint),
+    );
+    const connectedSubscriptionCount =
+      data.subscriptions.length - targetSubscriptions.length;
+    if (targetSubscriptions.length === 0) {
+      this.logger.info(
+        "Web Push notification skipped: all subscribed clients connected.",
+        {
+          connectedSubscriptions: connectedSubscriptionCount,
+          storedSubscriptions: data.subscriptions.length,
+          tag: message.tag,
+          title: message.title,
+          url: message.url,
+        },
+      );
+      return;
+    }
+
+    if (!this.shouldSend(message.tag)) {
+      this.logger.info("Web Push notification skipped: recently sent.", {
         tag: message.tag,
         title: message.title,
         url: message.url,
@@ -156,14 +194,16 @@ export class PushNotificationService implements PushNotifier {
     let sentCount = 0;
 
     this.logger.info("Sending Web Push notification.", {
-      subscriptions: data.subscriptions.length,
+      connectedSubscriptions: connectedSubscriptionCount,
+      storedSubscriptions: data.subscriptions.length,
+      subscriptions: targetSubscriptions.length,
       tag: message.tag,
       title: message.title,
       url: message.url,
     });
 
     await Promise.all(
-      data.subscriptions.map(async (subscription) => {
+      targetSubscriptions.map(async (subscription) => {
         try {
           await this.sendNotification(subscription, payload, {
             TTL: 60 * 60,
