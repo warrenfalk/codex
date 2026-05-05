@@ -42,9 +42,15 @@ worker so the app can be added to the iOS Home Screen from Safari. Install it
 from the public HTTPS origin, for example `https://agent.warrenfalk.com/`; the
 client stays domain-agnostic because `/rpc` is same-origin.
 
-The service worker is registered only in production builds. It uses network-first
-caching for same-origin app-shell assets and navigation fallback, and it does not
-handle `/rpc` or non-GET requests.
+The service worker is registered automatically only in production builds. It uses
+network-first caching for same-origin app-shell assets and navigation fallback,
+and it does not handle `/rpc` or non-GET requests.
+
+Web Push notifications are opt-in from the thread list. Push subscriptions and
+the relay's generated VAPID key pair are persisted in
+`~/.codex/codex-web-push.json` by default. The relay sends push notifications
+for pending server requests, completed turns, and turn errors when no browser
+websocket client is connected.
 
 ## Environment
 
@@ -64,3 +70,7 @@ handle `/rpc` or non-GET requests.
   - defaults to `4202` during development
   - production static server port unless `CODEX_WEB_PROXY_PORT` is set
   - defaults to `4200` in production
+- `CODEX_WEB_PUSH_VAPID_SUBJECT`
+  - VAPID contact subject used by the relay when sending Web Push messages
+  - must be a `mailto:` address or HTTPS URL
+  - defaults to `mailto:codex-web@localhost`

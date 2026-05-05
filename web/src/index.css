@@ -152,6 +152,18 @@ a {
   margin-bottom: 1rem;
 }
 
+.list-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.notification-button {
+  max-width: 12rem;
+}
+
 .thread-header {
   align-items: center;
   display: grid;
