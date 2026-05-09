@@ -88,13 +88,15 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
 
+const CUSTOM_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (warrenfalk custom)");
+
 /// Codex CLI
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
 #[derive(Debug, Parser)]
 #[clap(
     author,
-    version,
+    version = CUSTOM_VERSION,
     // If a sub‑command is given, ignore requirements of the default args.
     subcommand_negates_reqs = true,
     // The executable is sometimes invoked via a platform‑specific name like
@@ -3356,6 +3358,15 @@ mod tests {
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
+    }
+
+    #[test]
+    fn clap_version_uses_custom_build_label() {
+        assert_eq!(MultitoolCli::command().get_version(), Some(CUSTOM_VERSION));
+        assert_eq!(
+            CUSTOM_VERSION,
+            concat!(env!("CARGO_PKG_VERSION"), " (warrenfalk custom)")
+        );
     }
 
     #[test]
