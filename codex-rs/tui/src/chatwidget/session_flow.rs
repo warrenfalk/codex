@@ -100,6 +100,7 @@ impl ChatWidget {
             }
         }
         self.refresh_model_display();
+        self.refresh_file_reference_index();
         self.refresh_status_surfaces();
         self.sync_service_tier_commands();
         self.sync_personality_command_enabled();

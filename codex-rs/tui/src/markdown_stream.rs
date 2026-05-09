@@ -15,7 +15,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(test)]
-use crate::markdown;
+use crate::terminal_hyperlinks::visible_lines;
+use codex_config::types::UriBasedFileOpener;
 
 /// Newline-gated accumulator that buffers raw markdown source and commits only completed lines.
 ///
@@ -35,6 +36,8 @@ pub(crate) struct MarkdownStreamCollector {
     width: Option<usize>,
     #[cfg(test)]
     cwd: PathBuf,
+    #[cfg(test)]
+    file_opener: UriBasedFileOpener,
 }
 
 impl MarkdownStreamCollector {
@@ -43,9 +46,9 @@ impl MarkdownStreamCollector {
     /// `width` and `cwd` are only used by test-only rendering helpers; production stream commits
     /// operate on raw source boundaries. The collector snapshots `cwd` so test rendering keeps
     /// local file-link display stable across incremental commits.
-    pub fn new(width: Option<usize>, cwd: &Path) -> Self {
+    pub fn new(width: Option<usize>, cwd: &Path, file_opener: UriBasedFileOpener) -> Self {
         #[cfg(not(test))]
-        let _ = cwd;
+        let _ = (cwd, file_opener);
 
         Self {
             buffer: String::new(),
@@ -55,6 +58,8 @@ impl MarkdownStreamCollector {
             width,
             #[cfg(test)]
             cwd: cwd.to_path_buf(),
+            #[cfg(test)]
+            file_opener,
         }
     }
 
@@ -131,8 +136,14 @@ impl MarkdownStreamCollector {
             return Vec::new();
         }
         let source = self.buffer[..commit_end].to_string();
-        let mut rendered: Vec<Line<'static>> = Vec::new();
-        markdown::append_markdown(&source, self.width, Some(self.cwd.as_path()), &mut rendered);
+        let rendered = visible_lines(
+            crate::markdown_render::render_markdown_lines_with_width_cwd_and_file_opener(
+                &source,
+                self.width,
+                Some(self.cwd.as_path()),
+                self.file_opener,
+            ),
+        );
         let mut complete_line_count = rendered.len();
         if complete_line_count > 0
             && crate::render::line_utils::is_blank_line_spaces_only(
@@ -176,8 +187,14 @@ impl MarkdownStreamCollector {
         );
         tracing::trace!("markdown finalize (raw source):\n---\n{source}\n---");
 
-        let mut rendered: Vec<Line<'static>> = Vec::new();
-        markdown::append_markdown(&source, self.width, Some(self.cwd.as_path()), &mut rendered);
+        let rendered = visible_lines(
+            crate::markdown_render::render_markdown_lines_with_width_cwd_and_file_opener(
+                &source,
+                self.width,
+                Some(self.cwd.as_path()),
+                self.file_opener,
+            ),
+        );
 
         let out = if self.committed_line_count >= rendered.len() {
             Vec::new()
@@ -203,7 +220,8 @@ pub(crate) fn simulate_stream_markdown_for_tests(
     deltas: &[&str],
     finalize: bool,
 ) -> Vec<Line<'static>> {
-    let mut collector = MarkdownStreamCollector::new(/*width*/ None, &test_cwd());
+    let mut collector =
+        MarkdownStreamCollector::new(/*width*/ None, &test_cwd(), UriBasedFileOpener::None);
     let mut out = Vec::new();
     for d in deltas {
         collector.push_delta(d);
@@ -224,7 +242,11 @@ mod tests {
 
     #[tokio::test]
     async fn no_commit_until_newline() {
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("Hello, world");
         let out = c.commit_complete_lines();
         assert!(out.is_empty(), "should not commit without newline");
@@ -235,7 +257,11 @@ mod tests {
 
     #[tokio::test]
     async fn finalize_commits_partial_line() {
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("Line without newline");
         let out = c.finalize_and_drain();
         assert_eq!(out.len(), 1);
@@ -363,7 +389,11 @@ mod tests {
     async fn heading_starts_on_new_line_when_following_paragraph() {
         // Stream a paragraph line, then a heading on the next line.
         // Expect two distinct rendered lines: "Hello." and "Heading".
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("Hello.\n");
         let out1 = c.commit_complete_lines();
         let s1: Vec<String> = out1
@@ -419,7 +449,11 @@ mod tests {
         // Paragraph without trailing newline, then a chunk that starts with the newline
         // and the heading text, then a final newline. The collector should first commit
         // only the paragraph line, and later commit the heading as its own line.
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("Sounds good!");
         // No commit yet
         assert!(c.commit_complete_lines().is_empty());
@@ -503,7 +537,11 @@ mod tests {
 
     #[tokio::test]
     async fn table_header_commits_without_holdback() {
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("| A | B |\n");
         let out1 = c.commit_complete_lines();
         let out1_str = lines_to_plain_strings(&out1);
@@ -530,7 +568,11 @@ mod tests {
 
     #[tokio::test]
     async fn pipe_text_without_table_prefix_is_not_delayed() {
-        let mut c = super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut c = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         c.push_delta("Escaped pipe in text: a | b | c\n");
         let out = c.commit_complete_lines();
         let out_str = lines_to_plain_strings(&out);
@@ -859,8 +901,11 @@ mod tests {
             "| 1 | 2 |\n",
             "```\n",
         ];
-        let mut collector =
-            super::MarkdownStreamCollector::new(/*width*/ None, &super::test_cwd());
+        let mut collector = super::MarkdownStreamCollector::new(
+            /*width*/ None,
+            &super::test_cwd(),
+            UriBasedFileOpener::None,
+        );
         let mut raw_source = String::new();
 
         for delta in deltas {

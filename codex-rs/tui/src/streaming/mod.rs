@@ -14,6 +14,8 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::Instant;
 
+use codex_config::types::UriBasedFileOpener;
+
 use crate::markdown_stream::MarkdownStreamCollector;
 use crate::terminal_hyperlinks::HyperlinkLine;
 pub(crate) mod chunking;
@@ -38,9 +40,9 @@ impl StreamState {
     ///
     /// Controllers are expected to pass the session cwd here once and keep it stable for the
     /// lifetime of the active stream.
-    pub(crate) fn new(width: Option<usize>, cwd: &Path) -> Self {
+    pub(crate) fn new(width: Option<usize>, cwd: &Path, file_opener: UriBasedFileOpener) -> Self {
         Self {
-            collector: MarkdownStreamCollector::new(width, cwd),
+            collector: MarkdownStreamCollector::new(width, cwd, file_opener),
             queued_lines: VecDeque::new(),
             has_seen_delta: false,
         }
@@ -114,7 +116,8 @@ mod tests {
 
     #[test]
     fn drain_n_clamps_to_available_lines() {
-        let mut state = StreamState::new(/*width*/ None, &test_cwd());
+        let mut state =
+            StreamState::new(/*width*/ None, &test_cwd(), UriBasedFileOpener::None);
         state.enqueue(vec![HyperlinkLine::new(Line::from("one"))]);
 
         let drained = state.drain_n(/*max_lines*/ 8);

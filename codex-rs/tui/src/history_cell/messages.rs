@@ -1,6 +1,7 @@
 //! User, assistant, reasoning, and streaming message history cells.
 
 use super::*;
+use codex_config::types::UriBasedFileOpener;
 
 #[derive(Debug)]
 pub(crate) struct UserHistoryCell {
@@ -344,6 +345,7 @@ impl HistoryCell for AgentMessageCell {
 pub(crate) struct AgentMarkdownCell {
     markdown_source: String,
     cwd: PathBuf,
+    file_opener: UriBasedFileOpener,
 }
 
 impl AgentMarkdownCell {
@@ -352,10 +354,20 @@ impl AgentMarkdownCell {
     /// `markdown_source` must be the raw source accumulated by the stream controller, not already
     /// wrapped terminal lines. Passing rendered lines here would make future resize reflow preserve
     /// stale wrapping instead of repairing it.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(markdown_source: String, cwd: &Path) -> Self {
+        Self::new_with_file_opener(markdown_source, cwd, UriBasedFileOpener::None)
+    }
+
+    pub(crate) fn new_with_file_opener(
+        markdown_source: String,
+        cwd: &Path,
+        file_opener: UriBasedFileOpener,
+    ) -> Self {
         Self {
             markdown_source,
             cwd: cwd.to_path_buf(),
+            file_opener,
         }
     }
 }
@@ -382,6 +394,7 @@ impl HistoryCell for AgentMarkdownCell {
             &self.markdown_source,
             Some(wrap_width),
             Some(self.cwd.as_path()),
+            self.file_opener,
         );
         prefix_hyperlink_lines(lines, "• ".dim(), "  ".into())
     }

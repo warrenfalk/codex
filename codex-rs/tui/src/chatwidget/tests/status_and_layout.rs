@@ -267,6 +267,7 @@ async fn flush_answer_stream_keeps_default_reflow_for_plain_text_tail() {
         Some(80),
         cwd.as_path(),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     assert!(controller.push("plain response line\n"));
     chat.stream_controller = Some(controller);
@@ -315,6 +316,7 @@ async fn flush_answer_stream_requests_scrollback_reflow_for_live_table_tail() {
         Some(80),
         cwd.as_path(),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     controller.push("| Name | Notes |\n");
     controller.push("| --- | --- |\n");
@@ -372,6 +374,7 @@ async fn completed_plan_table_tail_skips_provisional_history_insert() {
         Some(80),
         cwd.as_path(),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     controller.push("| Step | Owner |\n");
     controller.push("| --- | --- |\n");

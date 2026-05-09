@@ -39,6 +39,7 @@ use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_config::types::SessionPickerViewMode;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
 use color_eyre::eyre::Result;
@@ -377,6 +378,7 @@ async fn run_resume_picker_with_launch_context(
             app_server,
             include_non_interactive,
             raw_reasoning_visibility(config),
+            config.file_opener,
             bg_tx,
         ),
         bg_rx,
@@ -422,6 +424,7 @@ pub async fn run_fork_picker_with_app_server(
             app_server,
             /*include_non_interactive*/ false,
             raw_reasoning_visibility(config),
+            config.file_opener,
             bg_tx,
         ),
         bg_rx,
@@ -551,6 +554,7 @@ fn spawn_app_server_page_loader(
     app_server: AppServerSession,
     include_non_interactive: bool,
     raw_reasoning_visibility: RawReasoningVisibility,
+    file_opener: UriBasedFileOpener,
     bg_tx: mpsc::UnboundedSender<BackgroundEvent>,
 ) -> PickerLoader {
     let (request_tx, mut request_rx) = mpsc::unbounded_channel::<PickerLoadRequest>();
@@ -585,6 +589,7 @@ fn spawn_app_server_page_loader(
                         &mut app_server,
                         thread_id,
                         raw_reasoning_visibility,
+                        file_opener,
                     )
                     .await;
                     let _ = bg_tx.send(BackgroundEvent::Transcript {
@@ -5806,12 +5811,16 @@ session_picker_view = "dense"
             }],
         };
 
-        let rendered = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
-            .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let rendered = thread_to_transcript_cells(
+            &thread,
+            RawReasoningVisibility::Visible,
+            UriBasedFileOpener::None,
+        )
+        .into_iter()
+        .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
 
         assert!(rendered.contains("hello from user"));
         assert!(rendered.contains("hello from assistant"));
@@ -5861,18 +5870,26 @@ session_picker_view = "dense"
             }],
         };
 
-        let hidden = thread_to_transcript_cells(&thread, RawReasoningVisibility::Hidden)
-            .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let visible = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
-            .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let hidden = thread_to_transcript_cells(
+            &thread,
+            RawReasoningVisibility::Hidden,
+            UriBasedFileOpener::None,
+        )
+        .into_iter()
+        .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let visible = thread_to_transcript_cells(
+            &thread,
+            RawReasoningVisibility::Visible,
+            UriBasedFileOpener::None,
+        )
+        .into_iter()
+        .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
 
         assert!(!hidden.contains("private raw chain of thought"));
         assert!(visible.contains("private raw chain of thought"));
@@ -5920,12 +5937,16 @@ session_picker_view = "dense"
             }],
         };
 
-        let rendered = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
-            .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let rendered = thread_to_transcript_cells(
+            &thread,
+            RawReasoningVisibility::Visible,
+            UriBasedFileOpener::None,
+        )
+        .into_iter()
+        .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
 
         assert!(rendered.contains("raw reasoning content"));
         assert!(!rendered.contains("public summary"));
