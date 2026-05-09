@@ -169,6 +169,31 @@ fn install_filesystem_landlock_rules_on_current_thread(
 fn install_network_seccomp_filter_on_current_thread(
     mode: NetworkSeccompMode,
 ) -> std::result::Result<(), SandboxErr> {
+    let rules = build_network_seccomp_rules(mode)?;
+
+    let filter = SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,                     // default – allow
+        SeccompAction::Errno(libc::EPERM as u32), // when rule matches – return EPERM
+        if cfg!(target_arch = "x86_64") {
+            TargetArch::x86_64
+        } else if cfg!(target_arch = "aarch64") {
+            TargetArch::aarch64
+        } else {
+            unimplemented!("unsupported architecture for seccomp filter");
+        },
+    )?;
+
+    let prog: BpfProgram = filter.try_into()?;
+
+    apply_filter(&prog)?;
+
+    Ok(())
+}
+
+fn build_network_seccomp_rules(
+    mode: NetworkSeccompMode,
+) -> std::result::Result<BTreeMap<i64, Vec<SeccompRule>>, SandboxErr> {
     fn deny_syscall(rules: &mut BTreeMap<i64, Vec<SeccompRule>>, nr: i64) {
         rules.insert(nr, vec![]); // empty rule vec = unconditional match
     }
@@ -185,13 +210,14 @@ fn install_network_seccomp_filter_on_current_thread(
 
     match mode {
         NetworkSeccompMode::Restricted => {
-            deny_syscall(&mut rules, libc::SYS_connect);
+            // Allow socket lifecycle and post-connect introspection calls so
+            // AF_UNIX path sockets remain usable under restricted-network
+            // sandboxing.
+            //
+            // Network sockets remain blocked because `socket(AF_INET/AF_INET6, ..)` is
+            // denied below.
             deny_syscall(&mut rules, libc::SYS_accept);
             deny_syscall(&mut rules, libc::SYS_accept4);
-            deny_syscall(&mut rules, libc::SYS_bind);
-            deny_syscall(&mut rules, libc::SYS_listen);
-            deny_syscall(&mut rules, libc::SYS_getpeername);
-            deny_syscall(&mut rules, libc::SYS_getsockname);
             deny_syscall(&mut rules, libc::SYS_shutdown);
             deny_syscall(&mut rules, libc::SYS_sendto);
             deny_syscall(&mut rules, libc::SYS_sendmmsg);
@@ -200,7 +226,6 @@ fn install_network_seccomp_filter_on_current_thread(
             // management.
             // deny_syscall(&mut rules, libc::SYS_recvfrom);
             deny_syscall(&mut rules, libc::SYS_recvmmsg);
-            deny_syscall(&mut rules, libc::SYS_getsockopt);
             deny_syscall(&mut rules, libc::SYS_setsockopt);
 
             // For `socket` we allow AF_UNIX (arg0 == AF_UNIX) and deny
@@ -247,29 +272,13 @@ fn install_network_seccomp_filter_on_current_thread(
         }
     }
 
-    let filter = SeccompFilter::new(
-        rules,
-        SeccompAction::Allow,                     // default – allow
-        SeccompAction::Errno(libc::EPERM as u32), // when rule matches – return EPERM
-        if cfg!(target_arch = "x86_64") {
-            TargetArch::x86_64
-        } else if cfg!(target_arch = "aarch64") {
-            TargetArch::aarch64
-        } else {
-            unimplemented!("unsupported architecture for seccomp filter");
-        },
-    )?;
-
-    let prog: BpfProgram = filter.try_into()?;
-
-    apply_filter(&prog)?;
-
-    Ok(())
+    Ok(rules)
 }
 
 #[cfg(test)]
 mod tests {
     use super::NetworkSeccompMode;
+    use super::build_network_seccomp_rules;
     use super::network_seccomp_mode;
     use super::should_install_network_seccomp;
     use codex_protocol::protocol::NetworkSandboxPolicy;
@@ -343,5 +352,14 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn restricted_network_allows_post_connect_socket_introspection() {
+        let rules = build_network_seccomp_rules(NetworkSeccompMode::Restricted)
+            .expect("restricted network seccomp rules should build");
+
+        assert_eq!(rules.get(&libc::SYS_getsockname), None);
+        assert_eq!(rules.get(&libc::SYS_getpeername), None);
     }
 }

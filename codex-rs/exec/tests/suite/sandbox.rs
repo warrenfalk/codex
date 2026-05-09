@@ -526,6 +526,40 @@ fn unix_sock_body() {
     }
 }
 
+#[cfg(target_os = "linux")]
+async fn run_python_under_workspace_write_no_network(python_code: &str) {
+    let Some(python3) = find_executable_on_path("python3") else {
+        eprintln!("python3 not found in PATH, skipping test.");
+        return;
+    };
+    let python3 = python3.to_string_lossy().to_string();
+    let sandbox_env = match linux_sandbox_test_env().await {
+        Some(env) => env,
+        None => return,
+    };
+    let permission_profile = PermissionProfile::workspace_write_with(
+        &[],
+        NetworkSandboxPolicy::Restricted,
+        /*exclude_tmpdir_env_var*/ false,
+        /*exclude_slash_tmp*/ false,
+    );
+    let command_cwd = AbsolutePathBuf::current_dir().expect("should be able to get current dir");
+    let sandbox_cwd = command_cwd.clone();
+    let mut child = spawn_command_under_sandbox(
+        vec![python3, "-c".to_string(), python_code.to_string()],
+        command_cwd,
+        &permission_profile,
+        &sandbox_cwd,
+        StdioPolicy::Inherit,
+        sandbox_env,
+    )
+    .await
+    .expect("should be able to spawn python under sandbox");
+
+    let status = child.wait().await.expect("should wait for python");
+    assert!(status.success(), "python exited with {status:?}");
+}
+
 #[tokio::test]
 async fn allow_unix_socketpair_recvfrom() {
     run_code_under_sandbox(
@@ -535,6 +569,79 @@ async fn allow_unix_socketpair_recvfrom() {
     )
     .await
     .expect("should be able to reexec");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn deny_af_inet_socket_in_workspace_write() {
+    run_python_under_workspace_write_no_network(
+        r#"
+import errno
+import socket
+
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+except PermissionError as e:
+    assert e.errno == errno.EPERM, e
+else:
+    s.close()
+    raise AssertionError("AF_INET socket should be denied")
+"#,
+    )
+    .await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn allow_unix_socket_path_calls_in_workspace_write() {
+    run_python_under_workspace_write_no_network(
+        r#"
+import os
+import socket
+import tempfile
+
+with tempfile.TemporaryDirectory() as tmp:
+    stream_path = os.path.join(tmp, "stream.sock")
+    dgram_path = os.path.join(tmp, "dgram.sock")
+    payload = b"hello_unix_path"
+
+    stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stream.bind(stream_path)
+    stream.listen(1)
+    stream.close()
+
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    server.bind(dgram_path)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    client.connect(dgram_path)
+    client.send(payload)
+    assert server.recv(64) == payload
+"#,
+    )
+    .await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn allow_unix_socket_post_connect_introspection_in_workspace_write() {
+    run_python_under_workspace_write_no_network(
+        r#"
+import os
+import socket
+import tempfile
+
+with tempfile.TemporaryDirectory() as tmp:
+    dgram_path = os.path.join(tmp, "getsockopt.sock")
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    server.bind(dgram_path)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    client.connect(dgram_path)
+    assert client.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR) == 0
+    client.getsockname()
+    assert client.getpeername() == dgram_path
+"#,
+    )
+    .await;
 }
 
 const IN_SANDBOX_ENV_VAR: &str = "IN_SANDBOX";
