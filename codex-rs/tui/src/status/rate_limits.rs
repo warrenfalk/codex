@@ -21,8 +21,9 @@ use codex_app_server_protocol::SpendControlLimitSnapshot as CoreSpendControlLimi
 use codex_protocol::num_format::format_with_separators;
 
 const STATUS_LIMIT_BAR_SEGMENTS: usize = 20;
-const STATUS_LIMIT_BAR_FILLED: &str = "█";
-const STATUS_LIMIT_BAR_EMPTY: &str = "░";
+const STATUS_LIMIT_BAR_FILLED: char = '█';
+const STATUS_LIMIT_BAR_EMPTY: char = '░';
+const STATUS_LIMIT_BAR_TIME_MARKER: char = '│';
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatusRateLimitRow {
@@ -39,6 +40,10 @@ pub(crate) enum StatusRateLimitValue {
     Window {
         /// Percent of the window that has been consumed.
         percent_used: f64,
+        /// Human-readable remaining time until reset.
+        time_remaining: Option<String>,
+        /// Percent of the window duration that remains until reset.
+        time_remaining_percent: Option<f64>,
         /// Localized reset string, or `None` when unknown.
         resets_at: Option<String>,
         /// Optional detail line rendered beneath the progress bar.
@@ -69,6 +74,10 @@ pub(crate) const RATE_LIMIT_STALE_THRESHOLD_MINUTES: i64 = 15;
 pub(crate) struct RateLimitWindowDisplay {
     /// Percent used for the window.
     pub used_percent: f64,
+    /// Human-readable remaining time until reset.
+    pub time_remaining: Option<String>,
+    /// Percent of the window duration remaining until reset.
+    pub time_remaining_percent: Option<f64>,
     /// Human-readable local reset time.
     pub resets_at: Option<String>,
     /// Window length in minutes when provided by the server.
@@ -77,14 +86,38 @@ pub(crate) struct RateLimitWindowDisplay {
 
 impl RateLimitWindowDisplay {
     fn from_window(window: &RateLimitWindow, captured_at: DateTime<Local>) -> Self {
-        let resets_at_utc = window
+        let resets_at_local = window
             .resets_at
             .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
             .map(|dt| dt.with_timezone(&Local));
-        let resets_at = resets_at_utc.map(|dt| format_reset_timestamp(dt, captured_at));
+        let resets_at = resets_at_local
+            .as_ref()
+            .map(|dt| format_reset_timestamp(*dt, captured_at));
+        let time_remaining = resets_at_local.as_ref().map(|resets_at_local| {
+            format_remaining_duration(
+                resets_at_local
+                    .signed_duration_since(captured_at)
+                    .num_seconds()
+                    .max(0),
+            )
+        });
+        let time_remaining_percent = resets_at_local.as_ref().and_then(|resets_at_local| {
+            let window_minutes = window.window_duration_mins?;
+            if window_minutes <= 0 {
+                return None;
+            }
+            let window_seconds = window_minutes.saturating_mul(60);
+            let remaining_seconds = resets_at_local
+                .signed_duration_since(captured_at)
+                .num_seconds();
+            let ratio = (remaining_seconds as f64 / window_seconds as f64).clamp(0.0, 1.0);
+            Some(ratio * 100.0)
+        });
 
         Self {
             used_percent: f64::from(window.used_percent),
+            time_remaining,
+            time_remaining_percent,
             resets_at,
             window_minutes: window.window_duration_mins,
         }
@@ -274,6 +307,8 @@ pub(crate) fn compose_rate_limit_data_many(
                 label,
                 value: StatusRateLimitValue::Window {
                     percent_used: primary.used_percent,
+                    time_remaining: primary.time_remaining.clone(),
+                    time_remaining_percent: primary.time_remaining_percent,
                     resets_at: primary.resets_at.clone(),
                     details: None,
                 },
@@ -301,6 +336,8 @@ pub(crate) fn compose_rate_limit_data_many(
                 label,
                 value: StatusRateLimitValue::Window {
                     percent_used: secondary.used_percent,
+                    time_remaining: secondary.time_remaining.clone(),
+                    time_remaining_percent: secondary.time_remaining_percent,
                     resets_at: secondary.resets_at.clone(),
                     details: None,
                 },
@@ -317,6 +354,8 @@ pub(crate) fn compose_rate_limit_data_many(
                 label: "Monthly credit limit".to_string(),
                 value: StatusRateLimitValue::Window {
                     percent_used: 100.0 - individual_limit.percent_remaining,
+                    time_remaining: None,
+                    time_remaining_percent: None,
                     resets_at: individual_limit.resets_at.clone(),
                     details: Some(format!(
                         "{} of {} credits used",
@@ -340,21 +379,86 @@ pub(crate) fn compose_rate_limit_data_many(
 ///
 /// This function expects a remaining value in the `0..=100` range and clamps out-of-range input.
 /// Passing a used percentage by mistake will invert the bar and mislead users.
-pub(crate) fn render_status_limit_progress_bar(percent_remaining: f64) -> String {
+pub(crate) fn render_status_limit_progress_bar(
+    percent_remaining: f64,
+    time_remaining_percent: Option<f64>,
+) -> String {
     let ratio = (percent_remaining / 100.0).clamp(0.0, 1.0);
     let filled = (ratio * STATUS_LIMIT_BAR_SEGMENTS as f64).round() as usize;
     let filled = filled.min(STATUS_LIMIT_BAR_SEGMENTS);
-    let empty = STATUS_LIMIT_BAR_SEGMENTS.saturating_sub(filled);
-    format!(
-        "[{}{}]",
-        STATUS_LIMIT_BAR_FILLED.repeat(filled),
-        STATUS_LIMIT_BAR_EMPTY.repeat(empty)
-    )
+    let mut bar = vec![STATUS_LIMIT_BAR_EMPTY; STATUS_LIMIT_BAR_SEGMENTS];
+    for segment in bar.iter_mut().take(filled) {
+        *segment = STATUS_LIMIT_BAR_FILLED;
+    }
+    if let Some(time_remaining_percent) = time_remaining_percent {
+        let ratio = (time_remaining_percent / 100.0).clamp(0.0, 1.0);
+        let marker_index = ((ratio * (STATUS_LIMIT_BAR_SEGMENTS.saturating_sub(1)) as f64).round()
+            as usize)
+            .min(STATUS_LIMIT_BAR_SEGMENTS.saturating_sub(1));
+        if let Some(segment) = bar.get_mut(marker_index) {
+            *segment = STATUS_LIMIT_BAR_TIME_MARKER;
+        }
+    }
+    format!("[{}]", bar.into_iter().collect::<String>())
 }
 
 /// Formats a compact textual summary from remaining percentage.
 pub(crate) fn format_status_limit_summary(percent_remaining: f64) -> String {
     format!("{percent_remaining:.0}% left")
+}
+
+/// Formats compact pace headroom text for the status line and footer.
+///
+/// When a time-remaining percentage is available, this reports the difference
+/// between remaining usage and remaining time as a signed percentage-point
+/// delta. Positive values mean usage headroom versus pace; negative values mean
+/// the user is trending to run out before the window resets.
+///
+/// When pace data is unavailable, this falls back to the raw remaining
+/// percentage so the footer still shows useful usage information.
+pub(crate) fn format_status_limit_delta_vs_pace(
+    percent_remaining: f64,
+    time_remaining_percent: Option<f64>,
+) -> String {
+    match time_remaining_percent {
+        Some(time_remaining_percent) => {
+            let delta = (percent_remaining.clamp(0.0, 100.0)
+                - time_remaining_percent.clamp(0.0, 100.0))
+            .round() as i64;
+            format!("{delta:+}%")
+        }
+        None => format!("{percent_remaining:.0}%"),
+    }
+}
+
+fn format_remaining_duration(remaining_seconds: i64) -> String {
+    const SECONDS_PER_MINUTE: i64 = 60;
+    const SECONDS_PER_HOUR: i64 = 60 * SECONDS_PER_MINUTE;
+    const SECONDS_PER_DAY: i64 = 24 * SECONDS_PER_HOUR;
+
+    if remaining_seconds < SECONDS_PER_MINUTE {
+        return "<1m".to_string();
+    }
+
+    let days = remaining_seconds / SECONDS_PER_DAY;
+    let hours = (remaining_seconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR;
+    let minutes = (remaining_seconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
+
+    if days > 0 {
+        if hours > 0 {
+            return format!("{days}d {hours}h");
+        }
+        return format!("{days}d");
+    }
+
+    if hours > 0 {
+        if minutes > 0 {
+            return format!("{hours}h {minutes}m");
+        }
+        return format!("{hours}h");
+    }
+
+    format!("{minutes}m")
 }
 
 /// Builds a single `StatusRateLimitRow` for credits when the snapshot indicates
@@ -416,12 +520,15 @@ mod tests {
     use super::RateLimitWindowDisplay;
     use super::StatusRateLimitData;
     use super::compose_rate_limit_data_many;
+    use super::render_status_limit_progress_bar;
     use chrono::Local;
     use pretty_assertions::assert_eq;
 
     fn window(used_percent: f64) -> RateLimitWindowDisplay {
         RateLimitWindowDisplay {
             used_percent,
+            time_remaining: Some("3h 45m".to_string()),
+            time_remaining_percent: Some(75.0),
             resets_at: Some("soon".to_string()),
             window_minutes: Some(300),
         }
@@ -481,11 +588,15 @@ mod tests {
             captured_at: now,
             primary: Some(RateLimitWindowDisplay {
                 used_percent: 20.0,
+                time_remaining: Some("24m".to_string()),
+                time_remaining_percent: Some(40.0),
                 resets_at: Some("soon".to_string()),
                 window_minutes: Some(60),
             }),
             secondary: Some(RateLimitWindowDisplay {
                 used_percent: 40.0,
+                time_remaining: Some("2d 4h".to_string()),
+                time_remaining_percent: None,
                 resets_at: Some("later".to_string()),
                 window_minutes: Some(2 * 60),
             }),
@@ -506,5 +617,43 @@ mod tests {
                 "Secondary usage limit".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn progress_bar_overlays_time_left_marker() {
+        assert_eq!(
+            render_status_limit_progress_bar(55.0, Some(48.0)),
+            "[█████████│█░░░░░░░░░]"
+        );
+    }
+
+    #[test]
+    fn summary_reports_percent_remaining() {
+        assert_eq!(super::format_status_limit_summary(55.0), "55% left");
+    }
+
+    #[test]
+    fn pace_delta_reports_headroom_or_deficit() {
+        assert_eq!(
+            super::format_status_limit_delta_vs_pace(70.0, Some(30.0)),
+            "+40%"
+        );
+        assert_eq!(
+            super::format_status_limit_delta_vs_pace(20.0, Some(30.0)),
+            "-10%"
+        );
+    }
+
+    #[test]
+    fn pace_delta_falls_back_to_remaining_percent_without_time_marker() {
+        assert_eq!(super::format_status_limit_delta_vs_pace(55.0, None), "55%");
+    }
+
+    #[test]
+    fn remaining_duration_formats_compact_text() {
+        assert_eq!(super::format_remaining_duration(30), "<1m");
+        assert_eq!(super::format_remaining_duration(15 * 60), "15m");
+        assert_eq!(super::format_remaining_duration(90 * 60), "1h 30m");
+        assert_eq!(super::format_remaining_duration(27 * 60 * 60), "1d 3h");
     }
 }

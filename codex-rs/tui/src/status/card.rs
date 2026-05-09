@@ -470,13 +470,18 @@ impl StatusHistoryCell {
             match &row.value {
                 StatusRateLimitValue::Window {
                     percent_used,
+                    time_remaining,
+                    time_remaining_percent,
                     resets_at,
                     details,
                 } => {
                     let percent_remaining = (100.0 - percent_used).clamp(0.0, 100.0);
                     let summary = format_status_limit_summary(percent_remaining);
                     let full_value_spans = vec![
-                        Span::from(render_status_limit_progress_bar(percent_remaining)),
+                        Span::from(render_status_limit_progress_bar(
+                            percent_remaining,
+                            *time_remaining_percent,
+                        )),
                         Span::from(" "),
                         Span::from(summary.clone()),
                     ];
@@ -491,12 +496,25 @@ impl StatusHistoryCell {
                     };
                     let base_spans = formatter.full_spans(row.label.as_str(), value_spans);
                     let base_line = Line::from(base_spans.clone());
+                    let trailing_text = time_remaining_percent
+                        .map(|percent| {
+                            let concrete_time = time_remaining
+                                .as_deref()
+                                .map(|remaining| format!(", {remaining} left"))
+                                .unwrap_or_default();
+                            format!("({percent:.0}% time left{concrete_time})")
+                        })
+                        .or_else(|| {
+                            resets_at
+                                .as_ref()
+                                .map(|resets_at| format!("(resets {resets_at})"))
+                        });
 
-                    if let Some(resets_at) = resets_at.as_ref() {
-                        let resets_span = Span::from(format!("(resets {resets_at})")).dim();
+                    if let Some(trailing_text) = trailing_text {
+                        let trailing_span = Span::from(trailing_text.clone()).dim();
                         let mut inline_spans = base_spans.clone();
                         inline_spans.push(Span::from(" ").dim());
-                        inline_spans.push(resets_span.clone());
+                        inline_spans.push(trailing_span.clone());
 
                         if line_display_width(&Line::from(inline_spans.clone()))
                             <= available_inner_width
@@ -504,14 +522,13 @@ impl StatusHistoryCell {
                             lines.push(Line::from(inline_spans));
                         } else {
                             lines.push(base_line);
-                            let reset_text = format!("(resets {resets_at})");
                             let reset_width = formatter.value_width(available_inner_width).max(1);
                             let wrap_options =
                                 textwrap::Options::new(reset_width).break_words(false);
-                            // Reset timestamps are the actionable part of this row, so wrap them
-                            // onto continuation lines instead of truncating partial times/dates.
+                            // Wrap the trailing status text instead of truncating partial
+                            // percentages or reset timestamps on narrow layouts.
                             lines.extend(
-                                textwrap::wrap(reset_text.as_str(), wrap_options)
+                                textwrap::wrap(trailing_text.as_str(), wrap_options)
                                     .into_iter()
                                     .map(|wrapped| {
                                         formatter.continuation(vec![

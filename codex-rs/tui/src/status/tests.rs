@@ -57,6 +57,8 @@ fn stale_monthly_limit_marks_fresh_rolling_snapshot_stale() {
         captured_at: now,
         primary: Some(RateLimitWindowDisplay {
             used_percent: 20.0,
+            time_remaining: Some("soon".to_string()),
+            time_remaining_percent: None,
             resets_at: Some("soon".to_string()),
             window_minutes: Some(300),
         }),
@@ -176,6 +178,31 @@ fn sanitize_directory(lines: Vec<String>) -> Vec<String> {
     lines
         .into_iter()
         .map(|line| {
+            let line = if let (Some(version_pos), Some(pipe_idx)) =
+                (line.find("OpenAI Codex (v"), line.rfind('│'))
+            {
+                let prefix = &line[..version_pos];
+                let suffix = &line[pipe_idx..];
+                let replacement = "OpenAI Codex (v0.0.0)";
+                let content_width = frame_width
+                    .map(|frame_width| {
+                        frame_width.saturating_sub(
+                            UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(suffix),
+                        )
+                    })
+                    .unwrap_or_else(|| pipe_idx.saturating_sub(version_pos));
+                let mut rebuilt = prefix.to_string();
+                rebuilt.push_str(replacement);
+                let replacement_width = UnicodeWidthStr::width(replacement);
+                if content_width > replacement_width {
+                    rebuilt.push_str(&" ".repeat(content_width - replacement_width));
+                }
+                rebuilt.push_str(suffix);
+                rebuilt
+            } else {
+                line
+            };
+
             if let (Some(frame_width), Some(dir_pos), Some(pipe_idx)) =
                 (frame_width, line.find("Directory: "), line.rfind('│'))
             {
