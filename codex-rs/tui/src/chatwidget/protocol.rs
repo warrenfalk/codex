@@ -251,6 +251,25 @@ impl ChatWidget {
         match notification.turn.status {
             TurnStatus::Completed => {
                 self.last_non_retry_error = None;
+                if self
+                    .mcp_startup_status
+                    .as_ref()
+                    .zip(self.mcp_startup_expected_servers.as_ref())
+                    .is_some_and(|(current, expected_servers)| {
+                        !current.is_empty()
+                            && current
+                                .values()
+                                .all(|state| !matches!(state, McpStartupStatus::Starting))
+                            && expected_servers
+                                .iter()
+                                .any(|name| !current.contains_key(name))
+                    })
+                {
+                    // Resume-triggered MCP startup rounds can arrive partially. When the live
+                    // app-server turn completes before the round ever becomes complete, clear the
+                    // stale startup latch so the footer does not remain stuck in a running state.
+                    self.finish_mcp_startup(Vec::new(), Vec::new());
+                }
                 self.on_task_complete(
                     /*last_agent_message*/ None,
                     notification.turn.duration_ms,
