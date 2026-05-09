@@ -36,6 +36,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_approval_presets::ApprovalPreset;
 
 use crate::app_command::AppCommand;
+use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
@@ -141,6 +142,19 @@ pub(crate) enum KeymapEditIntent {
     ReplaceOne { old_key: String },
 }
 
+pub(crate) struct ConnectedBackendReconnect {
+    pub(crate) app_server: AppServerSession,
+    pub(crate) started: crate::app_server_session::AppServerStartedThread,
+}
+
+impl std::fmt::Debug for ConnectedBackendReconnect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectedBackendReconnect")
+            .field("thread_id", &self.started.session.thread_id)
+            .finish_non_exhaustive()
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum AppEvent {
@@ -243,6 +257,12 @@ pub(crate) enum AppEvent {
     /// Request to exit the application due to a fatal error.
     #[allow(dead_code)]
     FatalExitRequest(String),
+
+    /// The connected-mode backend transport dropped; the app should enter reconnect mode.
+    ConnectedBackendDisconnected(String),
+
+    /// Connected mode successfully re-established a backend session.
+    ConnectedBackendReconnected(Box<ConnectedBackendReconnect>),
 
     /// Forward a command to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.

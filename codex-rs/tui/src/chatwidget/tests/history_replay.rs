@@ -1090,6 +1090,50 @@ async fn replayed_in_progress_turn_marks_task_running() {
 }
 
 #[tokio::test]
+async fn suppressed_session_info_cell_skips_reconnect_banner_rendering() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let thread_id = ThreadId::new();
+    let rollout_file = NamedTempFile::new().expect("rollout temp file");
+    let configured = crate::session_state::ThreadSessionState {
+        thread_id,
+        forked_from_id: None,
+        fork_parent_title: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::Never,
+        approvals_reviewer: ApprovalsReviewer::User,
+        permission_profile: PermissionProfile::read_only(),
+        active_permission_profile: None,
+        cwd: AbsolutePathBuf::try_from(PathBuf::from("/home/user/project")).expect("absolute path"),
+        runtime_workspace_roots: Vec::new(),
+        instruction_source_paths: Vec::new(),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        collaboration_mode: None,
+        personality: None,
+        message_history: None,
+        network_proxy: None,
+        rollout_path: Some(rollout_file.path().to_path_buf()),
+    };
+
+    chat.handle_thread_session(configured.clone());
+    let initial_cells = drain_insert_history(&mut rx);
+    assert!(
+        !initial_cells.is_empty(),
+        "expected initial session info cell to render"
+    );
+
+    chat.suppress_next_session_info_cell();
+    chat.handle_thread_session(configured);
+
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "reconnect session config should not render a new banner cell"
+    );
+}
+
+#[tokio::test]
 async fn replayed_stream_error_does_not_set_retry_status_or_status_indicator() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_status_header("Idle".to_string());

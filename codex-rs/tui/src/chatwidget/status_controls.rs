@@ -65,6 +65,39 @@ impl ChatWidget {
         );
     }
 
+    pub(crate) fn show_connected_backend_reconnect_status(&mut self) {
+        let message = "Input disabled while reconnecting to the app-server.".to_string();
+        self.op_submission_disabled_reason = Some(message.clone());
+        self.bottom_pane
+            .set_composer_input_enabled(false, Some(message));
+        self.bottom_pane.ensure_status_indicator();
+        self.bottom_pane
+            .set_interrupt_hint_visible(/*visible*/ false);
+        self.set_status(
+            "Disconnected from app-server".to_string(),
+            Some("Reconnecting automatically.".to_string()),
+            StatusDetailsCapitalization::CapitalizeFirst,
+            STATUS_DETAILS_DEFAULT_MAX_LINES,
+        );
+        self.connected_backend_status_active = true;
+        self.request_redraw();
+    }
+
+    pub(crate) fn clear_connected_backend_reconnect_status(&mut self) {
+        self.op_submission_disabled_reason = None;
+        self.bottom_pane
+            .set_composer_input_enabled(/*enabled*/ true, /*placeholder*/ None);
+        if self.connected_backend_status_active {
+            self.bottom_pane.hide_status_indicator();
+            self.connected_backend_status_active = false;
+        }
+        self.request_redraw();
+    }
+
+    pub(crate) fn suppress_next_session_info_cell(&mut self) {
+        self.suppress_next_session_info_cell = true;
+    }
+
     /// Sets the currently rendered footer status-line value.
     pub(crate) fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
         self.bottom_pane.set_status_line(status_line);
