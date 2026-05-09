@@ -51,8 +51,13 @@ impl App {
             }
             AppServerEvent::Disconnected { message } => {
                 tracing::warn!("app-server event stream disconnected: {message}");
-                self.chat_widget.add_error_message(message.clone());
-                self.app_event_tx.send(AppEvent::FatalExitRequest(message));
+                if !matches!(self.app_server_target, crate::AppServerTarget::Embedded) {
+                    self.app_event_tx
+                        .send(AppEvent::ConnectedBackendDisconnected(message));
+                } else {
+                    self.chat_widget.add_error_message(message.clone());
+                    self.app_event_tx.send(AppEvent::FatalExitRequest(message));
+                }
             }
         }
     }

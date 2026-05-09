@@ -9,6 +9,7 @@ use crate::app_backtrack::BacktrackSelection;
 use crate::app_backtrack::BacktrackState;
 use crate::app_backtrack::user_count;
 
+use crate::app_server_session::ThreadParamsMode;
 use crate::chatwidget::ChatWidgetInit;
 use crate::chatwidget::create_initial_user_message;
 use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
@@ -41,6 +42,10 @@ use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::JSONRPCMessage;
+use codex_app_server_protocol::JSONRPCNotification;
+use codex_app_server_protocol::JSONRPCRequest;
+use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::McpServerStartupState;
@@ -59,8 +64,12 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadClosedNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadLoadedListResponse;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadStartedNotification;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
@@ -87,19 +96,28 @@ use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::user_input::TextElement;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use crossterm::event::KeyModifiers;
+use futures::SinkExt;
+use futures::StreamExt;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
 use ratatui::prelude::Line;
+use std::net::TcpListener;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tempfile::tempdir;
+use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 use tokio::time;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::Message;
 
 macro_rules! assert_app_snapshot {
     ($name:expr, $value:expr $(,)?) => {
@@ -136,6 +154,336 @@ async fn next_thread_settings_updated(
     panic!("expected ThreadSettingsUpdated for thread {thread_id}");
 }
 
+fn write_remote_test_config_toml(codex_home: &std::path::Path, model: &str) -> std::io::Result<()> {
+    std::fs::write(
+        codex_home.join("config.toml"),
+        format!(
+            r#"
+model = "{model}"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+model_provider = "mock_provider"
+
+[model_providers.mock_provider]
+name = "Mock provider for reconnect tests"
+base_url = "http://127.0.0.1:1/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+"#
+        ),
+    )
+}
+
+async fn build_remote_test_config(codex_home: &std::path::Path) -> Config {
+    ConfigBuilder::default()
+        .codex_home(codex_home.to_path_buf())
+        .build()
+        .await
+        .expect("config should build")
+}
+
+fn reserve_loopback_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("loopback listener should bind")
+        .local_addr()
+        .expect("listener should report local addr")
+        .port()
+}
+
+fn remote_app_server_url(port: u16) -> String {
+    format!("ws://127.0.0.1:{port}/")
+}
+
+fn remote_app_server_endpoint(port: u16) -> crate::RemoteAppServerEndpoint {
+    crate::RemoteAppServerEndpoint::WebSocket {
+        websocket_url: remote_app_server_url(port),
+        auth_token: None,
+    }
+}
+
+enum FakeRemoteServerMode {
+    Initial {
+        thread_id: ThreadId,
+        thread_path: Option<PathBuf>,
+    },
+    RestartedStartFresh {
+        replacement_thread_id: ThreadId,
+    },
+    RestartedResume {
+        thread_id: ThreadId,
+        thread_path: Option<PathBuf>,
+    },
+}
+
+struct FakeRemoteServerHandle {
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl FakeRemoteServerHandle {
+    async fn shutdown(mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        self.task
+            .await
+            .expect("fake remote server task should finish");
+    }
+}
+
+fn fake_thread(thread_id: ThreadId, path: Option<PathBuf>) -> Thread {
+    Thread {
+        id: thread_id.to_string(),
+        session_id: thread_id.to_string(),
+        forked_from_id: None,
+        parent_thread_id: None,
+        preview: String::new(),
+        ephemeral: false,
+        model_provider: "mock_provider".to_string(),
+        created_at: 1,
+        updated_at: 1,
+        status: codex_app_server_protocol::ThreadStatus::Idle,
+        path,
+        cwd: test_path_buf("/tmp/project").abs(),
+        cli_version: "test".to_string(),
+        source: SessionSource::Cli,
+        thread_source: None,
+        agent_nickname: None,
+        agent_role: None,
+        git_info: None,
+        name: None,
+        turns: Vec::new(),
+    }
+}
+
+fn fake_thread_start_response(thread_id: ThreadId, path: Option<PathBuf>) -> ThreadStartResponse {
+    ThreadStartResponse {
+        thread: fake_thread(thread_id, path),
+        model: "mock-model".to_string(),
+        model_provider: "mock_provider".to_string(),
+        service_tier: None,
+        cwd: test_path_buf("/tmp/project").abs(),
+        runtime_workspace_roots: Vec::new(),
+        instruction_sources: Vec::new(),
+        approval_policy: AskForApproval::Never,
+        approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
+        sandbox: SandboxPolicy::new_read_only_policy().into(),
+        active_permission_profile: None,
+        reasoning_effort: None,
+    }
+}
+
+async fn read_websocket_message(websocket: &mut WebSocketStream<TcpStream>) -> JSONRPCMessage {
+    loop {
+        let frame = time::timeout(std::time::Duration::from_secs(5), websocket.next())
+            .await
+            .expect("timed out waiting for websocket frame")
+            .expect("websocket frame should exist")
+            .expect("websocket frame should decode");
+        match frame {
+            Message::Text(text) => {
+                return serde_json::from_str::<JSONRPCMessage>(&text)
+                    .expect("websocket text frame should contain JSON-RPC");
+            }
+            Message::Binary(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+            Message::Close(frame) => panic!("unexpected close frame: {frame:?}"),
+        }
+    }
+}
+
+async fn write_websocket_message(
+    websocket: &mut WebSocketStream<TcpStream>,
+    message: JSONRPCMessage,
+) {
+    websocket
+        .send(Message::Text(
+            serde_json::to_string(&message)
+                .expect("message should serialize")
+                .into(),
+        ))
+        .await
+        .expect("websocket message should send");
+}
+
+async fn expect_remote_initialize(websocket: &mut WebSocketStream<TcpStream>) {
+    let JSONRPCMessage::Request(request) = read_websocket_message(websocket).await else {
+        panic!("expected initialize request");
+    };
+    assert_eq!(request.method, "initialize");
+    write_websocket_message(
+        websocket,
+        JSONRPCMessage::Response(JSONRPCResponse {
+            id: request.id,
+            result: serde_json::json!({}),
+        }),
+    )
+    .await;
+
+    let JSONRPCMessage::Notification(JSONRPCNotification { method, .. }) =
+        read_websocket_message(websocket).await
+    else {
+        panic!("expected initialized notification");
+    };
+    assert_eq!(method, "initialized");
+}
+
+async fn start_fake_remote_app_server(
+    port: u16,
+    mode: FakeRemoteServerMode,
+) -> Result<FakeRemoteServerHandle> {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .expect("fake remote server should bind");
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut websocket = accept_async(stream)
+            .await
+            .expect("websocket upgrade should succeed");
+        expect_remote_initialize(&mut websocket).await;
+
+        match mode {
+            FakeRemoteServerMode::Initial {
+                thread_id,
+                thread_path,
+            } => {
+                let JSONRPCMessage::Request(JSONRPCRequest { id, method, .. }) =
+                    read_websocket_message(&mut websocket).await
+                else {
+                    panic!("expected thread/start request");
+                };
+                assert_eq!(method, "thread/start");
+                write_websocket_message(
+                    &mut websocket,
+                    JSONRPCMessage::Response(JSONRPCResponse {
+                        id,
+                        result: serde_json::to_value(fake_thread_start_response(
+                            thread_id,
+                            thread_path,
+                        ))
+                        .expect("thread/start response should serialize"),
+                    }),
+                )
+                .await;
+            }
+            FakeRemoteServerMode::RestartedStartFresh {
+                replacement_thread_id,
+            } => {
+                let JSONRPCMessage::Request(JSONRPCRequest { id, method, .. }) =
+                    read_websocket_message(&mut websocket).await
+                else {
+                    panic!("expected thread/start request");
+                };
+                assert_eq!(method, "thread/start");
+                write_websocket_message(
+                    &mut websocket,
+                    JSONRPCMessage::Response(JSONRPCResponse {
+                        id,
+                        result: serde_json::to_value(fake_thread_start_response(
+                            replacement_thread_id,
+                            /*path*/ None,
+                        ))
+                        .expect("fresh thread/start response should serialize"),
+                    }),
+                )
+                .await;
+            }
+            FakeRemoteServerMode::RestartedResume {
+                thread_id,
+                thread_path,
+            } => {
+                let JSONRPCMessage::Request(JSONRPCRequest {
+                    id, method, params, ..
+                }) = read_websocket_message(&mut websocket).await
+                else {
+                    panic!("expected thread/resume request");
+                };
+                assert_eq!(method, "thread/resume");
+                let params: ThreadResumeParams =
+                    serde_json::from_value(params.expect("thread/resume should provide params"))
+                        .expect("thread/resume params should decode");
+                assert_eq!(params.thread_id, thread_id.to_string());
+                write_websocket_message(
+                    &mut websocket,
+                    JSONRPCMessage::Response(JSONRPCResponse {
+                        id,
+                        result: serde_json::to_value(ThreadResumeResponse {
+                            thread: fake_thread(thread_id, thread_path),
+                            model: "mock-model".to_string(),
+                            model_provider: "mock_provider".to_string(),
+                            service_tier: None,
+                            cwd: test_path_buf("/tmp/project").abs(),
+                            runtime_workspace_roots: Vec::new(),
+                            instruction_sources: Vec::new(),
+                            approval_policy: AskForApproval::Never,
+                            approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
+                            sandbox: SandboxPolicy::new_read_only_policy().into(),
+                            active_permission_profile: None,
+                            reasoning_effort: None,
+                            initial_turns_page: None,
+                        })
+                        .expect("thread/resume response should serialize"),
+                    }),
+                )
+                .await;
+            }
+        }
+
+        let mut shutdown_rx = shutdown_rx;
+        loop {
+            tokio::select! {
+                _ = &mut shutdown_rx => break,
+                frame = websocket.next() => {
+                    let Some(frame) = frame else {
+                        break;
+                    };
+                    let frame = frame.expect("websocket frame should decode");
+                    match frame {
+                        Message::Text(text) => {
+                            let message = serde_json::from_str::<JSONRPCMessage>(&text)
+                                .expect("websocket text frame should contain JSON-RPC");
+                            match message {
+                                JSONRPCMessage::Request(JSONRPCRequest { id, method, .. })
+                                    if method == "thread/loaded/list" =>
+                                {
+                                    write_websocket_message(
+                                        &mut websocket,
+                                        JSONRPCMessage::Response(JSONRPCResponse {
+                                            id,
+                                            result: serde_json::to_value(ThreadLoadedListResponse {
+                                                data: Vec::new(),
+                                                next_cursor: None,
+                                            })
+                                            .expect("thread/loaded/list response should serialize"),
+                                        }),
+                                    )
+                                    .await;
+                                }
+                                JSONRPCMessage::Notification(_) => {}
+                                JSONRPCMessage::Request(JSONRPCRequest { method, .. }) => {
+                                    panic!("unexpected request after reconnect setup: {method}");
+                                }
+                                JSONRPCMessage::Response(_) | JSONRPCMessage::Error(_) => {}
+                            }
+                        }
+                        Message::Binary(_)
+                        | Message::Ping(_)
+                        | Message::Pong(_)
+                        | Message::Frame(_) => {}
+                        Message::Close(_) => break,
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(FakeRemoteServerHandle {
+        shutdown_tx: Some(shutdown_tx),
+        task,
+    })
+}
 #[tokio::test]
 async fn handle_mcp_inventory_result_respects_origin_thread() {
     let mut app = make_test_app().await;
@@ -3969,6 +4317,8 @@ async fn make_test_app() -> App {
         app_server_target: crate::AppServerTarget::Embedded,
         pending_update_action: None,
         pending_shutdown_exit_thread_id: None,
+        connected_backend_disconnected: false,
+        connected_reconnect_task: None,
         windows_sandbox: WindowsSandboxState::default(),
         thread_event_channels: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),
@@ -4034,6 +4384,8 @@ async fn make_test_app_with_channels() -> (
             app_server_target: crate::AppServerTarget::Embedded,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
+            connected_backend_disconnected: false,
+            connected_reconnect_task: None,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -5826,6 +6178,182 @@ async fn side_conversations_reject_backtrack_esc_without_stealing_vim_insert_esc
     assert!(app.chat_widget.should_handle_vim_insert_escape(esc));
     assert!(!app.should_handle_backtrack_esc(esc));
     assert!(!app.should_reject_side_backtrack_esc(esc));
+}
+
+#[tokio::test]
+async fn connected_backend_reconnect_after_restart_starts_fresh_for_unsaved_session() -> Result<()>
+{
+    let codex_home = tempdir().expect("tempdir");
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let model = app
+        .config
+        .model
+        .clone()
+        .unwrap_or_else(|| "mock-model".to_string());
+    write_remote_test_config_toml(codex_home.path(), &model)?;
+    let config = build_remote_test_config(codex_home.path()).await;
+
+    app.config = config.clone();
+
+    let port = reserve_loopback_port();
+    let endpoint = remote_app_server_endpoint(port);
+    app.app_server_target = AppServerTarget::LocalDaemon {
+        endpoint: endpoint.clone(),
+    };
+
+    let original_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000401").expect("valid thread");
+    let replacement_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
+    let unmaterialized_rollout_path = codex_home.path().join("unmaterialized.jsonl");
+    let initial_server = start_fake_remote_app_server(
+        port,
+        FakeRemoteServerMode::Initial {
+            thread_id: original_thread_id,
+            thread_path: Some(unmaterialized_rollout_path.clone()),
+        },
+    )
+    .await?;
+    let client = crate::connect_remote_app_server(endpoint.clone()).await?;
+    let mut app_server = AppServerSession::new(client, ThreadParamsMode::Embedded);
+    let started = app_server.start_thread(&config).await?;
+    assert_eq!(
+        started.session.rollout_path.as_deref(),
+        Some(unmaterialized_rollout_path.as_path())
+    );
+    assert!(!unmaterialized_rollout_path.exists());
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    while app_event_rx.try_recv().is_ok() {}
+
+    initial_server.shutdown().await;
+
+    app.handle_connected_backend_disconnected(&app_server, "backend dropped".to_string());
+
+    let restarted_server = start_fake_remote_app_server(
+        port,
+        FakeRemoteServerMode::RestartedStartFresh {
+            replacement_thread_id,
+        },
+    )
+    .await?;
+    let reconnect = time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            match app_event_rx.recv().await {
+                Some(AppEvent::ConnectedBackendReconnected(reconnect)) => break reconnect,
+                Some(_) => {}
+                None => panic!("app event channel closed before reconnect completed"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for reconnect event");
+
+    assert_ne!(reconnect.started.session.thread_id, original_thread_id);
+    app.handle_connected_backend_reconnected(&mut app_server, *reconnect)
+        .await?;
+
+    assert!(!app.connected_backend_disconnected);
+    assert_eq!(app.primary_thread_id, Some(replacement_thread_id));
+    assert_eq!(app.primary_thread_id, app.chat_widget.thread_id());
+
+    app_server
+        .shutdown()
+        .await
+        .expect("reconnected app-server should shut down cleanly");
+    restarted_server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn connected_backend_reconnect_after_restart_resumes_materialized_session() -> Result<()> {
+    let codex_home = tempdir().expect("tempdir");
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let model = app
+        .config
+        .model
+        .clone()
+        .unwrap_or_else(|| "mock-model".to_string());
+    write_remote_test_config_toml(codex_home.path(), &model)?;
+    let config = build_remote_test_config(codex_home.path()).await;
+
+    app.config = config.clone();
+
+    let thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000403").expect("valid thread");
+    let materialized_rollout_path = codex_home.path().join("materialized.jsonl");
+    std::fs::write(&materialized_rollout_path, "{}\n")?;
+    let port = reserve_loopback_port();
+    let initial_server = start_fake_remote_app_server(
+        port,
+        FakeRemoteServerMode::Initial {
+            thread_id,
+            thread_path: Some(materialized_rollout_path.clone()),
+        },
+    )
+    .await?;
+    let endpoint = remote_app_server_endpoint(port);
+    app.app_server_target = AppServerTarget::LocalDaemon {
+        endpoint: endpoint.clone(),
+    };
+    let client = crate::connect_remote_app_server(endpoint).await?;
+    let mut app_server = AppServerSession::new(client, ThreadParamsMode::Embedded);
+    let started = app_server.start_thread(&config).await?;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    while app_event_rx.try_recv().is_ok() {}
+
+    initial_server.shutdown().await;
+
+    app.handle_connected_backend_disconnected(&app_server, "backend dropped".to_string());
+
+    let restarted_server = start_fake_remote_app_server(
+        port,
+        FakeRemoteServerMode::RestartedResume {
+            thread_id,
+            thread_path: Some(materialized_rollout_path),
+        },
+    )
+    .await?;
+    let reconnect = time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            match app_event_rx.recv().await {
+                Some(AppEvent::ConnectedBackendReconnected(reconnect)) => break reconnect,
+                Some(_) => {}
+                None => panic!("app event channel closed before reconnect completed"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for reconnect event");
+
+    assert_eq!(reconnect.started.session.thread_id, thread_id);
+    app.handle_connected_backend_reconnected(&mut app_server, *reconnect)
+        .await?;
+
+    assert!(!app.connected_backend_disconnected);
+    assert_eq!(app.primary_thread_id, Some(thread_id));
+    assert_eq!(app.primary_thread_id, app.chat_widget.thread_id());
+
+    app_server
+        .shutdown()
+        .await
+        .expect("reconnected app-server should shut down cleanly");
+    restarted_server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn session_summary_skips_when_no_usage_or_resume_hint() {
+    assert!(
+        session_summary(
+            TokenUsage::default(),
+            /*thread_id*/ None,
+            /*thread_name*/ None,
+            /*rollout_path*/ None,
+        )
+        .is_none()
+    );
 }
 
 #[tokio::test]

@@ -303,6 +303,7 @@ impl App {
                 self.chat_widget.on_commit_tick();
             }
             AppEvent::Exit(mode) => {
+                self.stop_connected_reconnect_task();
                 if mode == ExitMode::ShutdownFirst {
                     self.show_shutdown_feedback(tui)?;
                 }
@@ -322,7 +323,15 @@ impl App {
                 }
             },
             AppEvent::FatalExitRequest(message) => {
+                self.stop_connected_reconnect_task();
                 return Ok(AppRunControl::Exit(ExitReason::Fatal(message)));
+            }
+            AppEvent::ConnectedBackendDisconnected(message) => {
+                self.handle_connected_backend_disconnected(app_server, message);
+            }
+            AppEvent::ConnectedBackendReconnected(reconnect) => {
+                self.handle_connected_backend_reconnected(app_server, *reconnect)
+                    .await?;
             }
             AppEvent::CodexOp(op) => {
                 self.chat_widget.prepare_local_op_submission(&op);
