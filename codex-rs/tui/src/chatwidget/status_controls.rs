@@ -344,15 +344,11 @@ impl ChatWidget {
     }
 
     pub(super) fn status_line_context_remaining_percent(&self) -> Option<i64> {
-        let Some(context_window) = self.status_line_context_window_size() else {
-            return Some(100);
-        };
-        let default_usage = TokenUsage::default();
-        let usage = self
-            .token_info
-            .as_ref()
-            .map(|info| &info.last_token_usage)
-            .unwrap_or(&default_usage);
+        let info = self.token_info.as_ref()?;
+        let context_window = info
+            .model_context_window
+            .or(self.config.model_context_window)?;
+        let usage = &info.last_token_usage;
         Some(
             usage
                 .percent_of_context_window_remaining(context_window)
@@ -361,7 +357,7 @@ impl ChatWidget {
     }
 
     pub(super) fn status_line_context_used_percent(&self) -> Option<i64> {
-        let remaining = self.status_line_context_remaining_percent().unwrap_or(100);
+        let remaining = self.status_line_context_remaining_percent()?;
         Some((100 - remaining).clamp(0, 100))
     }
 
