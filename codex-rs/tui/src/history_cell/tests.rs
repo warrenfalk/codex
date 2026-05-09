@@ -161,6 +161,31 @@ fn render_transcript(cell: &dyn HistoryCell) -> Vec<String> {
     render_lines(&cell.transcript_lines(u16::MAX))
 }
 
+fn sanitize_session_header_version(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .map(|line| {
+            if let (Some(version_pos), Some(pipe_idx)) =
+                (line.find("OpenAI Codex (v"), line.rfind('│'))
+            {
+                let prefix = &line[..version_pos];
+                let suffix = &line[pipe_idx..];
+                let replacement = "OpenAI Codex (v<VERSION>)";
+                let content_width = pipe_idx.saturating_sub(version_pos);
+                let mut rebuilt = prefix.to_string();
+                rebuilt.push_str(replacement);
+                if content_width > replacement.len() {
+                    rebuilt.push_str(&" ".repeat(content_width - replacement.len()));
+                }
+                rebuilt.push_str(suffix);
+                rebuilt
+            } else {
+                line
+            }
+        })
+        .collect()
+}
+
 fn assert_unstyled_lines(lines: &[Line<'static>]) {
     for line in lines {
         assert_eq!(line.style, Style::default());
@@ -633,7 +658,7 @@ async fn session_info_availability_nux_tooltip_snapshot() {
         /*show_fast_status*/ false,
     );
 
-    let rendered = render_transcript(&cell).join("\n");
+    let rendered = sanitize_session_header_version(render_transcript(&cell)).join("\n");
     insta::assert_snapshot!(rendered);
 }
 
@@ -1528,8 +1553,31 @@ fn session_header_indicates_yolo_mode() {
     )
     .with_yolo_mode(/*yolo_mode*/ true);
 
-    let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
+    let rendered =
+        sanitize_session_header_version(render_lines(&cell.display_lines(/*width*/ 80))).join("\n");
     insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn session_header_title_marks_custom_builds() {
+    let cell = SessionHeaderHistoryCell::new(
+        "gpt-5".to_string(),
+        /*reasoning_effort*/ None,
+        /*show_fast_status*/ false,
+        test_path_buf("/tmp/project").abs().to_path_buf(),
+        "test",
+    );
+
+    let lines = render_lines(&cell.display_lines(/*width*/ 80));
+    let title_line = lines
+        .iter()
+        .find(|line| line.contains("OpenAI Codex"))
+        .expect("title line");
+
+    assert!(
+        title_line.contains("OpenAI Codex (vtest (warrenfalk custom))"),
+        "expected custom build label in title line, got: {title_line}"
+    );
 }
 
 #[test]
