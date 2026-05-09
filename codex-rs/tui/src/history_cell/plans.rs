@@ -115,6 +115,7 @@ impl HistoryCell for ProposedPlanCell {
             &self.plan_markdown,
             Some(wrap_width),
             Some(self.cwd.as_path()),
+            codex_config::types::UriBasedFileOpener::None,
         );
         if body.is_empty() {
             body.push(HyperlinkLine::new(Line::from("(empty)".dim().italic())));

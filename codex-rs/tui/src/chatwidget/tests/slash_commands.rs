@@ -1535,6 +1535,7 @@ async fn completed_token_activity_refresh_retries_after_plan_item_completion() {
         /*width*/ None,
         &chat.config.cwd,
         chat.history_render_mode(),
+        chat.config.file_opener,
     );
     controller.push("Plan details");
     chat.plan_stream_controller = Some(controller);

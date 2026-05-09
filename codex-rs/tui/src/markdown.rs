@@ -19,6 +19,7 @@
 //! buffers the entire fence body before deciding, only unwraps fences whose
 //! info string is `md` or `markdown` AND whose body contains a
 //! header+delimiter pair, and degrades gracefully on unclosed fences.
+use codex_config::types::UriBasedFileOpener;
 use ratatui::text::Line;
 use std::borrow::Cow;
 use std::ops::Range;
@@ -70,9 +71,15 @@ pub(crate) fn render_markdown_agent_with_links_and_cwd(
     markdown_source: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
 ) -> Vec<HyperlinkLine> {
     let normalized = unwrap_markdown_fences(markdown_source);
-    crate::markdown_render::render_markdown_lines_with_width_and_cwd(&normalized, width, cwd)
+    crate::markdown_render::render_markdown_lines_with_width_cwd_and_file_opener(
+        &normalized,
+        width,
+        cwd,
+        file_opener,
+    )
 }
 
 /// Strip `` ```md ``/`` ```markdown `` fences that contain tables, emitting their content as bare
