@@ -204,6 +204,7 @@ mod app_server_events;
 pub(crate) mod app_server_requests;
 mod background_requests;
 mod config_persistence;
+mod connected_reconnect;
 mod event_dispatch;
 mod history_ui;
 mod input;
@@ -562,6 +563,8 @@ pub(crate) struct App {
     /// This is thread-scoped state (`Option<ThreadId>`) instead of a global bool
     /// so shutdown events from other threads still take the normal failover path.
     pending_shutdown_exit_thread_id: Option<ThreadId>,
+    connected_backend_disconnected: bool,
+    connected_reconnect_task: Option<JoinHandle<()>>,
 
     windows_sandbox: WindowsSandboxState,
 
@@ -1038,6 +1041,8 @@ See the Codex keymap documentation for supported actions and examples."
             app_server_target,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
+            connected_backend_disconnected: false,
+            connected_reconnect_task: None,
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
@@ -1197,12 +1202,20 @@ See the Codex keymap documentation for supported actions and examples."
                             Some(event) => app.handle_app_server_event(&app_server, event).await,
                             None => {
                                 listen_for_app_server_events = false;
-                                tracing::warn!("app-server event stream closed");
+                                if !app.connected_backend_disconnected {
+                                    tracing::warn!("app-server event stream closed");
+                                }
                             }
                         }
                         AppRunControl::Continue
                     }
                 };
+                if !listen_for_app_server_events
+                    && !matches!(app.app_server_target, crate::AppServerTarget::Embedded)
+                    && !app.connected_backend_disconnected
+                {
+                    listen_for_app_server_events = true;
+                }
                 if App::should_stop_waiting_for_initial_session(
                     waiting_for_initial_session_configured,
                     app.primary_thread_id,

@@ -623,6 +623,8 @@ pub(crate) struct ChatWidget {
     full_reasoning_buffer: String,
     status_state: StatusState,
     review: ReviewState,
+    op_submission_disabled_reason: Option<String>,
+    connected_backend_status_active: bool,
     // Active hook runs render in a dedicated live cell so they can run alongside tools.
     active_hook_cell: Option<HookCell>,
     // Ambient companion rendered over the transcript area, never inside the footer rows.
@@ -655,6 +657,7 @@ pub(crate) struct ChatWidget {
     // When resuming an existing session (selected via resume picker), avoid an
     // immediate redraw on SessionConfigured to prevent a gratuitous UI flicker.
     suppress_session_configured_redraw: bool,
+    suppress_next_session_info_cell: bool,
     // During snapshot restore, defer startup prompt submission until replayed
     // history has been rendered so resumed/forked prompts keep chronological
     // order.
@@ -1807,6 +1810,10 @@ impl ChatWidget {
     where
         T: Into<AppCommand>,
     {
+        if let Some(message) = self.op_submission_disabled_reason.clone() {
+            self.add_error_message(message);
+            return false;
+        }
         let op: AppCommand = op.into();
         self.prepare_local_op_submission(&op);
         if op.is_review() && !self.bottom_pane.is_task_running() {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_command::AppCommand;
 use crate::app_event::ConnectorsSnapshot;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -506,6 +507,41 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
 
     assert_eq!(chat.remote_image_urls(), vec![remote_url]);
     assert_no_submit_op(&mut op_rx);
+}
+
+#[tokio::test]
+async fn connected_backend_reconnect_status_disables_outbound_ops() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    chat.show_connected_backend_reconnect_status();
+
+    let status = chat
+        .bottom_pane
+        .status_widget()
+        .expect("status indicator should be visible");
+    assert_eq!(status.header(), "Disconnected from app-server");
+    assert_eq!(status.details(), Some("Reconnecting automatically."));
+
+    assert!(!chat.submit_op(AppCommand::interrupt()));
+    assert_no_submit_op(&mut op_rx);
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(cells.last().expect("expected error cell"));
+    assert!(
+        rendered.contains("Input disabled while reconnecting to the app-server."),
+        "missing reconnect disabled message: {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn clearing_connected_backend_reconnect_status_reenables_outbound_ops() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    chat.show_connected_backend_reconnect_status();
+    chat.clear_connected_backend_reconnect_status();
+
+    assert!(chat.submit_op(AppCommand::interrupt()));
+    next_interrupt_op(&mut op_rx);
 }
 
 #[tokio::test]
