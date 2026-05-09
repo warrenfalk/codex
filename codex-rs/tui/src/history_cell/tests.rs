@@ -4,6 +4,7 @@ use super::*;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCall;
 use crate::exec_cell::ExecCell;
+use crate::file_reference_index;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::session_state::ThreadSessionState;
@@ -11,6 +12,7 @@ use crate::wrapping::word_wrap_lines;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_config::types::McpServerConfig;
+use codex_config::types::UriBasedFileOpener;
 use codex_otel::RuntimeMetricTotals;
 use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::ThreadId;
@@ -22,7 +24,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
 use codex_protocol::mcp::CallToolResult;
@@ -155,6 +159,14 @@ fn render_lines(lines: &[Line<'static>]) -> Vec<String> {
                 .collect::<String>()
         })
         .collect()
+}
+
+fn find_transcript_href(lines: &[HyperlinkLine]) -> Option<String> {
+    lines
+        .iter()
+        .flat_map(|line| line.hyperlinks.iter())
+        .map(|link| link.destination.clone())
+        .next()
 }
 
 fn render_transcript(cell: &dyn HistoryCell) -> Vec<String> {
@@ -2559,6 +2571,144 @@ fn agent_markdown_cell_survives_insert_history_rewrap() {
     assert_eq!(
         before, after,
         "word_wrap_lines should not alter lines that already fit within width"
+    );
+}
+
+#[test]
+fn agent_message_cell_transcript_lines_wrap_repo_file_refs_with_osc8() {
+    let tempdir = tempdir().expect("tempdir");
+    let cwd = tempdir.path();
+    let file_path = cwd.join("src/lib.rs");
+    fs::create_dir_all(file_path.parent().expect("parent")).expect("create src dir");
+    fs::write(&file_path, "fn main() {}\n").expect("write test file");
+
+    let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        "See `src/lib.rs:12`.\n",
+        None,
+        Some(cwd),
+        UriBasedFileOpener::VsCode,
+    );
+    let cell = AgentMessageCell::new_hyperlink_lines(lines, /*is_first_line*/ true);
+
+    let transcript = cell.transcript_hyperlink_lines(/*width*/ 80);
+    let rendered = render_lines(&crate::terminal_hyperlinks::visible_lines(
+        transcript.clone(),
+    ))
+    .join("\n");
+    assert!(rendered.contains("src/lib.rs:12"));
+
+    let found_url = find_transcript_href(&transcript).expect("expected transcript hyperlink");
+    assert!(
+        found_url.starts_with("vscode://file/"),
+        "expected vscode URI, got: {found_url}"
+    );
+    assert!(
+        found_url.contains("/src/lib.rs:12"),
+        "expected line number in hyperlink URI, got: {found_url}"
+    );
+}
+
+#[test]
+fn agent_message_cell_transcript_lines_resolve_unique_basename_file_refs_with_osc8() {
+    let tempdir = tempdir().expect("tempdir");
+    let cwd = tempdir.path();
+    let file_path = cwd.join("codex-rs/tui/src/markdown_render.rs");
+    fs::create_dir_all(file_path.parent().expect("parent")).expect("create nested dir");
+    fs::write(&file_path, "pub fn render() {}\n").expect("write test file");
+    file_reference_index::refresh_blocking(cwd.to_path_buf());
+
+    let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        "See `markdown_render.rs:216`.\n",
+        None,
+        Some(cwd),
+        UriBasedFileOpener::VsCode,
+    );
+    let cell = AgentMessageCell::new_hyperlink_lines(lines, /*is_first_line*/ true);
+
+    let transcript = cell.transcript_hyperlink_lines(/*width*/ 80);
+    let rendered = render_lines(&crate::terminal_hyperlinks::visible_lines(
+        transcript.clone(),
+    ))
+    .join("\n");
+    assert!(rendered.contains("markdown_render.rs:216"));
+
+    let found_url = find_transcript_href(&transcript).expect("expected transcript hyperlink");
+    assert!(
+        found_url.contains("/codex-rs/tui/src/markdown_render.rs:216"),
+        "expected unique basename to resolve to nested file, got: {found_url}"
+    );
+}
+
+#[test]
+fn agent_message_cell_transcript_lines_use_local_markdown_link_destinations_without_extra_metadata()
+{
+    let tempdir = tempdir().expect("tempdir");
+    let cwd = tempdir.path();
+    let first_app = cwd.join("codex-rs/tui/src/app.rs");
+    let second_app = cwd.join("sdk/src/app.rs");
+    fs::create_dir_all(first_app.parent().expect("parent")).expect("create first app dir");
+    fs::create_dir_all(second_app.parent().expect("parent")).expect("create second app dir");
+    fs::write(&first_app, "pub fn first() {}\n").expect("write first app file");
+    fs::write(&second_app, "pub fn second() {}\n").expect("write second app file");
+    file_reference_index::refresh_blocking(cwd.to_path_buf());
+
+    let markdown = format!("See [app.rs]({}#L2322).\n", first_app.to_string_lossy());
+    let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        &markdown,
+        None,
+        Some(cwd),
+        UriBasedFileOpener::VsCode,
+    );
+    let cell = AgentMessageCell::new_hyperlink_lines(lines, /*is_first_line*/ true);
+
+    let transcript = cell.transcript_hyperlink_lines(/*width*/ 80);
+    let rendered = render_lines(&crate::terminal_hyperlinks::visible_lines(
+        transcript.clone(),
+    ))
+    .join("\n");
+    assert!(rendered.contains("app.rs:2322"));
+
+    let found_url = find_transcript_href(&transcript).expect("expected transcript hyperlink");
+    assert!(
+        found_url.contains("/codex-rs/tui/src/app.rs:2322"),
+        "expected markdown link destination to drive hyperlink URI, got: {found_url}"
+    );
+}
+
+#[test]
+fn agent_message_cell_transcript_lines_wrap_link_fragments_without_losing_href() {
+    let tempdir = tempdir().expect("tempdir");
+    let cwd = tempdir.path();
+    let file_path = cwd.join("codex-rs/tui/src/a_very_long_file_reference_name.rs");
+    fs::create_dir_all(file_path.parent().expect("parent")).expect("create nested dir");
+    fs::write(&file_path, "pub fn wrapped() {}\n").expect("write test file");
+
+    let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
+        "See `codex-rs/tui/src/a_very_long_file_reference_name.rs:47` tail words.\n",
+        None,
+        Some(cwd),
+        UriBasedFileOpener::VsCode,
+    );
+    let cell = AgentMessageCell::new_hyperlink_lines(lines, /*is_first_line*/ true);
+
+    let transcript = cell.transcript_hyperlink_lines(/*width*/ 24);
+    let rendered = render_lines(&crate::terminal_hyperlinks::visible_lines(
+        transcript.clone(),
+    ));
+
+    assert!(
+        rendered.len() > 1,
+        "expected wrapped transcript to span multiple lines, got: {rendered:?}"
+    );
+    assert!(
+        rendered.iter().any(|line| line.contains("a_very_long_file_refer")
+            || line.contains("ence_name.rs:47")),
+        "expected wrapped transcript to include linked path fragments, got: {rendered:?}"
+    );
+    let found_url = find_transcript_href(&transcript).expect("expected transcript hyperlink");
+    assert!(
+        found_url.contains("/codex-rs/tui/src/a_very_long_file_reference_name.rs:47"),
+        "expected wrapped hyperlink URI to preserve the full file reference, got: {found_url}"
     );
 }
 

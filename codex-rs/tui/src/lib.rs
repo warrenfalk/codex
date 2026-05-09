@@ -133,6 +133,8 @@ mod exec_command;
 mod external_agent_config_migration;
 mod external_agent_config_migration_startup;
 mod external_editor;
+mod file_links;
+mod file_reference_index;
 mod file_search;
 mod frames;
 mod get_git_diff;

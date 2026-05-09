@@ -57,6 +57,7 @@ use crate::bottom_pane::StatusSurfacePreviewItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::bottom_pane::TerminalTitleSetupView;
 use crate::diff_model::FileChange;
+use crate::file_reference_index;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::legacy_core::DEFAULT_AGENTS_MD_FILENAME;
 use crate::legacy_core::config::Config;
@@ -1891,6 +1892,16 @@ impl ChatWidget {
     /// message is recorded.
     pub(crate) fn rollout_path(&self) -> Option<PathBuf> {
         self.current_rollout_path.clone()
+    }
+
+    pub(crate) fn active_transcript_cwd(&self) -> PathBuf {
+        self.current_cwd
+            .clone()
+            .unwrap_or_else(|| self.config.cwd.to_path_buf())
+    }
+
+    pub(crate) fn refresh_file_reference_index(&self) {
+        file_reference_index::refresh(self.active_transcript_cwd());
     }
 
     /// Returns a cache key describing the current in-flight active cell for the transcript overlay.
