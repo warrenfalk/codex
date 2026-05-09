@@ -23,6 +23,8 @@ use crossterm::event::EnableFocusChange;
 use crossterm::event::KeyEvent;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
+#[cfg(not(test))]
+use crossterm::terminal::SetTitle;
 #[cfg(not(unix))]
 use crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::backend::Backend;
@@ -97,10 +99,12 @@ mod tests {
     use std::io::Write as _;
 
     use super::clear_for_viewport_change;
+    use super::sanitize_window_title;
     use super::should_emit_notification;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
     use codex_config::types::NotificationCondition;
+    use pretty_assertions::assert_eq;
     use ratatui::layout::Position;
     use ratatui::layout::Rect;
 
@@ -167,6 +171,12 @@ mod tests {
             !rows.iter().skip(1).any(|row| row.contains("stale")),
             "expected stale cells inside the new viewport to be cleared, rows: {rows:?}"
         );
+    }
+
+    #[test]
+    fn sanitize_window_title_collapses_control_characters_and_whitespace() {
+        let title = sanitize_window_title("Codex\tfoo\nbar\x1b]0;evil\x07".to_string());
+        assert_eq!(title, "Codex foo bar ]0;evil");
     }
 }
 
@@ -532,6 +542,7 @@ pub struct Tui {
     is_zellij: bool,
     // When false, enter_alt_screen() becomes a no-op.
     alt_screen_enabled: bool,
+    current_window_title: Option<String>,
     // Keeps unmanaged process stderr writes out of the inline viewport.
     _stderr_guard: terminal_stderr::TerminalStderrGuard,
 }
@@ -585,6 +596,7 @@ impl Tui {
             notification_condition: NotificationCondition::default(),
             is_zellij,
             alt_screen_enabled: true,
+            current_window_title: None,
             _stderr_guard: stderr_guard,
         }
     }
@@ -666,10 +678,31 @@ impl Tui {
         if was_alt_screen {
             let _ = self.enter_alt_screen();
         }
+        if let Some(title) = self.current_window_title.clone() {
+            self.apply_window_title(title);
+        }
 
         self.resume_events();
         output
     }
+
+    pub fn set_window_title(&mut self, title: impl Into<String>) {
+        let title = sanitize_window_title(title.into());
+        if self.current_window_title.as_ref() == Some(&title) {
+            return;
+        }
+
+        self.apply_window_title(title.clone());
+        self.current_window_title = Some(title);
+    }
+
+    #[cfg(not(test))]
+    fn apply_window_title(&mut self, title: String) {
+        let _ = execute!(self.terminal.backend_mut(), SetTitle(title));
+    }
+
+    #[cfg(test)]
+    fn apply_window_title(&mut self, _title: String) {}
 
     /// Emit a desktop notification now if the terminal is unfocused.
     /// Returns true if a notification was posted.
@@ -1121,4 +1154,25 @@ fn ensure_virtual_terminal_processing() -> Result<()> {
 #[cfg(not(windows))]
 fn ensure_virtual_terminal_processing() -> Result<()> {
     Ok(())
+}
+
+fn sanitize_window_title(title: String) -> String {
+    let mut sanitized = String::with_capacity(title.len());
+    let mut last_was_space = false;
+
+    for ch in title.chars() {
+        let normalized = if ch.is_control() { ' ' } else { ch };
+        if normalized.is_whitespace() {
+            if !last_was_space {
+                sanitized.push(' ');
+                last_was_space = true;
+            }
+            continue;
+        }
+
+        sanitized.push(normalized);
+        last_was_space = false;
+    }
+
+    sanitized.trim().to_string()
 }

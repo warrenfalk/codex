@@ -2076,7 +2076,7 @@ async fn status_line_legacy_context_usage_renders_context_used_percent() {
 }
 
 #[tokio::test]
-async fn status_line_branch_state_resets_when_git_branch_disabled() {
+async fn status_line_branch_state_is_preserved_when_git_branch_disabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.status_line_branch = Some("main".to_string());
     chat.status_line_branch_pending = true;
@@ -2085,9 +2085,49 @@ async fn status_line_branch_state_resets_when_git_branch_disabled() {
 
     chat.refresh_status_line();
 
-    assert_eq!(chat.status_line_branch, None);
-    assert!(!chat.status_line_branch_pending);
-    assert!(!chat.status_line_branch_lookup_complete);
+    assert_eq!(chat.status_line_branch, Some("main".to_string()));
+    assert!(chat.status_line_branch_pending);
+    assert!(chat.status_line_branch_lookup_complete);
+}
+
+#[tokio::test]
+async fn window_title_uses_repo_root_branch_and_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let repo = tempdir().expect("tempdir");
+    std::fs::create_dir(repo.path().join(".git")).expect("git dir");
+    let nested = repo.path().join("src");
+    std::fs::create_dir(&nested).expect("nested dir");
+    let repo_name = repo
+        .path()
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .expect("repo dir name");
+
+    chat.current_cwd = Some(nested);
+    chat.status_line_branch = Some("feature/title".to_string());
+    chat.thread_name = Some("Window Title".to_string());
+
+    assert_eq!(
+        chat.window_title(),
+        format!("Codex {repo_name}: \"Window Title\" (feature/title)"),
+    );
+}
+
+#[tokio::test]
+async fn window_title_omits_missing_branch_and_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.current_cwd = Some(PathBuf::from(test_path_display("/workspace/project")));
+
+    assert_eq!(chat.window_title(), "Codex project");
+}
+
+#[tokio::test]
+async fn window_title_places_branch_in_parentheses_without_thread_name() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.current_cwd = Some(PathBuf::from(test_path_display("/workspace/project")));
+    chat.status_line_branch = Some("main".to_string());
+
+    assert_eq!(chat.window_title(), "Codex project (main)");
 }
 
 #[tokio::test]

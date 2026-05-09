@@ -1281,6 +1281,7 @@ See the Codex keymap documentation for supported actions and examples."
                     }
                     // Allow widgets to process any pending timers before rendering.
                     self.chat_widget.pre_draw_tick();
+                    tui.set_window_title(self.chat_widget.window_title());
                     let rendered_area =
                         self.render_chat_widget_frame(tui, terminal_resize_reflow_enabled)?;
                     if self.chat_widget.ambient_pet_image_enabled() {

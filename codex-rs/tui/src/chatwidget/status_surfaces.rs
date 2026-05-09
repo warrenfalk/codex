@@ -134,11 +134,7 @@ impl ChatWidget {
     }
 
     fn sync_status_surface_shared_state(&mut self, selections: &StatusSurfaceSelections) {
-        if !selections.uses_git_branch() {
-            self.status_line_branch = None;
-            self.status_line_branch_pending = false;
-            self.status_line_branch_lookup_complete = false;
-        } else {
+        if selections.uses_git_branch() {
             let cwd = self.status_line_cwd().to_path_buf();
             self.sync_status_line_branch_state(&cwd);
             if !self.status_line_branch_lookup_complete {
@@ -487,6 +483,46 @@ impl ChatWidget {
         Some(Self::truncate_terminal_title_part(
             project, /*max_chars*/ 24,
         ))
+    }
+
+    pub(crate) fn ensure_window_title_branch(&mut self) {
+        let cwd = self.status_line_cwd().to_path_buf();
+        self.sync_status_line_branch_state(&cwd);
+        if !self.status_line_branch_lookup_complete {
+            self.request_status_line_branch(cwd);
+        }
+    }
+
+    fn window_title_directory_name(&self) -> String {
+        let cwd = self.status_line_cwd();
+        let directory = get_git_repo_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+        directory
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| format_directory_display(&directory, /*max_width*/ None))
+    }
+
+    pub(crate) fn window_title(&self) -> String {
+        let directory = self.window_title_directory_name();
+        let mut parts = if let Some(thread_name) =
+            self.thread_name.as_deref().filter(|name| !name.is_empty())
+        {
+            vec![
+                "Codex".to_string(),
+                format!("{directory}: \"{thread_name}\""),
+            ]
+        } else {
+            vec!["Codex".to_string(), directory]
+        };
+        if let Some(branch) = self
+            .status_line_branch
+            .as_deref()
+            .filter(|branch| !branch.is_empty())
+        {
+            parts.push(format!("({branch})"));
+        }
+        parts.join(" ")
     }
 
     /// Resets git-branch cache state when the status-line cwd changes.
