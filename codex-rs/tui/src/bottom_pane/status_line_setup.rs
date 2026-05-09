@@ -103,10 +103,10 @@ pub(crate) enum StatusLineItem {
     #[strum(to_string = "context-used", serialize = "context-usage")]
     ContextUsed,
 
-    /// Remaining usage on the primary rate limit.
+    /// Pace-relative headroom or deficit on the primary rate limit.
     FiveHourLimit,
 
-    /// Remaining usage on the secondary rate limit.
+    /// Pace-relative headroom or deficit on the secondary rate limit.
     WeeklyLimit,
 
     /// Codex application version.
@@ -170,10 +170,10 @@ impl StatusLineItem {
                 "Percentage of context window used (omitted when unknown)"
             }
             StatusLineItem::FiveHourLimit => {
-                "Remaining usage on the primary usage limit (omitted when unavailable)"
+                "Headroom or deficit versus pace on the primary usage limit (omitted when unavailable)"
             }
             StatusLineItem::WeeklyLimit => {
-                "Remaining usage on the secondary usage limit (omitted when unavailable)"
+                "Headroom or deficit versus pace on the secondary usage limit (omitted when unavailable)"
             }
             StatusLineItem::CodexVersion => "Codex application version",
             StatusLineItem::ContextWindowSize => {
