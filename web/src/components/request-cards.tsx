@@ -226,6 +226,7 @@ function CardShell({
 function CommandApprovalCard({
   request,
   onRespond,
+  responding,
 }: RequestCardProps & {
   request: Extract<
     AnyServerRequest,
@@ -256,6 +257,7 @@ function CommandApprovalCard({
           <button
             key={`${request.id}-${index}`}
             className={commandDecisionClassName(decision)}
+            disabled={responding}
             type="button"
             onClick={() => onRespond(request, { decision })}
           >
@@ -270,6 +272,7 @@ function CommandApprovalCard({
 function FileChangeCard({
   request,
   onRespond,
+  responding,
 }: RequestCardProps & {
   request: Extract<
     AnyServerRequest,
@@ -284,6 +287,7 @@ function FileChangeCard({
           (decision) => (
             <button
               key={decision}
+              disabled={responding}
               type="button"
               onClick={() => onRespond(request, { decision })}
             >
@@ -299,6 +303,7 @@ function FileChangeCard({
 function PermissionsCard({
   request,
   onRespond,
+  responding,
 }: RequestCardProps & {
   request: Extract<
     AnyServerRequest,
@@ -384,6 +389,7 @@ function PermissionsCard({
         <label className="field-row">
           <input
             checked={networkEnabled}
+            disabled={responding}
             type="checkbox"
             onChange={(event) => setNetworkEnabled(event.target.checked)}
           />
@@ -397,6 +403,7 @@ function PermissionsCard({
             <label key={entry} className="field-row">
               <input
                 checked={selectedRead.includes(entry)}
+                disabled={responding}
                 type="checkbox"
                 onChange={() =>
                   togglePath(selectedRead, entry, setSelectedRead)
@@ -414,6 +421,7 @@ function PermissionsCard({
             <label key={entry} className="field-row">
               <input
                 checked={selectedWrite.includes(entry)}
+                disabled={responding}
                 type="checkbox"
                 onChange={() =>
                   togglePath(selectedWrite, entry, setSelectedWrite)
@@ -433,6 +441,7 @@ function PermissionsCard({
               <label key={key} className="field-row">
                 <input
                   checked={selectedEntryKeys.includes(key)}
+                  disabled={responding}
                   type="checkbox"
                   onChange={() => toggleEntry(entry)}
                 />
@@ -447,6 +456,7 @@ function PermissionsCard({
       <label className="field-stack">
         <span>Grant scope</span>
         <select
+          disabled={responding}
           value={scope}
           onChange={(event) =>
             setScope(event.target.value as PermissionGrantScope)
@@ -458,12 +468,14 @@ function PermissionsCard({
       </label>
       <div className="button-row">
         <button
+          disabled={responding}
           type="button"
           onClick={() => onRespond(request, buildResponse(false))}
         >
           Submit grant
         </button>
         <button
+          disabled={responding}
           type="button"
           onClick={() => onRespond(request, buildResponse(true))}
         >
@@ -971,19 +983,42 @@ function UnknownRequestCard({ request, onRespond }: RequestCardProps) {
 type RequestCardProps = {
   request: AnyServerRequest;
   onRespond: (request: AnyServerRequest, response: unknown) => void;
+  responding?: boolean;
 };
 
-export function RequestCard({ request, onRespond }: RequestCardProps) {
+export function RequestCard({
+  request,
+  onRespond,
+  responding,
+}: RequestCardProps) {
   if (isRequestMethod(request, "item/commandExecution/requestApproval")) {
-    return <CommandApprovalCard onRespond={onRespond} request={request} />;
+    return (
+      <CommandApprovalCard
+        onRespond={onRespond}
+        request={request}
+        responding={responding}
+      />
+    );
   }
 
   if (isRequestMethod(request, "item/fileChange/requestApproval")) {
-    return <FileChangeCard onRespond={onRespond} request={request} />;
+    return (
+      <FileChangeCard
+        onRespond={onRespond}
+        request={request}
+        responding={responding}
+      />
+    );
   }
 
   if (isRequestMethod(request, "item/permissions/requestApproval")) {
-    return <PermissionsCard onRespond={onRespond} request={request} />;
+    return (
+      <PermissionsCard
+        onRespond={onRespond}
+        request={request}
+        responding={responding}
+      />
+    );
   }
 
   if (isRequestMethod(request, "item/tool/requestUserInput")) {

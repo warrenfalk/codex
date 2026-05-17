@@ -182,6 +182,7 @@ function renderThreadView(
     onSendPrompt: vi.fn().mockResolvedValue(undefined),
     pendingRequests: [],
     renaming: false,
+    respondingRequestIds: new Set(),
     runtimeText: {},
     sending: false,
     thread: buildThread(),

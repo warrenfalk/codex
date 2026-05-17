@@ -6,6 +6,7 @@ import {
 } from "react-bottom-anchored-list";
 
 import type { ConnectionViewState } from "@/lib/backend-store";
+import { requestIdKey } from "@/lib/request-id";
 import { syncTextareaHeight } from "@/lib/textarea-autosize";
 import type { AnyServerRequest, Thread, Turn } from "@/types/protocol";
 
@@ -18,6 +19,7 @@ type Props = {
   initializeSummary: string | null;
   thread: Thread | null;
   pendingRequests: AnyServerRequest[];
+  respondingRequestIds: ReadonlySet<string>;
   runtimeText: Record<string, string>;
   warnings: string[];
   onBack: () => void;
@@ -99,6 +101,7 @@ export function ThreadView({
   initializeSummary,
   thread,
   pendingRequests,
+  respondingRequestIds,
   runtimeText,
   warnings,
   onBack,
@@ -454,6 +457,7 @@ export function ThreadView({
                 key={`${request.method}-${request.id}`}
                 onRespond={onRespondToRequest}
                 request={request}
+                responding={respondingRequestIds.has(requestIdKey(request.id))}
               />
             ))}
           </div>
