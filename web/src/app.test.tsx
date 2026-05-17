@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRouter, MemoryRouter } from "react-router";
 
-import type { Thread, Turn } from "@/types/protocol";
+import type { ServerRequest, Thread, Turn } from "@/types/protocol";
 
 import { App } from "./app";
 
@@ -189,6 +189,49 @@ describe("App routing", () => {
     expect(
       screen.getByRole("heading", { name: "Threads" }),
     ).toBeInTheDocument();
+  });
+
+  it("disables approval buttons after sending a response", async () => {
+    const thread = makeThread("thread-1");
+    const request: ServerRequest = {
+      method: "item/commandExecution/requestApproval",
+      id: "request-1",
+      params: {
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "item-1",
+        command: "pnpm test",
+      },
+    };
+    backendStore.getThreadSnapshot.mockReturnValue({
+      connectionError: null,
+      connectionState: "connected",
+      initializeSummary: "codex 0.0.0 on linux",
+      itemRuntimeText: {},
+      loading: false,
+      pendingRequests: [request],
+      thread,
+      threadId: thread.id,
+      warnings: [],
+    });
+
+    renderApp(["/threads/thread-1"]);
+
+    const acceptButton = screen.getByRole("button", { name: "Yes, proceed" });
+    fireEvent.click(acceptButton);
+
+    expect(backendStore.respondToServerRequest).toHaveBeenCalledWith(
+      "request-1",
+      { decision: "accept" },
+    );
+    await waitFor(() => {
+      expect(acceptButton).toBeDisabled();
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "No, and tell Codex what to do differently",
+      }),
+    ).toBeDisabled();
   });
 
   it("opens the thread from service worker notification click messages", async () => {

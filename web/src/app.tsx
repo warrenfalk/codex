@@ -22,6 +22,7 @@ import {
   type ThreadDetailsSnapshot,
   type ThreadListSnapshot,
 } from "@/lib/backend-store";
+import { requestIdKey } from "@/lib/request-id";
 import { activeTurn } from "@/lib/thread-state";
 import type { AnyServerRequest } from "@/types/protocol";
 
@@ -53,6 +54,9 @@ function AppRoute() {
   );
   const [sendingPrompt, setSendingPrompt] = useState(false);
   const [renamingThread, setRenamingThread] = useState(false);
+  const [respondingRequestIds, setRespondingRequestIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   useEffect(() => subscribeThreadList(setListState), []);
 
@@ -108,11 +112,27 @@ function AppRoute() {
   }, [navigate]);
 
   const thread = threadState?.thread ?? null;
+  const pendingRequests = threadState?.pendingRequests ?? [];
   const active = useMemo(() => activeTurn(thread), [thread]);
   const threadWarnings = [
     ...listState.warnings,
     ...(threadState?.warnings ?? []),
   ];
+
+  useEffect(() => {
+    const pendingRequestIds = new Set(
+      pendingRequests.map((request) => requestIdKey(request.id)),
+    );
+    setRespondingRequestIds((current) => {
+      const next = new Set<string>();
+      for (const requestId of current) {
+        if (pendingRequestIds.has(requestId)) {
+          next.add(requestId);
+        }
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [pendingRequests]);
 
   const handleSelectThread = (threadId: string) => {
     navigate(`/threads/${encodeURIComponent(threadId)}`, {
@@ -164,11 +184,33 @@ function AppRoute() {
     }
   };
 
-  const handleRespondToRequest = async (
+  const handleRespondToRequest = (
     request: AnyServerRequest,
     response: unknown,
   ) => {
-    await respondToServerRequest(request.id, response);
+    const requestId = requestIdKey(request.id);
+    setRespondingRequestIds((current) => {
+      if (current.has(requestId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(requestId);
+      return next;
+    });
+
+    void respondToServerRequest(request.id, response).catch(
+      (error: unknown) => {
+        setRespondingRequestIds((current) => {
+          if (!current.has(requestId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(requestId);
+          return next;
+        });
+        console.error("Failed to respond to server request.", error);
+      },
+    );
   };
 
   return (
@@ -204,11 +246,10 @@ function AppRoute() {
           onBack={handleBackToThreads}
           onInterrupt={() => void handleInterrupt()}
           onRenameThread={handleRenameThread}
-          onRespondToRequest={(request, response) => {
-            void handleRespondToRequest(request, response);
-          }}
+          onRespondToRequest={handleRespondToRequest}
           onSendPrompt={handleSendPrompt}
-          pendingRequests={threadState?.pendingRequests ?? []}
+          pendingRequests={pendingRequests}
+          respondingRequestIds={respondingRequestIds}
           runtimeText={threadState?.itemRuntimeText ?? {}}
           renaming={renamingThread}
           sending={sendingPrompt}
