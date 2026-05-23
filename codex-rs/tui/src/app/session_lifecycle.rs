@@ -277,12 +277,17 @@ impl App {
             );
         }
         self.chat_widget = chat_widget;
-        if !matches!(self.app_server_target, crate::AppServerTarget::Embedded) {
-            if self.connected_backend_disconnected {
-                self.chat_widget.show_disconnected_mode_footer();
-            } else {
+        match self.app_server_footer_state {
+            Some(crate::chatwidget::ConnectedModeFooterState::Connected) => {
                 self.chat_widget.show_connected_mode_footer();
             }
+            Some(crate::chatwidget::ConnectedModeFooterState::Disconnected) => {
+                self.chat_widget.show_disconnected_mode_footer();
+            }
+            Some(crate::chatwidget::ConnectedModeFooterState::LocalFallback) => {
+                self.chat_widget.show_local_fallback_mode_footer();
+            }
+            None => {}
         }
         self.sync_active_agent_label();
     }

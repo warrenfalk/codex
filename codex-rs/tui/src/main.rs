@@ -56,6 +56,7 @@ fn main() -> anyhow::Result<()> {
             inner,
             arg0_paths,
             LoaderOverrides::default(),
+            /*local_endpoint*/ None,
             /*explicit_remote_endpoint*/ None,
         )
         .await?;

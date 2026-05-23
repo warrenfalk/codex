@@ -20,6 +20,7 @@ use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
+use app_server_mode::ResolvedAppServerMode;
 use app_server_session::AppServerSession;
 use app_server_session::ThreadParamsMode;
 use codex_app_server_client::AppServerClient;
@@ -92,6 +93,7 @@ mod app_command;
 mod app_event;
 mod app_event_sender;
 mod app_server_approval_conversions;
+mod app_server_mode;
 mod app_server_session;
 mod approval_events;
 mod ascii_animation;
@@ -910,6 +912,7 @@ pub async fn run_main(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     let strict_config = cli.strict_config;
@@ -963,31 +966,105 @@ pub async fn run_main(
         launch_loader_overrides.user_config_path = Some(user_config_path);
         launch_loader_overrides.user_config_profile = Some(profile_v2.clone());
     }
+    let loader_overrides = launch_loader_overrides;
     let reuse_implicit_local_daemon = can_reuse_implicit_local_daemon(
         &cli_kv_overrides,
-        &launch_loader_overrides,
+        &loader_overrides,
         strict_config,
         cli.bypass_hook_trust,
     );
-    let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
-        maybe_probe_default_daemon_socket(&codex_home).await
-    } else {
-        None
+    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+        arg0_paths.codex_self_exe.clone(),
+        arg0_paths.codex_linux_sandbox_exe.clone(),
+    )?;
+    let cwd = cli.cwd.clone();
+    let discovery_environment_manager =
+        if should_load_configured_environments(&loader_overrides, &AppServerTarget::Embedded) {
+            EnvironmentManager::from_codex_home(
+                codex_home.clone(),
+                Some(local_runtime_paths.clone()),
+            )
+            .await
+        } else {
+            EnvironmentManager::from_env(Some(local_runtime_paths.clone())).await
+        }
+        .map(Arc::new)
+        .map_err(std::io::Error::other)?;
+    let discovery_config_cwd = config_cwd_for_app_server_target(
+        cwd.as_deref(),
+        &AppServerTarget::Embedded,
+        &discovery_environment_manager,
+    )?;
+
+    #[allow(clippy::print_stderr)]
+    let discovery_config_toml = match load_config_as_toml_with_cli_and_load_options(
+        &codex_home,
+        discovery_config_cwd.as_ref(),
+        cli_kv_overrides.clone(),
+        codex_config::ConfigLoadOptions {
+            loader_overrides: loader_overrides.clone(),
+            strict_config,
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
+        },
+    )
+    .await
+    {
+        Ok(config_toml) => config_toml,
+        Err(err) => {
+            let config_error = err
+                .get_ref()
+                .and_then(|err| err.downcast_ref::<ConfigLoadError>())
+                .map(ConfigLoadError::config_error);
+            if let Some(config_error) = config_error {
+                eprintln!(
+                    "Error loading config.toml:\n{}",
+                    format_config_error_with_source(config_error)
+                );
+            } else {
+                eprintln!("Error loading config.toml: {err}");
+            }
+            std::process::exit(1);
+        }
     };
-    let app_server_target = app_server_target_for_launch(
-        explicit_remote_endpoint,
-        default_daemon,
-        reuse_implicit_local_daemon,
-    );
+
+    let has_explicit_app_server = local_endpoint.is_some() || explicit_remote_endpoint.is_some();
+    let configured_local = if has_explicit_app_server {
+        None
+    } else {
+        discovery_config_toml
+            .tui
+            .as_ref()
+            .and_then(|tui| tui.local_app_server_url.clone())
+    };
+    let app_server_mode = if has_explicit_app_server || configured_local.is_some() {
+        app_server_mode::resolve_app_server_mode(
+            local_endpoint,
+            explicit_remote_endpoint,
+            configured_local,
+        )
+        .await
+        .map_err(|err| std::io::Error::other(err.to_string()))?
+    } else {
+        let default_daemon = if reuse_implicit_local_daemon {
+            maybe_probe_default_daemon_socket(&codex_home).await
+        } else {
+            None
+        };
+        let target = app_server_target_for_launch(
+            /*explicit_remote_endpoint*/ None,
+            default_daemon,
+            reuse_implicit_local_daemon,
+        );
+        let footer_state = matches!(target, AppServerTarget::LocalDaemon { .. })
+            .then_some(crate::chatwidget::ConnectedModeFooterState::Connected);
+        ResolvedAppServerMode::for_unconnected_target(target, footer_state)
+    };
+    let app_server_target = app_server_mode.target().clone();
     let remote_cwd_override = cli
         .cwd
         .clone()
         .filter(|_| app_server_target.uses_remote_workspace());
 
-    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
-        arg0_paths.codex_self_exe.clone(),
-        arg0_paths.codex_linux_sandbox_exe.clone(),
-    )?;
     let environment_manager =
         if should_load_configured_environments(&loader_overrides, &app_server_target) {
             EnvironmentManager::from_codex_home(codex_home.clone(), Some(local_runtime_paths)).await
@@ -996,15 +1073,8 @@ pub async fn run_main(
         }
         .map(Arc::new)
         .map_err(std::io::Error::other)?;
-    let cwd = cli.cwd.clone();
     let config_cwd =
         config_cwd_for_app_server_target(cwd.as_deref(), &app_server_target, &environment_manager)?;
-    let mut loader_overrides = loader_overrides;
-    if let Some(profile_v2) = cli.config_profile_v2.as_ref() {
-        let user_config_path = resolve_profile_v2_config_path(&codex_home, profile_v2);
-        loader_overrides.user_config_path = Some(user_config_path);
-        loader_overrides.user_config_profile = Some(profile_v2.clone());
-    }
 
     let bootstrap_config_toml = load_config_toml_or_exit(
         &codex_home,
@@ -1312,7 +1382,7 @@ pub async fn run_main(
         arg0_paths,
         loader_overrides,
         strict_config,
-        app_server_target,
+        app_server_mode,
         remote_cwd_override,
         config,
         manually_selected_oss_provider,
@@ -1334,7 +1404,7 @@ async fn run_ratatui_app(
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    app_server_target: AppServerTarget,
+    app_server_mode: ResolvedAppServerMode,
     remote_cwd_override: Option<PathBuf>,
     initial_config: Config,
     manually_selected_oss_provider: Option<String>,
@@ -1346,6 +1416,9 @@ async fn run_ratatui_app(
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
 ) -> color_eyre::Result<AppExitInfo> {
+    let app_server_target = app_server_mode.target().clone();
+    let initial_app_server_footer_state = app_server_mode.footer_state();
+    let initial_app_server = app_server_mode.into_initial_app_server();
     let uses_remote_workspace = app_server_target.uses_remote_workspace();
     color_eyre::install()?;
 
@@ -1395,27 +1468,34 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
-    let app_server_session = match start_app_server(
-        &app_server_target,
-        arg0_paths.clone(),
-        initial_config.clone(),
-        cli_kv_overrides.clone(),
-        loader_overrides.clone(),
-        strict_config,
-        cloud_config_bundle.clone(),
-        feedback.clone(),
-        log_db.clone(),
-        state_db.clone(),
-        environment_manager.clone(),
-    )
-    .await
-    {
-        Ok(app_server) => AppServerSession::new(app_server, app_server_target.thread_params_mode()),
-        Err(err) => {
-            terminal_restore_guard.restore_silently();
-            session_log::log_session_end();
-            return Err(err);
+    let app_server_session = match initial_app_server {
+        Some(app_server) => {
+            AppServerSession::new(app_server, app_server_target.thread_params_mode())
         }
+        None => match start_app_server(
+            &app_server_target,
+            arg0_paths.clone(),
+            initial_config.clone(),
+            cli_kv_overrides.clone(),
+            loader_overrides.clone(),
+            strict_config,
+            cloud_config_bundle.clone(),
+            feedback.clone(),
+            log_db.clone(),
+            state_db.clone(),
+            environment_manager.clone(),
+        )
+        .await
+        {
+            Ok(app_server) => {
+                AppServerSession::new(app_server, app_server_target.thread_params_mode())
+            }
+            Err(err) => {
+                terminal_restore_guard.restore_silently();
+                session_log::log_session_end();
+                return Err(err);
+            }
+        },
     }
     .with_remote_cwd_override(remote_cwd_override.clone());
     if let Some(provider) = manually_selected_oss_provider.as_deref()
@@ -1860,6 +1940,7 @@ async fn run_ratatui_app(
         should_show_trust_screen_flag, // Preserve the startup-time trust NUX signal before onboarding
         should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
+        initial_app_server_footer_state,
         state_db,
         environment_manager,
         startup_elapsed_before_app,

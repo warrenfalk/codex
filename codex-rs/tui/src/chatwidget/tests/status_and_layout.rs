@@ -2886,6 +2886,45 @@ async fn status_line_model_with_reasoning_context_remaining_percent_remote_foote
 }
 
 #[tokio::test]
+async fn status_line_model_with_reasoning_context_remaining_percent_local_fallback_footer_snapshot()
+{
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.show_welcome_banner = false;
+    chat.config.cwd = test_project_path().abs();
+    chat.config.tui_status_line = Some(vec![
+        "model-with-reasoning".to_string(),
+        "context-remaining-percent".to_string(),
+        "current-dir".to_string(),
+    ]);
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
+    chat.set_token_info(Some(make_token_info(
+        /*total_tokens*/ 12_000, /*context_window*/ 24_000,
+    )));
+    chat.show_local_fallback_mode_footer();
+    set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
+    chat.refresh_status_line();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw local fallback footer");
+    assert_chatwidget_snapshot!(
+        "status_line_model_with_reasoning_context_remaining_percent_local_fallback_footer",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
 async fn connected_mode_footer_badge_changes_color_when_disconnected() {
     use ratatui::style::Stylize;
 
@@ -2901,6 +2940,13 @@ async fn connected_mode_footer_badge_changes_color_when_disconnected() {
     let disconnected = chat.status_line_value().expect("disconnected status line");
     let expected_disconnected = "[R]".red();
     assert_eq!(disconnected.spans.last(), Some(&expected_disconnected));
+
+    chat.show_local_fallback_mode_footer();
+    let local_fallback = chat
+        .status_line_value()
+        .expect("local fallback status line");
+    let expected_local_fallback = "[L]".red();
+    assert_eq!(local_fallback.spans.last(), Some(&expected_local_fallback));
 }
 
 fn test_thread_goal(

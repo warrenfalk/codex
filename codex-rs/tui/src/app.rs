@@ -29,6 +29,7 @@ use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
+use crate::chatwidget::ConnectedModeFooterState;
 use crate::chatwidget::ExternalEditorState;
 use crate::chatwidget::ReplayKind;
 use crate::chatwidget::ThreadInputState;
@@ -530,6 +531,7 @@ pub(crate) struct App {
     feedback_audience: FeedbackAudience,
     environment_manager: Arc<EnvironmentManager>,
     app_server_target: AppServerTarget,
+    app_server_footer_state: Option<ConnectedModeFooterState>,
     /// Set when the user confirms an update; propagated on exit.
     pub(crate) pending_update_action: Option<UpdateAction>,
 
@@ -734,6 +736,7 @@ impl App {
         entered_trust_nux: bool,
         should_prompt_windows_sandbox_nux_at_startup: bool,
         app_server_target: AppServerTarget,
+        initial_app_server_footer_state: Option<ConnectedModeFooterState>,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
         startup_elapsed_before_app: Duration,
@@ -998,6 +1001,10 @@ See the Codex keymap documentation for supported actions and examples."
         })?;
         #[cfg(not(debug_assertions))]
         let upgrade_version = crate::updates::get_upgrade_version(&config);
+        let app_server_footer_state = initial_app_server_footer_state.or_else(|| {
+            (!matches!(app_server_target, AppServerTarget::Embedded))
+                .then_some(ConnectedModeFooterState::Connected)
+        });
 
         let mut app = Self {
             model_catalog,
@@ -1032,6 +1039,7 @@ See the Codex keymap documentation for supported actions and examples."
             feedback_audience,
             environment_manager,
             app_server_target,
+            app_server_footer_state,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
             connected_backend_disconnected: false,
@@ -1055,8 +1063,17 @@ See the Codex keymap documentation for supported actions and examples."
         if let Some(entry) = startup_hooks_browser {
             app.chat_widget.open_hooks_browser(entry);
         }
-        if !matches!(app.app_server_target, AppServerTarget::Embedded) {
-            app.chat_widget.show_connected_mode_footer();
+        match app.app_server_footer_state {
+            Some(ConnectedModeFooterState::Connected) => {
+                app.chat_widget.show_connected_mode_footer();
+            }
+            Some(ConnectedModeFooterState::Disconnected) => {
+                app.chat_widget.show_disconnected_mode_footer();
+            }
+            Some(ConnectedModeFooterState::LocalFallback) => {
+                app.chat_widget.show_local_fallback_mode_footer();
+            }
+            None => {}
         }
         let initial_session_started_at = Instant::now();
         if let Some(started) = initial_started_thread {

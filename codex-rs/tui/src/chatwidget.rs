@@ -507,6 +507,7 @@ pub(crate) struct ChatWidgetInit {
 pub(crate) enum ConnectedModeFooterState {
     Connected,
     Disconnected,
+    LocalFallback,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1557,6 +1558,10 @@ impl ChatWidget {
     pub(crate) fn add_error_message(&mut self, message: String) {
         self.add_to_history(history_cell::new_error_event(message));
         self.request_redraw();
+    }
+
+    pub(crate) fn show_local_fallback_mode_footer(&mut self) {
+        self.set_connected_mode_footer_state(Some(ConnectedModeFooterState::LocalFallback));
     }
 
     fn add_app_server_stub_message(&mut self, feature: &str) {

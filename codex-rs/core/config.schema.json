@@ -2937,6 +2937,11 @@
           },
           "description": "Keybinding overrides for the TUI.\n\nThis supports rebinding selected actions globally and by context. Context bindings take precedence over `global` bindings."
         },
+        "local_app_server_url": {
+          "default": null,
+          "description": "Default local shared app-server endpoint for interactive TUI sessions.\n\nWhen set, Codex first tries to connect to this shared local backend. If that startup connection fails, Codex falls back to a standalone private embedded app-server session instead.",
+          "type": "string"
+        },
         "model_availability_nux": {
           "allOf": [
             {
