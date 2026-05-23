@@ -95,6 +95,12 @@ pub(crate) enum StatusLineItem {
     ApprovalMode,
 
     /// Percentage of context window remaining.
+    ///
+    /// Also accepts the legacy `context-remaining-percent` config value.
+    #[strum(
+        to_string = "context-remaining",
+        serialize = "context-remaining-percent"
+    )]
     ContextRemaining,
 
     /// Percentage of context window used.
@@ -418,6 +424,10 @@ mod tests {
     fn context_remaining_is_selectable_id() {
         assert_eq!(
             "context-remaining".parse::<StatusLineItem>(),
+            Ok(StatusLineItem::ContextRemaining)
+        );
+        assert_eq!(
+            "context-remaining-percent".parse::<StatusLineItem>(),
             Ok(StatusLineItem::ContextRemaining)
         );
         assert_eq!(

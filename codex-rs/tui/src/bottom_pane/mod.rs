@@ -973,6 +973,11 @@ impl BottomPane {
         self.composer.status_line_text()
     }
 
+    #[cfg(test)]
+    pub(crate) fn status_line_value(&self) -> Option<Line<'static>> {
+        self.composer.status_line_value()
+    }
+
     pub(crate) fn show_esc_backtrack_hint(&mut self) {
         self.esc_backtrack_hint = true;
         self.composer.set_esc_backtrack_hint(/*show*/ true);

@@ -164,6 +164,7 @@ impl ChatWidget {
             status_state: StatusState::default(),
             review: ReviewState::default(),
             op_submission_disabled_reason: None,
+            connected_mode_footer_state: None,
             connected_backend_status_active: false,
             active_hook_cell: None,
             ambient_pet: None,

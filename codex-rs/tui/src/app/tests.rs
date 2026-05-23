@@ -5455,6 +5455,94 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
 }
 
 #[tokio::test]
+async fn replace_chat_widget_preserves_connected_mode_footer_state() {
+    use ratatui::style::Color;
+
+    let mut app = make_test_app().await;
+    app.config.tui_status_line = Some(vec!["current-dir".to_string()]);
+    app.app_server_target = AppServerTarget::LocalDaemon {
+        endpoint: remote_app_server_endpoint(/*port*/ 8080),
+    };
+    app.chat_widget.show_connected_mode_footer();
+
+    let replacement = ChatWidget::new_with_app_event(ChatWidgetInit {
+        config: app.config.clone(),
+        frame_requester: crate::tui::FrameRequester::test_dummy(),
+        app_event_tx: app.app_event_tx.clone(),
+        workspace_command_runner: None,
+        initial_user_message: None,
+        enhanced_keys_supported: app.enhanced_keys_supported,
+        has_chatgpt_account: app.chat_widget.has_chatgpt_account(),
+        model_catalog: app.model_catalog.clone(),
+        feedback: app.feedback.clone(),
+        is_first_run: false,
+        status_account_display: app.chat_widget.status_account_display().cloned(),
+        runtime_model_provider_base_url: app
+            .chat_widget
+            .runtime_model_provider_base_url()
+            .map(str::to_string),
+        initial_plan_type: app.chat_widget.current_plan_type(),
+        model: Some(app.chat_widget.current_model().to_string()),
+        startup_tooltip_override: None,
+        status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
+        terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
+        session_telemetry: app.session_telemetry.clone(),
+    });
+    app.replace_chat_widget(replacement);
+
+    let connected = app
+        .chat_widget
+        .status_line_value()
+        .expect("connected status line");
+    let connected_badge = connected
+        .spans
+        .iter()
+        .find(|span| span.content.as_ref() == "[R]")
+        .expect("connected badge span");
+    assert_eq!(connected_badge.content.as_ref(), "[R]");
+    assert_eq!(connected_badge.style.fg, Some(Color::LightBlue));
+
+    app.connected_backend_disconnected = true;
+    app.chat_widget.show_disconnected_mode_footer();
+    let replacement = ChatWidget::new_with_app_event(ChatWidgetInit {
+        config: app.config.clone(),
+        frame_requester: crate::tui::FrameRequester::test_dummy(),
+        app_event_tx: app.app_event_tx.clone(),
+        workspace_command_runner: None,
+        initial_user_message: None,
+        enhanced_keys_supported: app.enhanced_keys_supported,
+        has_chatgpt_account: app.chat_widget.has_chatgpt_account(),
+        model_catalog: app.model_catalog.clone(),
+        feedback: app.feedback.clone(),
+        is_first_run: false,
+        status_account_display: app.chat_widget.status_account_display().cloned(),
+        runtime_model_provider_base_url: app
+            .chat_widget
+            .runtime_model_provider_base_url()
+            .map(str::to_string),
+        initial_plan_type: app.chat_widget.current_plan_type(),
+        model: Some(app.chat_widget.current_model().to_string()),
+        startup_tooltip_override: None,
+        status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
+        terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
+        session_telemetry: app.session_telemetry.clone(),
+    });
+    app.replace_chat_widget(replacement);
+
+    let disconnected = app
+        .chat_widget
+        .status_line_value()
+        .expect("disconnected status line");
+    let disconnected_badge = disconnected
+        .spans
+        .iter()
+        .find(|span| span.content.as_ref() == "[R]")
+        .expect("disconnected badge span");
+    assert_eq!(disconnected_badge.content.as_ref(), "[R]");
+    assert_eq!(disconnected_badge.style.fg, Some(Color::Red));
+}
+
+#[tokio::test]
 async fn refreshed_snapshot_session_persists_resumed_turns() {
     let mut app = make_test_app().await;
     let thread_id = ThreadId::new();
