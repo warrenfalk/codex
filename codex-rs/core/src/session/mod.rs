@@ -899,7 +899,7 @@ pub(crate) fn session_loop_termination_from_handle(
     .shared()
 }
 
-async fn thread_title_from_thread_store(
+pub(crate) async fn thread_title_from_thread_store(
     live_thread: Option<&LiveThread>,
     thread_store: &Arc<dyn ThreadStore>,
     conversation_id: ThreadId,
@@ -1272,6 +1272,8 @@ impl Session {
         {
             let mut state = self.state.lock().await;
             state.set_next_turn_is_first(!has_prior_user_turns);
+            let has_thread_name = state.session_configuration.thread_name.is_some();
+            state.set_auto_thread_title_requested(has_prior_user_turns || has_thread_name);
         }
         match conversation_history {
             InitialHistory::New | InitialHistory::Cleared => {
@@ -1508,6 +1510,18 @@ impl Session {
     pub(crate) async fn take_session_startup_prewarm(&self) -> Option<SessionStartupPrewarmHandle> {
         let mut state = self.state.lock().await;
         state.take_session_startup_prewarm()
+    }
+
+    pub(crate) async fn mark_auto_thread_title_requested(&self) -> bool {
+        let mut state = self.state.lock().await;
+        state.mark_auto_thread_title_requested()
+    }
+
+    pub(crate) async fn apply_thread_name_update_if_unnamed(
+        self: &Arc<Self>,
+        name: String,
+    ) -> anyhow::Result<bool> {
+        handlers::apply_thread_name_update_if_unnamed(self, name).await
     }
 
     pub(crate) async fn get_config(&self) -> std::sync::Arc<Config> {

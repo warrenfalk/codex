@@ -45,6 +45,7 @@ pub use rollout::create_fake_rollout_with_token_usage;
 pub use rollout::rollout_path;
 use serde::de::DeserializeOwned;
 pub use test_app_server::DEFAULT_CLIENT_NAME;
+pub use test_app_server::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR;
 pub use test_app_server::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
 pub use test_app_server::TestAppServer;
 
