@@ -43,14 +43,14 @@ pub(crate) struct SessionState {
     pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
     next_turn_is_first: bool,
-    auto_thread_title_requested: bool,
+    auto_thread_title: AutoThreadTitleState,
 }
 
 impl SessionState {
     /// Create a new session state mirroring previous `State::default()` semantics.
     pub(crate) fn new(session_configuration: SessionConfiguration) -> Self {
         let history = ContextManager::new();
-        let auto_thread_title_requested = session_configuration.has_thread_name();
+        let auto_thread_title = AutoThreadTitleState::new(session_configuration.has_thread_name());
         Self {
             session_configuration,
             history,
@@ -66,7 +66,7 @@ impl SessionState {
             pending_session_start_sources: VecDeque::new(),
             granted_permissions_by_environment_id: HashMap::new(),
             next_turn_is_first: true,
-            auto_thread_title_requested,
+            auto_thread_title,
         }
     }
 
@@ -99,16 +99,41 @@ impl SessionState {
         is_first_turn
     }
 
-    pub(crate) fn set_auto_thread_title_requested(&mut self, value: bool) {
-        self.auto_thread_title_requested = value;
+    pub(crate) fn disable_auto_thread_title(&mut self) {
+        self.auto_thread_title.disabled = true;
     }
 
-    pub(crate) fn mark_auto_thread_title_requested(&mut self) -> bool {
-        if self.auto_thread_title_requested || self.session_configuration.has_thread_name() {
+    pub(crate) fn mark_auto_thread_title_initial_requested(&mut self) -> bool {
+        if self.auto_thread_title.disabled
+            || self.auto_thread_title.initial_requested
+            || self.session_configuration.has_thread_name()
+        {
             return false;
         }
-        self.auto_thread_title_requested = true;
+        self.auto_thread_title.initial_requested = true;
         true
+    }
+
+    pub(crate) fn mark_auto_thread_title_revision_requested(&mut self) -> bool {
+        if self.auto_thread_title.disabled || self.auto_thread_title.revision_requested {
+            return false;
+        }
+        if let Some(thread_name) = self.session_configuration.thread_name()
+            && self.auto_thread_title.generated_title.as_deref() != Some(thread_name)
+        {
+            self.auto_thread_title.disabled = true;
+            return false;
+        }
+        self.auto_thread_title.revision_requested = true;
+        true
+    }
+
+    pub(crate) fn auto_thread_title_generated_title(&self) -> Option<String> {
+        self.auto_thread_title.generated_title.clone()
+    }
+
+    pub(crate) fn record_auto_thread_title(&mut self, title: String) {
+        self.auto_thread_title.generated_title = Some(title);
     }
 
     pub(crate) fn clone_history(&self) -> ContextManager {
@@ -314,6 +339,24 @@ impl SessionState {
         self.granted_permissions_by_environment_id
             .get(environment_id)
             .cloned()
+    }
+}
+
+struct AutoThreadTitleState {
+    disabled: bool,
+    initial_requested: bool,
+    revision_requested: bool,
+    generated_title: Option<String>,
+}
+
+impl AutoThreadTitleState {
+    fn new(disabled: bool) -> Self {
+        Self {
+            disabled,
+            initial_requested: false,
+            revision_requested: false,
+            generated_title: None,
+        }
     }
 }
 

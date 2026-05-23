@@ -181,6 +181,10 @@ impl SessionConfiguration {
         self.thread_name.is_some()
     }
 
+    pub(crate) fn thread_name(&self) -> Option<&str> {
+        self.thread_name.as_deref()
+    }
+
     pub(super) fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         ThreadConfigSnapshot {
             model: self.collaboration_mode.model().to_string(),

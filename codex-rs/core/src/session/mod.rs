@@ -285,6 +285,12 @@ impl SteerInputError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutoThreadTitleApplyMode {
+    Initial,
+    Revision,
+}
+
 /// Notes from the previous real user turn.
 ///
 /// Conceptually this is the same role that `previous_model` used to fill, but
@@ -1273,7 +1279,9 @@ impl Session {
             let mut state = self.state.lock().await;
             state.set_next_turn_is_first(!has_prior_user_turns);
             let has_thread_name = state.session_configuration.thread_name.is_some();
-            state.set_auto_thread_title_requested(has_prior_user_turns || has_thread_name);
+            if has_prior_user_turns || has_thread_name {
+                state.disable_auto_thread_title();
+            }
         }
         match conversation_history {
             InitialHistory::New | InitialHistory::Cleared => {
@@ -1512,16 +1520,27 @@ impl Session {
         state.take_session_startup_prewarm()
     }
 
-    pub(crate) async fn mark_auto_thread_title_requested(&self) -> bool {
+    pub(crate) async fn mark_auto_thread_title_initial_requested(&self) -> bool {
         let mut state = self.state.lock().await;
-        state.mark_auto_thread_title_requested()
+        state.mark_auto_thread_title_initial_requested()
     }
 
-    pub(crate) async fn apply_thread_name_update_if_unnamed(
+    pub(crate) async fn mark_auto_thread_title_revision_requested(&self) -> bool {
+        let mut state = self.state.lock().await;
+        state.mark_auto_thread_title_revision_requested()
+    }
+
+    pub(crate) async fn auto_thread_title_generated_title(&self) -> Option<String> {
+        let state = self.state.lock().await;
+        state.auto_thread_title_generated_title()
+    }
+
+    pub(crate) async fn apply_auto_thread_title_update(
         self: &Arc<Self>,
         name: String,
+        mode: AutoThreadTitleApplyMode,
     ) -> anyhow::Result<bool> {
-        handlers::apply_thread_name_update_if_unnamed(self, name).await
+        handlers::apply_auto_thread_title_update(self, name, mode).await
     }
 
     pub(crate) async fn get_config(&self) -> std::sync::Arc<Config> {
