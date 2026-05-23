@@ -279,12 +279,27 @@ impl ChatWidget {
         copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
     ) {
         let input = self.composer_text_with_pending();
+        self.copy_text_to_clipboard_with_status(
+            &input,
+            "Copied current input to clipboard",
+            "No input to copy",
+            copy_fn,
+        );
+    }
+
+    pub(crate) fn copy_text_to_clipboard_with_status(
+        &mut self,
+        input: &str,
+        success_message: &'static str,
+        empty_message: &'static str,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) {
         match input.is_empty() {
-            false => match copy_fn(&input) {
+            false => match copy_fn(input) {
                 Ok(lease) => {
                     self.clipboard_lease = lease;
                     self.add_to_history(history_cell::new_info_event(
-                        "Copied current input to clipboard".into(),
+                        success_message.into(),
                         /*hint*/ None,
                     ));
                 }
@@ -292,7 +307,7 @@ impl ChatWidget {
                     "Copy failed: {error}"
                 ))),
             },
-            true => self.add_to_history(history_cell::new_error_event("No input to copy".into())),
+            true => self.add_to_history(history_cell::new_error_event(empty_message.into())),
         }
         self.request_redraw();
     }

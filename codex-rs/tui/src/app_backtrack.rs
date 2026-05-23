@@ -45,6 +45,7 @@ use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
 
 const NO_PREVIOUS_MESSAGE_TO_EDIT: &str = "No previous message to edit.";
 pub(crate) const SIDE_EDIT_PREVIOUS_UNAVAILABLE_MESSAGE: &str =
@@ -117,6 +118,17 @@ impl App {
     ) -> Result<bool> {
         if self.backtrack.overlay_preview_active {
             match event {
+                TuiEvent::Key(KeyEvent {
+                    code: KeyCode::Char(c),
+                    modifiers,
+                    kind: KeyEventKind::Press,
+                    ..
+                }) if modifiers.contains(KeyModifiers::CONTROL) && c.eq_ignore_ascii_case(&'i') => {
+                    self.copy_selected_backtrack_prompt_with(
+                        crate::clipboard_copy::copy_to_clipboard,
+                    );
+                    Ok(true)
+                }
                 TuiEvent::Key(KeyEvent {
                     code: KeyCode::Esc,
                     kind: KeyEventKind::Press | KeyEventKind::Repeat,
@@ -499,6 +511,27 @@ impl App {
         let selection = self.backtrack_selection(self.backtrack.nth_user_message);
         self.reset_backtrack_state();
         selection
+    }
+
+    pub(crate) fn copy_selected_backtrack_prompt_with(
+        &mut self,
+        copy_fn: impl FnOnce(
+            &str,
+        ) -> std::result::Result<
+            Option<crate::clipboard_copy::ClipboardLease>,
+            String,
+        >,
+    ) {
+        let selected_prompt = self
+            .backtrack_selection(self.backtrack.nth_user_message)
+            .map(|selection| selection.prefill)
+            .unwrap_or_default();
+        self.chat_widget.copy_text_to_clipboard_with_status(
+            &selected_prompt,
+            "Copied selected prompt to clipboard",
+            "No selected prompt to copy",
+            copy_fn,
+        );
     }
 
     /// Clear all backtrack-related state and composer hints.
