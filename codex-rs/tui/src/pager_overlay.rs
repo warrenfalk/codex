@@ -343,7 +343,7 @@ impl PagerView {
         if area.height == 0 || idx >= self.renderables.len() {
             return;
         }
-        let first = self
+        let first: usize = self
             .renderables
             .iter()
             .take(idx)
@@ -352,9 +352,7 @@ impl PagerView {
         let last = first + self.renderables[idx].desired_height(area.width) as usize;
         let current_top = self.scroll_offset;
         let current_bottom = current_top.saturating_add(area.height.saturating_sub(1) as usize);
-        if first < current_top {
-            self.scroll_offset = first;
-        } else if last > current_bottom {
+        if first < current_top || last > current_bottom {
             self.scroll_offset = last.saturating_sub(area.height.saturating_sub(1) as usize);
         }
     }
@@ -1299,6 +1297,33 @@ mod tests {
         }));
 
         assert_eq!(overlay.view.scroll_offset, 0);
+    }
+
+    #[test]
+    fn transcript_overlay_highlight_above_view_scrolls_into_view() {
+        let mut overlay = transcript_overlay(
+            (0..30)
+                .map(|i| {
+                    Arc::new(TestCell {
+                        lines: vec![Line::from(format!("line-{i:02}"))],
+                    }) as Arc<dyn HistoryCell>
+                })
+                .collect(),
+        );
+        let area = Rect::new(0, 0, 40, 15);
+        overlay.view.scroll_offset = 30;
+
+        overlay.set_highlight_cell(Some(12));
+        let visible = transcript_line_numbers(&mut overlay, area);
+
+        assert!(
+            visible.contains(&12),
+            "expected selected line-12 to be visible, got {visible:?}"
+        );
+        assert!(
+            overlay.view.scroll_offset < 30,
+            "expected the view to scroll up to reveal the selected line"
+        );
     }
 
     #[test]

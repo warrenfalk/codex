@@ -32,10 +32,12 @@ use crate::app::App;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
 use crate::chatwidget::UserMessage;
-#[cfg(test)]
+use crate::history_cell::AgentMarkdownCell;
 use crate::history_cell::AgentMessageCell;
+use crate::history_cell::HistoryCell;
 use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
+use crate::key_hint::KeyBindingListExt;
 use crate::pager_overlay::Overlay;
 use crate::tui;
 use crate::tui::TuiEvent;
@@ -46,6 +48,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use ratatui::text::Line;
 
 const NO_PREVIOUS_MESSAGE_TO_EDIT: &str = "No previous message to edit.";
 pub(crate) const SIDE_EDIT_PREVIOUS_UNAVAILABLE_MESSAGE: &str =
@@ -125,6 +128,12 @@ impl App {
                     ..
                 }) if modifiers.contains(KeyModifiers::CONTROL) && c.eq_ignore_ascii_case(&'i') => {
                     self.copy_selected_backtrack_prompt_with(
+                        crate::clipboard_copy::copy_to_clipboard,
+                    );
+                    Ok(true)
+                }
+                TuiEvent::Key(key_event) if self.keymap.app.copy.is_pressed(key_event) => {
+                    self.copy_agent_message_before_selected_prompt_with(
                         crate::clipboard_copy::copy_to_clipboard,
                     );
                     Ok(true)
@@ -534,6 +543,32 @@ impl App {
         );
     }
 
+    pub(crate) fn copy_agent_message_before_selected_prompt_with(
+        &mut self,
+        copy_fn: impl FnOnce(
+            &str,
+        ) -> std::result::Result<
+            Option<crate::clipboard_copy::ClipboardLease>,
+            String,
+        >,
+    ) {
+        let prior_agent_message = self
+            .backtrack
+            .base_id
+            .filter(|base_id| self.chat_widget.thread_id() == Some(*base_id))
+            .and_then(|_| {
+                nth_user_position(&self.transcript_cells, self.backtrack.nth_user_message)
+            })
+            .and_then(|idx| agent_message_before_cell(&self.transcript_cells, idx))
+            .unwrap_or_default();
+        self.chat_widget.copy_text_to_clipboard_with_status(
+            &prior_agent_message,
+            "Copied previous response to clipboard",
+            "No previous response to copy",
+            copy_fn,
+        );
+    }
+
     /// Clear all backtrack-related state and composer hints.
     pub(crate) fn reset_backtrack_state(&mut self) {
         self.backtrack.primed = false;
@@ -719,6 +754,62 @@ fn nth_user_position(
     user_positions_iter(cells)
         .enumerate()
         .find_map(|(i, idx)| (i == nth).then_some(idx))
+}
+
+fn agent_message_before_cell(cells: &[Arc<dyn HistoryCell>], cell_idx: usize) -> Option<String> {
+    let mut agent_idx = None;
+    for idx in (0..cell_idx).rev() {
+        let cell = &cells[idx];
+        if cell.as_any().is::<UserHistoryCell>() || cell.as_any().is::<SessionInfoCell>() {
+            break;
+        }
+        if copy_text_for_agent_cell(cell).is_some() {
+            agent_idx = Some(idx);
+            break;
+        }
+    }
+
+    let agent_idx = agent_idx?;
+    if cells[agent_idx].as_any().is::<AgentMessageCell>() {
+        let mut start = agent_idx;
+        while start > 0 && cells[start - 1].as_any().is::<AgentMessageCell>() {
+            start -= 1;
+        }
+        let text = (start..=agent_idx)
+            .filter_map(|idx| copy_text_for_agent_cell(&cells[idx]))
+            .collect::<Vec<_>>()
+            .join("\n");
+        (!text.is_empty()).then_some(text)
+    } else {
+        copy_text_for_agent_cell(&cells[agent_idx])
+    }
+}
+
+fn copy_text_for_agent_cell(cell: &Arc<dyn HistoryCell>) -> Option<String> {
+    if let Some(cell) = cell.as_any().downcast_ref::<AgentMarkdownCell>() {
+        return non_empty_copy_text(cell.markdown_source().to_string());
+    }
+
+    cell.as_any()
+        .downcast_ref::<AgentMessageCell>()
+        .and_then(|cell| non_empty_copy_text(lines_to_plain_text(&cell.raw_lines())))
+}
+
+fn non_empty_copy_text(text: String) -> Option<String> {
+    (!text.is_empty()).then_some(text)
+}
+
+fn lines_to_plain_text(lines: &[Line<'static>]) -> String {
+    lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn user_positions_iter(
