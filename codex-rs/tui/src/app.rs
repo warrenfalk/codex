@@ -1062,6 +1062,9 @@ See the Codex keymap documentation for supported actions and examples."
         if let Some(entry) = startup_hooks_browser {
             app.chat_widget.open_hooks_browser(entry);
         }
+        if !matches!(app.app_server_target, AppServerTarget::Embedded) {
+            app.chat_widget.show_connected_mode_footer();
+        }
         let initial_session_started_at = Instant::now();
         if let Some(started) = initial_started_thread {
             let thread_id = started.session.thread_id;
