@@ -1564,6 +1564,7 @@ mod tests {
     use super::*;
     use crate::protocol::v2::CommandExecutionSource;
     use codex_protocol::ThreadId;
+    use codex_protocol::config_types::ModeKind;
     use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
     use codex_protocol::items::HookPromptFragment as CoreHookPromptFragment;
     use codex_protocol::items::SleepItem as CoreSleepItem;
@@ -2247,6 +2248,112 @@ mod tests {
                 },
                 ThreadItem::AgentMessage {
                     id: "item-4".into(),
+                    text: "A3".into(),
+                    phase: None,
+                    memory_citation: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn thread_rollback_drops_user_boundaries_inside_explicit_turn() {
+        let user = |message: &str| {
+            EventMsg::UserMessage(UserMessageEvent {
+                client_id: None,
+                message: message.into(),
+                images: None,
+                image_details: Vec::new(),
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+                local_image_details: Vec::new(),
+            })
+        };
+        let agent = |message: &str| {
+            EventMsg::AgentMessage(AgentMessageEvent {
+                message: message.into(),
+                phase: None,
+                memory_citation: None,
+            })
+        };
+        let events = vec![
+            EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-a".into(),
+                trace_id: None,
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: ModeKind::Default,
+            }),
+            user("First"),
+            agent("A1"),
+            user("Second"),
+            agent("A2"),
+            user("Third"),
+            agent("A3"),
+            user("Fourth"),
+            agent("A4"),
+            user("Fifth"),
+            agent("A5"),
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: "turn-a".into(),
+                last_agent_message: None,
+                completed_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+            }),
+            EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns: 2 }),
+        ];
+
+        let items = events
+            .into_iter()
+            .map(RolloutItem::EventMsg)
+            .collect::<Vec<_>>();
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].id, "turn-a");
+        assert_eq!(turns[0].status, TurnStatus::Completed);
+        assert_eq!(
+            turns[0].items,
+            vec![
+                ThreadItem::UserMessage {
+                    id: "item-1".into(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "First".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::AgentMessage {
+                    id: "item-2".into(),
+                    text: "A1".into(),
+                    phase: None,
+                    memory_citation: None,
+                },
+                ThreadItem::UserMessage {
+                    id: "item-3".into(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "Second".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::AgentMessage {
+                    id: "item-4".into(),
+                    text: "A2".into(),
+                    phase: None,
+                    memory_citation: None,
+                },
+                ThreadItem::UserMessage {
+                    id: "item-5".into(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "Third".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::AgentMessage {
+                    id: "item-6".into(),
                     text: "A3".into(),
                     phase: None,
                     memory_citation: None,
