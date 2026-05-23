@@ -5479,6 +5479,58 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
 }
 
 #[tokio::test]
+async fn backtrack_overlay_ctrl_i_copies_selected_prompt() {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        thread_id,
+        test_path_buf("/home/user/project"),
+    ));
+    while app_event_rx.try_recv().is_ok() {}
+
+    let user_cell = |text: &str| -> Arc<dyn HistoryCell> {
+        Arc::new(UserHistoryCell {
+            message: text.to_string(),
+            text_elements: Vec::new(),
+            local_image_paths: Vec::new(),
+            remote_image_urls: Vec::new(),
+        }) as Arc<dyn HistoryCell>
+    };
+    let agent_cell = |text: &str| -> Arc<dyn HistoryCell> {
+        Arc::new(AgentMessageCell::new(
+            vec![Line::from(text.to_string())],
+            /*is_first_line*/ true,
+        )) as Arc<dyn HistoryCell>
+    };
+
+    app.transcript_cells = vec![
+        user_cell("first prompt"),
+        agent_cell("first answer"),
+        user_cell("selected prompt"),
+    ];
+    app.backtrack.base_id = Some(thread_id);
+    app.backtrack.overlay_preview_active = true;
+    app.backtrack.nth_user_message = 1;
+
+    let mut copied = None;
+    app.copy_selected_backtrack_prompt_with(|input| {
+        copied = Some(input.to_string());
+        Ok(Some(crate::clipboard_copy::ClipboardLease::test()))
+    });
+
+    assert_eq!(copied, Some("selected prompt".to_string()));
+    let status_cell = match app_event_rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        other => panic!("expected copy status history cell, got {other:?}"),
+    };
+    let rendered = lines_to_single_string(&status_cell.display_lines(/*width*/ 80));
+    assert!(
+        rendered.contains("Copied selected prompt to clipboard"),
+        "expected selected-prompt copy status, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn backtrack_remote_image_only_selection_clears_existing_composer_draft() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
