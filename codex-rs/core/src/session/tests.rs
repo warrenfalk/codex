@@ -6398,6 +6398,94 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_task_with_rollout_recorder_delivers_and_persists_turn_complete() {
+    struct CompletingTask;
+
+    impl SessionTask for CompletingTask {
+        fn kind(&self) -> TaskKind {
+            TaskKind::Regular
+        }
+
+        fn span_name(&self) -> &'static str {
+            "session_task.completing"
+        }
+
+        async fn run(
+            self: Arc<Self>,
+            _session: Arc<SessionTaskContext>,
+            _ctx: Arc<TurnContext>,
+            _input: Vec<TurnInput>,
+            _cancellation_token: CancellationToken,
+        ) -> Option<String> {
+            Some("completed turn".to_string())
+        }
+    }
+
+    let (mut sess, tc, rx) = make_session_and_context_with_rx().await;
+    let rollout_path = attach_thread_persistence(
+        Arc::get_mut(&mut sess).expect("session should not have additional references"),
+    )
+    .await;
+
+    sess.spawn_task(
+        Arc::clone(&tc),
+        vec![TurnInput::UserInput {
+            content: vec![UserInput::Text {
+                text: "hello".to_string(),
+                text_elements: Vec::new(),
+            }],
+            client_id: None,
+        }],
+        CompletingTask,
+    )
+    .await;
+
+    let event = tokio::time::timeout(StdDuration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for turn completion")
+        .expect("event");
+    let EventMsg::TurnComplete(turn_complete) = event.msg else {
+        panic!("expected turn complete event");
+    };
+    let turn_complete_value =
+        serde_json::to_value(&turn_complete).expect("serialize emitted turn complete");
+    assert_eq!(
+        turn_complete_value,
+        json!({
+            "turn_id": tc.sub_id,
+            "last_agent_message": "completed turn",
+            "completed_at": turn_complete.completed_at,
+            "duration_ms": turn_complete.duration_ms,
+        })
+    );
+    assert!(turn_complete.completed_at.is_some());
+    assert!(turn_complete.duration_ms.is_some());
+
+    sess.flush_rollout().await.expect("rollout should flush");
+
+    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
+        .await
+        .expect("read rollout history")
+    else {
+        panic!("expected resumed rollout history");
+    };
+    let persisted_turn_complete = resumed
+        .history
+        .iter()
+        .find_map(|item| match item {
+            RolloutItem::EventMsg(EventMsg::TurnComplete(event)) if event.turn_id == tc.sub_id => {
+                Some(event.clone())
+            }
+            _ => None,
+        })
+        .expect("turn complete should be persisted to rollout");
+    assert_eq!(
+        serde_json::to_value(&persisted_turn_complete).expect("serialize persisted turn complete"),
+        turn_complete_value
+    );
+}
+
 #[tokio::test]
 async fn submission_loop_channel_close_emits_thread_stop_lifecycle() {
     struct SessionStopMarker;
