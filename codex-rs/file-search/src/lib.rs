@@ -35,6 +35,7 @@ use nucleo::pattern::AtomKind;
 use nucleo::pattern::Pattern;
 
 mod cli;
+mod path_local;
 
 pub use cli::Cli;
 
@@ -109,6 +110,10 @@ pub struct FileSearchOptions {
     /// traversed path is inside a git repository. When disabled, the walker
     /// turns off `.gitignore`, git-global/exclude rules, `.ignore`, and
     /// parent-directory ignore scanning.
+    ///
+    /// This only controls the recursive search corpus. Immediate path-local
+    /// completions are read directly from the filesystem so ignored files and
+    /// directories can still be discovered when the user types their path.
     pub respect_gitignore: bool,
 }
 
@@ -541,7 +546,7 @@ fn matcher_worker(
                     let snapshot = nucleo.snapshot();
                     let limit = inner.limit.min(snapshot.matched_item_count() as usize);
                     let pattern = snapshot.pattern().column_pattern(0);
-                    let matches: Vec<_> = snapshot
+                    let mut matches: Vec<_> = snapshot
                         .matches()
                         .iter()
                         .take(limit)
@@ -573,11 +578,18 @@ fn matcher_worker(
                             })
                         })
                         .collect();
+                    let total_match_count = path_local::augment_matches(
+                        &last_query,
+                        &inner.search_directories,
+                        inner.limit,
+                        snapshot.matched_item_count() as usize,
+                        &mut matches,
+                    );
 
                     let snapshot = FileSearchSnapshot {
                         query: last_query.clone(),
                         matches,
-                        total_match_count: snapshot.matched_item_count() as usize,
+                        total_match_count,
                         scanned_file_count: snapshot.item_count() as usize,
                         walk_complete,
                     };
