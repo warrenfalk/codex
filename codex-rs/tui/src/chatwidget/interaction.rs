@@ -42,6 +42,19 @@ impl ChatWidget {
         }
 
         match key_event {
+            // Ctrl+I - copy the current composer input from the main view.
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) && c.eq_ignore_ascii_case(&'i') => {
+                self.bottom_pane.clear_quit_shortcut_hint();
+                self.quit_shortcut_expires_at = None;
+                self.quit_shortcut_key = None;
+                self.copy_composer_text_with_pending();
+                return;
+            }
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
@@ -226,6 +239,35 @@ impl ChatWidget {
     /// Copy the last agent response (raw markdown) to the system clipboard.
     pub(crate) fn copy_last_agent_markdown(&mut self) {
         self.copy_last_agent_markdown_with(crate::clipboard_copy::copy_to_clipboard);
+    }
+
+    /// Copy the current composer input with pending paste placeholders expanded.
+    pub(crate) fn copy_composer_text_with_pending(&mut self) {
+        self.copy_composer_text_with_pending_with(crate::clipboard_copy::copy_to_clipboard);
+    }
+
+    /// Inner implementation with an injectable clipboard backend for testing.
+    pub(super) fn copy_composer_text_with_pending_with(
+        &mut self,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) {
+        let input = self.composer_text_with_pending();
+        match input.is_empty() {
+            false => match copy_fn(&input) {
+                Ok(lease) => {
+                    self.clipboard_lease = lease;
+                    self.add_to_history(history_cell::new_info_event(
+                        "Copied current input to clipboard".into(),
+                        /*hint*/ None,
+                    ));
+                }
+                Err(error) => self.add_to_history(history_cell::new_error_event(format!(
+                    "Copy failed: {error}"
+                ))),
+            },
+            true => self.add_to_history(history_cell::new_error_event("No input to copy".into())),
+        }
+        self.request_redraw();
     }
 
     pub(crate) fn truncate_agent_copy_history_to_user_turn_count(
