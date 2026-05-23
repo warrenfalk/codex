@@ -31,6 +31,7 @@ use crate::keymap::primary_binding;
 use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
+use crate::slash_command::SlashCommand;
 use crate::tui::FrameRequester;
 pub(crate) use bottom_pane_view::BottomPaneView;
 pub(crate) use bottom_pane_view::ViewCompletion;
@@ -882,6 +883,17 @@ impl BottomPane {
     #[cfg(test)]
     pub(crate) fn plan_mode_nudge_visible(&self) -> bool {
         self.composer.plan_mode_nudge_visible()
+    }
+
+    pub(crate) fn set_prompt_command_warning(&mut self, command: Option<SlashCommand>) {
+        if self.composer.set_prompt_command_warning(command) {
+            self.request_redraw();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<SlashCommand> {
+        self.composer.prompt_command_warning()
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {

@@ -140,6 +140,23 @@ impl ChatWidget {
 
         if matches!(key_event.code, KeyCode::Esc)
             && key_event.kind == KeyEventKind::Press
+            && self.visible_prompt_command_warning().is_some()
+        {
+            self.dismiss_prompt_command_warning();
+            return;
+        }
+
+        if matches!(key_event.code, KeyCode::Enter)
+            && key_event.kind == KeyEventKind::Press
+            && key_event.modifiers.is_empty()
+            && self.visible_prompt_command_warning().is_some()
+        {
+            self.accept_prompt_command_warning();
+            return;
+        }
+
+        if matches!(key_event.code, KeyCode::Esc)
+            && key_event.kind == KeyEventKind::Press
             && self.should_show_plan_mode_nudge()
         {
             self.dismiss_plan_mode_nudge();

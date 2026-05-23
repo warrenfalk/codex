@@ -8,6 +8,7 @@ use crate::bottom_pane::footer::CollaborationModeIndicator;
 use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
+use crate::slash_command::SlashCommand;
 #[cfg(test)]
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ pub(super) struct FooterState {
     pub(super) mode: FooterMode,
     pub(super) hint_override: Option<Vec<(String, String)>>,
     pub(super) plan_mode_nudge_visible: bool,
+    pub(super) prompt_command_warning: Option<SlashCommand>,
     pub(super) flash: Option<FooterFlash>,
     pub(super) context_window_percent: Option<i64>,
     pub(super) context_window_used_tokens: Option<i64>,

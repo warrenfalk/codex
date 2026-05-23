@@ -1717,6 +1717,103 @@ async fn slash_exit_requests_exit() {
 }
 
 #[tokio::test]
+async fn bare_prompt_command_warning_matches_only_exact_exit_or_resume() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.set_composer_text("exit".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(
+        chat.bottom_pane.prompt_command_warning(),
+        Some(SlashCommand::Exit)
+    );
+
+    chat.set_composer_text("resume".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(
+        chat.bottom_pane.prompt_command_warning(),
+        Some(SlashCommand::Resume)
+    );
+
+    chat.set_composer_text("resume work".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(chat.bottom_pane.prompt_command_warning(), None);
+
+    chat.set_composer_text(" exit ".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(chat.bottom_pane.prompt_command_warning(), None);
+
+    chat.set_composer_text("/exit".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(chat.bottom_pane.prompt_command_warning(), None);
+}
+
+#[tokio::test]
+async fn bare_exit_command_warning_snapshot_and_enter_requests_exit() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.set_composer_text("exit".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+
+    assert_chatwidget_snapshot!(
+        "bare_exit_command_warning",
+        render_bottom_popup(&chat, /*width*/ 80)
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::ShutdownFirst)));
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+}
+
+#[tokio::test]
+async fn bare_resume_command_warning_snapshot_and_enter_opens_picker() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.set_composer_text("resume".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+
+    assert_chatwidget_snapshot!(
+        "bare_resume_command_warning",
+        render_bottom_popup(&chat, /*width*/ 80)
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+}
+
+#[tokio::test]
+async fn bare_prompt_command_warning_esc_allows_literal_submission() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.set_composer_text("exit".to_string(), Vec::new(), Vec::new());
+    chat.pre_draw_tick();
+    assert_eq!(
+        chat.bottom_pane.prompt_command_warning(),
+        Some(SlashCommand::Exit)
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    chat.pre_draw_tick();
+    assert_eq!(chat.bottom_pane.prompt_command_warning(), None);
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "exit".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected literal exit user turn, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn slash_stop_submits_background_terminal_cleanup() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

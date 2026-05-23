@@ -410,7 +410,8 @@ pub(crate) struct ComposerDraftSnapshot {
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
 
-/// Builds the one-line nudge that replaces the ambient footer without adding layout height.
+/// Builds the one-line Plan-mode nudge that replaces the ambient footer without adding layout
+/// height.
 fn plan_mode_nudge_line() -> Line<'static> {
     Line::from(vec![
         "Create a plan?".magenta(),
@@ -420,6 +421,20 @@ fn plan_mode_nudge_line() -> Line<'static> {
         "   ".into(),
         key_hint::plain(KeyCode::Esc).into(),
         " dismiss".into(),
+    ])
+}
+
+/// Builds the one-line warning for bare drafts that look like omitted slash commands.
+fn prompt_command_warning_line(command: SlashCommand) -> Line<'static> {
+    let command_name = command.command();
+    Line::from(vec![
+        format!("Did you mean /{command_name}?").magenta(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Enter).into(),
+        format!(" to {command_name}").into(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Esc).into(),
+        " to dismiss".into(),
     ])
 }
 
@@ -495,6 +510,7 @@ impl ChatComposer {
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
                 plan_mode_nudge_visible: false,
+                prompt_command_warning: None,
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1172,6 +1188,22 @@ impl ChatComposer {
     #[cfg(test)]
     pub(crate) fn plan_mode_nudge_visible(&self) -> bool {
         self.footer.plan_mode_nudge_visible
+    }
+
+    /// Updates the command warning that replaces the ambient footer row.
+    ///
+    /// Returns `true` only when the rendered footer can change.
+    pub(crate) fn set_prompt_command_warning(&mut self, command: Option<SlashCommand>) -> bool {
+        if self.footer.prompt_command_warning == command {
+            return false;
+        }
+        self.footer.prompt_command_warning = command;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<SlashCommand> {
+        self.footer.prompt_command_warning
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
@@ -4204,6 +4236,17 @@ impl ChatComposer {
                 };
                 if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
+                } else if let Some(command) = self.footer.prompt_command_warning {
+                    let available_width =
+                        hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
+                    render_footer_line(
+                        hint_rect,
+                        buf,
+                        truncate_line_with_ellipsis_if_overflow(
+                            prompt_command_warning_line(command),
+                            available_width,
+                        ),
+                    );
                 } else if self.footer.plan_mode_nudge_visible {
                     let available_width =
                         hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
