@@ -1262,23 +1262,47 @@ impl ThreadHistoryBuilder {
         self.finish_current_turn();
 
         let n = usize::try_from(payload.num_turns).unwrap_or(usize::MAX);
-        let removed_turn_ids = if n >= self.turns.len() {
-            self.turns.iter().map(|turn| turn.id.clone()).collect()
-        } else if n == 0 {
-            Vec::new()
-        } else {
-            self.turns[self.turns.len() - n..]
-                .iter()
-                .map(|turn| turn.id.clone())
-                .collect()
-        };
-        self.record_removed_turn_ids(removed_turn_ids);
-
-        if n >= self.turns.len() {
-            self.turns.clear();
-        } else {
-            self.turns.truncate(self.turns.len().saturating_sub(n));
+        if n == 0 {
+            return;
         }
+
+        let user_positions = self
+            .turns
+            .iter()
+            .enumerate()
+            .flat_map(|(turn_idx, turn)| {
+                turn.items
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(item_idx, item)| {
+                        matches!(item, ThreadItem::UserMessage { .. })
+                            .then_some((turn_idx, item_idx))
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        let Some(&(turn_idx, item_idx)) = (if n >= user_positions.len() {
+            user_positions.first()
+        } else {
+            user_positions.get(user_positions.len() - n)
+        }) else {
+            return;
+        };
+
+        let mut removed_turn_ids = self.turns[turn_idx + 1..]
+            .iter()
+            .map(|turn| turn.id.clone())
+            .collect::<Vec<_>>();
+        self.turns.truncate(turn_idx + 1);
+        if let Some(turn) = self.turns.get_mut(turn_idx) {
+            turn.items.truncate(item_idx);
+        }
+        while self.turns.last().is_some_and(|turn| turn.items.is_empty())
+            && let Some(turn) = self.turns.pop()
+        {
+            removed_turn_ids.push(turn.id);
+        }
+        self.record_removed_turn_ids(removed_turn_ids);
 
         let item_count: usize = self.turns.iter().map(|t| t.items.len()).sum();
         self.next_item_index = i64::try_from(item_count.saturating_add(1)).unwrap_or(i64::MAX);
