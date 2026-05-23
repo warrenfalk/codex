@@ -1,13 +1,16 @@
 //! Persist Codex session rollouts (.jsonl) so sessions can be replayed or inspected later.
 
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::fs;
 use std::fs::File;
 use std::io::Error as IoError;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use chrono::SecondsFormat;
 use codex_protocol::SessionId;
@@ -24,6 +27,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
+use tokio::time::sleep_until;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
@@ -98,7 +103,10 @@ pub enum RolloutRecorderParams {
 }
 
 enum RolloutCmd {
-    AddItems(Vec<RolloutItem>),
+    AddItems {
+        items: Vec<RolloutItem>,
+        ack: oneshot::Sender<std::io::Result<()>>,
+    },
     Persist {
         ack: oneshot::Sender<std::io::Result<()>>,
     },
@@ -824,14 +832,23 @@ impl RolloutRecorder {
         if items.is_empty() {
             return Ok(());
         }
+        let (tx, rx) = oneshot::channel();
         self.tx
-            .send(RolloutCmd::AddItems(items.to_vec()))
+            .send(RolloutCmd::AddItems {
+                items: items.to_vec(),
+                ack: tx,
+            })
             .await
             .map_err(|e| {
                 self.writer_task.terminal_failure().unwrap_or_else(|| {
                     IoError::other(format!("failed to queue rollout items: {e}"))
                 })
-            })
+            })?;
+        rx.await.map_err(|e| {
+            self.writer_task
+                .terminal_failure()
+                .unwrap_or_else(|| IoError::other(format!("failed waiting for rollout items: {e}")))
+        })?
     }
 
     /// Materialize the rollout file and persist all buffered items.
@@ -1463,19 +1480,55 @@ fn open_log_file(path: &Path) -> std::io::Result<File> {
         .open(path)
 }
 
+const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(250);
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
+const MAX_PENDING_ROLLOUT_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PersistErrorSnapshot {
+    kind: ErrorKind,
+    message: String,
+}
+
+impl PersistErrorSnapshot {
+    fn from_io(err: &IoError) -> Self {
+        Self {
+            kind: err.kind(),
+            message: err.to_string(),
+        }
+    }
+
+    fn to_io_error(&self, context: &str) -> IoError {
+        IoError::new(self.kind, format!("{context}: {}", self.message))
+    }
+}
+
+struct DegradedState {
+    error: PersistErrorSnapshot,
+    retry_attempt: u32,
+    next_retry_at: Instant,
+}
+
+struct PendingRolloutItem {
+    item: RolloutItem,
+    estimated_bytes: usize,
+}
+
 /// Mutable state owned by the background rollout writer.
 ///
 /// Items are first appended to `pending_items`; persist/flush/shutdown remove each item from that
 /// queue only after it is written successfully. I/O failures drop the file handle but keep the
-/// unwritten suffix so the next barrier can reopen the file and retry.
+/// unwritten suffix so the background worker or the next barrier can reopen the file and retry.
 struct RolloutWriterState {
     writer: Option<JsonlWriter>,
     deferred_log_file_info: Option<LogFileInfo>,
-    pending_items: Vec<RolloutItem>,
+    pending_items: VecDeque<PendingRolloutItem>,
+    pending_bytes: usize,
     meta: Option<SessionMeta>,
     cwd: PathBuf,
     rollout_path: PathBuf,
-    last_logged_error: Option<String>,
+    materialize_requested: bool,
+    degraded: Option<DegradedState>,
 }
 
 impl RolloutWriterState {
@@ -1486,92 +1539,181 @@ impl RolloutWriterState {
         cwd: PathBuf,
         rollout_path: PathBuf,
     ) -> Self {
+        let materialize_requested = file.is_some();
         Self {
-            writer: file.map(|file| JsonlWriter { file }),
+            writer: file.map(JsonlWriter::from_tokio_file),
             deferred_log_file_info,
-            pending_items: Vec::new(),
+            pending_items: VecDeque::new(),
+            pending_bytes: 0,
             meta,
             cwd,
             rollout_path,
-            last_logged_error: None,
+            materialize_requested,
+            degraded: None,
         }
     }
 
-    fn add_items(&mut self, items: Vec<RolloutItem>) {
-        self.pending_items.extend(items);
+    fn add_items(&mut self, items: Vec<RolloutItem>) -> std::io::Result<()> {
+        let mut pending = Vec::with_capacity(items.len());
+        let mut new_bytes = 0usize;
+        for item in items {
+            let estimated_bytes = serde_json::to_string(&item)?.len().saturating_add(64);
+            new_bytes = new_bytes.saturating_add(estimated_bytes);
+            pending.push(PendingRolloutItem {
+                item,
+                estimated_bytes,
+            });
+        }
+
+        let queued_bytes = self.pending_bytes.saturating_add(new_bytes);
+        if queued_bytes > MAX_PENDING_ROLLOUT_BYTES {
+            return Err(IoError::other(format!(
+                "rollout backlog exceeds {MAX_PENDING_ROLLOUT_BYTES} bytes while persistence is degraded"
+            )));
+        }
+
+        self.pending_items.extend(pending);
+        self.pending_bytes = queued_bytes;
+        Ok(())
+    }
+
+    fn next_retry_at(&self) -> Option<Instant> {
+        if self.meta.is_none() && self.pending_items.is_empty() {
+            return None;
+        }
+        self.degraded.as_ref().map(|state| state.next_retry_at)
     }
 
     async fn flush_if_materialized(&mut self) {
         if self.is_deferred() {
             return;
         }
-        if let Err(err) = self.flush().await {
-            self.enter_recovery_mode(&err);
-        }
+        let _ = self
+            .write_pending(/*force_retry*/ false, "background retry")
+            .await;
     }
 
     async fn persist(&mut self) -> std::io::Result<()> {
-        self.write_pending_with_recovery("persist").await
+        self.materialize_requested = true;
+        self.write_pending(/*force_retry*/ true, "persist").await
     }
 
     async fn flush(&mut self) -> std::io::Result<()> {
         if self.is_deferred() && self.pending_items.is_empty() {
             return Ok(());
         }
-        self.write_pending_with_recovery("flush").await
+        self.materialize_requested = true;
+        self.write_pending(/*force_retry*/ true, "flush").await
     }
 
     async fn shutdown(&mut self) -> std::io::Result<()> {
         if self.is_deferred() && self.pending_items.is_empty() {
             return Ok(());
         }
-        self.write_pending_with_recovery("shutdown").await
+        self.materialize_requested = true;
+        self.write_pending(/*force_retry*/ true, "shutdown").await
     }
 
-    async fn write_pending_with_recovery(&mut self, operation: &str) -> std::io::Result<()> {
+    async fn write_pending(&mut self, force_retry: bool, operation: &str) -> std::io::Result<()> {
+        if self.degraded.is_some() && !force_retry && !self.retry_ready() {
+            return Ok(());
+        }
         match self.write_pending_once().await {
             Ok(()) => {
-                self.last_logged_error = None;
+                self.clear_degraded_state();
                 Ok(())
             }
-            Err(first_err) => {
-                self.enter_recovery_mode(&first_err);
-                warn!("failed to {operation} rollout writer; reopening and retrying: {first_err}");
-                match self.write_pending_once().await {
-                    Ok(()) => {
-                        self.last_logged_error = None;
-                        Ok(())
+            Err(err) => {
+                self.record_failure(&err);
+                if force_retry {
+                    warn!("failed to {operation} rollout writer; reopening and retrying: {err}");
+                    match self.write_pending_once().await {
+                        Ok(()) => {
+                            self.clear_degraded_state();
+                            Ok(())
+                        }
+                        Err(retry_err) => {
+                            self.record_failure(&retry_err);
+                            warn!(
+                                "retrying rollout writer {operation} failed; first error: {err}; \
+                                 final error: {retry_err}"
+                            );
+                            Err(self.current_error(operation))
+                        }
                     }
-                    Err(second_err) => {
-                        self.enter_recovery_mode(&second_err);
-                        warn!(
-                            "retrying rollout writer {operation} failed; first error: \
-                             {first_err}; final error: {second_err}"
-                        );
-                        Err(second_err)
-                    }
+                } else {
+                    warn!(
+                        "failed to {operation} rollout writer; queued items will be retried: {err}"
+                    );
+                    Err(self.current_error(operation))
                 }
             }
         }
     }
 
-    fn is_deferred(&self) -> bool {
-        self.writer.is_none() && self.deferred_log_file_info.is_some()
+    fn retry_ready(&self) -> bool {
+        self.degraded
+            .as_ref()
+            .is_none_or(|state| state.next_retry_at <= Instant::now())
     }
 
-    fn enter_recovery_mode(&mut self, err: &IoError) {
-        let message = err.to_string();
-        if self.last_logged_error.as_ref() != Some(&message) {
+    fn is_deferred(&self) -> bool {
+        self.writer.is_none()
+            && self.deferred_log_file_info.is_some()
+            && !self.materialize_requested
+    }
+
+    fn record_failure(&mut self, err: &IoError) {
+        let error = PersistErrorSnapshot::from_io(err);
+        let retry_attempt = self
+            .degraded
+            .as_ref()
+            .map(|state| state.retry_attempt.saturating_add(1))
+            .unwrap_or(0);
+        let next_retry_at = Instant::now() + retry_delay(retry_attempt);
+        let changed = self
+            .degraded
+            .as_ref()
+            .is_none_or(|state| state.error != error);
+        if self.degraded.is_none() {
             error!(
-                "rollout writer failed for {}; buffered rollout items will be retried: {err}; \
+                "rollout persistence degraded for {}: {err}; \
+                 error_kind={:?}; raw_os_error={:?}",
+                self.rollout_path.display(),
+                err.kind(),
+                err.raw_os_error()
+            );
+        } else if changed {
+            warn!(
+                "rollout persistence still degraded for {}: {err}; \
                  error_kind={:?}; raw_os_error={:?}",
                 self.rollout_path.display(),
                 err.kind(),
                 err.raw_os_error()
             );
         }
-        self.last_logged_error = Some(message);
+        self.degraded = Some(DegradedState {
+            error,
+            retry_attempt,
+            next_retry_at,
+        });
         self.writer = None;
+    }
+
+    fn clear_degraded_state(&mut self) {
+        if self.degraded.take().is_some() {
+            info!(
+                "rollout persistence recovered for {}",
+                self.rollout_path.display()
+            );
+        }
+    }
+
+    fn current_error(&self, context: &str) -> IoError {
+        self.degraded.as_ref().map_or_else(
+            || IoError::other(context.to_string()),
+            |state| state.error.to_io_error(context),
+        )
     }
 
     async fn ensure_writer_open(&mut self) -> std::io::Result<()> {
@@ -1585,9 +1727,7 @@ impl RolloutWriterState {
             .map(|info| info.path.as_path())
             .unwrap_or(self.rollout_path.as_path());
         let file = open_log_file(path)?;
-        self.writer = Some(JsonlWriter {
-            file: tokio::fs::File::from_std(file),
-        });
+        self.writer = Some(JsonlWriter::from_std_file(file)?);
         self.deferred_log_file_info = None;
         Ok(())
     }
@@ -1605,10 +1745,19 @@ impl RolloutWriterState {
         self.ensure_writer_open().await?;
         self.write_session_meta_if_needed().await?;
 
-        self.write_pending_items_once().await?;
+        if let Err(err) = self.write_pending_items_once().await {
+            if let Some(writer) = self.writer.as_mut() {
+                writer.rollback_pending_write().await;
+            }
+            self.writer = None;
+            return Err(err);
+        }
 
-        if let Some(writer) = self.writer.as_mut() {
-            writer.file.flush().await?;
+        if let Some(writer) = self.writer.as_mut()
+            && let Err(err) = writer.file.flush().await
+        {
+            self.writer = None;
+            return Err(err);
         }
         Ok(())
     }
@@ -1619,21 +1768,32 @@ impl RolloutWriterState {
         };
 
         let mut written_count = 0usize;
-        let mut write_result = Ok(());
-        for item in &self.pending_items {
-            if let Err(err) = writer.write_rollout_item(item).await {
-                write_result = Err(err);
-                break;
+        let mut written_bytes = 0usize;
+        for pending in &self.pending_items {
+            if let Err(err) = writer.write_rollout_item(&pending.item).await {
+                if written_count > 0 {
+                    self.pending_items.drain(..written_count);
+                    self.pending_bytes = self.pending_bytes.saturating_sub(written_bytes);
+                }
+                return Err(err);
             }
             written_count += 1;
+            written_bytes = written_bytes.saturating_add(pending.estimated_bytes);
         }
 
         if written_count > 0 {
             self.pending_items.drain(..written_count);
+            self.pending_bytes = self.pending_bytes.saturating_sub(written_bytes);
         }
 
-        write_result
+        Ok(())
     }
+}
+
+fn retry_delay(retry_attempt: u32) -> Duration {
+    let multiplier = 1u32.checked_shl(retry_attempt.min(5)).unwrap_or(32);
+    let delay = INITIAL_RETRY_DELAY.saturating_mul(multiplier);
+    delay.min(MAX_RETRY_DELAY)
 }
 
 async fn rollout_writer(
@@ -1646,13 +1806,32 @@ async fn rollout_writer(
 ) -> std::io::Result<()> {
     let mut state = RolloutWriterState::new(file, deferred_log_file_info, meta, cwd, rollout_path);
 
-    // Process rollout commands
-    while let Some(cmd) = rx.recv().await {
-        match cmd {
-            RolloutCmd::AddItems(items) => {
-                state.add_items(items);
-                state.flush_if_materialized().await;
+    loop {
+        let cmd = if let Some(next_retry_at) = state.next_retry_at() {
+            tokio::select! {
+                _ = sleep_until(next_retry_at) => {
+                    state.flush_if_materialized().await;
+                    continue;
+                }
+                cmd = rx.recv() => cmd,
             }
+        } else {
+            rx.recv().await
+        };
+
+        let Some(cmd) = cmd else {
+            break;
+        };
+        match cmd {
+            RolloutCmd::AddItems { items, ack } => match state.add_items(items) {
+                Ok(()) => {
+                    let _ = ack.send(Ok(()));
+                    state.flush_if_materialized().await;
+                }
+                Err(err) => {
+                    let _ = ack.send(Err(err));
+                }
+            },
             RolloutCmd::Persist { ack } => {
                 let _ = ack.send(state.persist().await);
             }
@@ -1714,12 +1893,14 @@ pub async fn append_rollout_item_to_path(
         .append(true)
         .open(rollout_path)
         .await?;
-    let mut writer = JsonlWriter { file };
+    let durable_len = Some(file.metadata().await?.len());
+    let mut writer = JsonlWriter { file, durable_len };
     writer.write_rollout_item(item).await
 }
 
 struct JsonlWriter {
     file: tokio::fs::File,
+    durable_len: Option<u64>,
 }
 
 #[derive(serde::Serialize)]
@@ -1730,6 +1911,21 @@ struct RolloutLineRef<'a> {
 }
 
 impl JsonlWriter {
+    fn from_tokio_file(file: tokio::fs::File) -> Self {
+        Self {
+            file,
+            durable_len: None,
+        }
+    }
+
+    fn from_std_file(file: File) -> std::io::Result<Self> {
+        let durable_len = Some(file.metadata()?.len());
+        Ok(Self {
+            file: tokio::fs::File::from_std(file),
+            durable_len,
+        })
+    }
+
     async fn write_rollout_item(&mut self, rollout_item: &RolloutItem) -> std::io::Result<()> {
         let timestamp_format: &[FormatItem] = format_description!(
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
@@ -1747,9 +1943,30 @@ impl JsonlWriter {
     async fn write_line(&mut self, item: &impl serde::Serialize) -> std::io::Result<()> {
         let mut json = serde_json::to_string(item)?;
         json.push('\n');
-        self.file.write_all(json.as_bytes()).await?;
-        self.file.flush().await?;
+        if self.durable_len.is_none() {
+            self.durable_len = Some(self.file.metadata().await?.len());
+        }
+        if let Err(err) = self.file.write_all(json.as_bytes()).await {
+            self.rollback_pending_write().await;
+            return Err(err);
+        }
+        if let Err(err) = self.file.flush().await {
+            self.rollback_pending_write().await;
+            return Err(err);
+        }
+        self.durable_len = self
+            .durable_len
+            .map(|durable_len| durable_len.saturating_add(json.len() as u64));
         Ok(())
+    }
+
+    async fn rollback_pending_write(&mut self) {
+        let Some(durable_len) = self.durable_len else {
+            return;
+        };
+        if let Err(err) = self.file.set_len(durable_len).await {
+            warn!("failed to truncate rollout file after write error: {err}");
+        }
     }
 }
 
