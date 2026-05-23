@@ -1,71 +1,158 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# Codex CLI for Local Agent Work
 
----
+This fork keeps the OpenAI Codex CLI foundation and turns it into a stronger
+local agent workspace: terminal sessions can share a backend, browser and phone
+clients can control those sessions, transcripts link back into your editor, and
+the packaged runtime comes with the tools an agent needs to get real work done.
 
-## Quickstart
+The original upstream README is preserved at [README_CODEX.md](README_CODEX.md).
 
-### Installing and running Codex CLI
+## Quickstart From This Checkout
 
-Run the following on Mac or Linux to install Codex CLI:
+Build and run the fork locally:
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```sh
+nix build
+./result/bin/codex
 ```
 
-Run the following on Windows to install Codex CLI:
+For development inside the repo:
 
-```
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
-
-Codex CLI can also be installed via the following package managers:
-
-```shell
-# Install using npm
-npm install -g @openai/codex
+```sh
+nix develop
+just codex "your prompt"
 ```
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
+The Rust CLI and TUI live under `codex-rs/`. Fork-local feature notes live under
+`wf_features/`.
 
-Then simply run `codex` to get started.
+## The Headline Feature: Remote Control
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+The local shared backend makes Codex controllable from more than one surface at
+the same time. A TUI can stay open on the workstation while a separate
+mobile-first web app connects to the same local app-server and controls those
+sessions from a browser or phone.
 
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
+The remote-control website lives on the `remote-control-web` branch in the
+standalone `web/` package. It connects to `codex app-server`, shows local
+threads, follows live session updates, sends new prompts, interrupts running
+turns, handles approval requests, and can be installed as a Home Screen app from
+its HTTPS origin.
 
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
+That is the main reason the shared backend exists: Codex stops being a single
+terminal process and becomes a local agent backend with multiple useful clients.
 
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
+See [local shared app server](wf_features/local-shared-app-server.md),
+[connected auto-reconnect](wf_features/connected-auto-reconnect.md), and the
+[`remote-control-web` web app](https://github.com/warrenfalk/codex/tree/remote-control-web/web).
 
-</details>
+## Feature Highlights
 
-### Using Codex with your ChatGPT plan
+### Shared backend for local sessions
 
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
+Run TUI sessions against a shared local app-server without giving up local
+working-directory behavior. The resume picker, latest-session lookup, cwd
+prompts, and normal local workflow still feel like local Codex, while the
+session is available to other clients.
 
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
+The TUI also shows when it is connected to a shared backend and automatically
+recovers from backend restarts when it can.
 
-## Docs
+See [connected footer badge](wf_features/connected-footer-badge.md).
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
+### Better session identity
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+Saved sessions are easier to recognize because Codex generates short thread
+titles automatically. Terminal/window titles also track the active Codex view,
+so multiple Codex windows from the same repo are easier to tell apart.
+
+See [automatic thread title](wf_features/automatic-thread-title.md) and
+[active view terminal titles](wf_features/active-view-terminal-titles.md).
+
+### Links in the terminal transcript
+
+When the assistant references a file, Codex turns that reference into a
+clickable terminal link. When the assistant includes a normal markdown link,
+that link is clickable too. Review output becomes something you can navigate
+directly instead of text you have to copy by hand.
+
+See [clickable assistant file references](wf_features/assistant-file-references-clickable.md).
+
+### File mentions for real worktrees
+
+`@file` completion can surface ignored files when you explicitly type into the
+local path that contains them. This keeps broad search clean while still letting
+you mention generated files, local-only config, or ignored scratch artifacts
+when you actually ask for them.
+
+See [file mentions include path-local ignored files](wf_features/file-mentions-include-ignored-files.md).
+
+### Quota pacing instead of raw quota numbers
+
+The status card, footer, and configurable status line show whether usage is
+ahead of or behind pace for the current limit window. Labels such as
+`weekly +40%` make the useful question visible: not just how much quota remains,
+but whether the current pace is sustainable.
+
+See [usage limit pace indicator](wf_features/usage-limit-pace-indicator.md).
+
+### Faster composer workflow
+
+`Ctrl+I` copies the current unsent prompt from the composer. This is useful when
+a prompt needs to move into another tool, another Codex session, or a bug report
+without sending it first.
+
+See [copy unsent prompt text](wf_features/copy-unsent-prompt-text.md).
+
+### Practical local sandboxing and packaging
+
+Restricted-network Linux sandboxing still allows local Unix-domain socket IPC,
+so helper daemons and bridge processes can coordinate locally without opening
+internet sockets.
+
+The Nix-packaged CLI also includes a curated baseline toolbelt on `PATH`,
+including common development tools and PDF utilities, so shell-driven agent work
+is less dependent on whatever happens to be installed on the host.
+
+See [local Unix socket communication](wf_features/local-unix-socket-communication.md)
+and [packaged common binaries](wf_features/packaged-common-binaries.md).
+
+### Clear fork identity
+
+Custom builds identify themselves in `codex --version` and in the TUI session
+header, making screenshots, logs, and bug reports much easier to interpret.
+
+See [custom build version labels](wf_features/custom-build-version-labels.md).
+
+## Bugs Fixed And Quality Improvements
+
+- Connected TUI sessions no longer imply context usage before that data is
+  actually known.
+- Stale MCP startup banners are cleared after resume.
+- Session recording retries after transient persistence failures instead of
+  treating one write failure as permanent loss.
+- Workspace-write overrides for `apply_patch` and approval flows are fixed.
+- Linux/Nix build prerequisites are restored for this fork.
+- Linux sandbox debug builds avoid fortify warning noise.
+
+## Feature Notes
+
+- [Active view terminal titles](wf_features/active-view-terminal-titles.md)
+- [Automatic thread title](wf_features/automatic-thread-title.md)
+- [Clickable assistant file references](wf_features/assistant-file-references-clickable.md)
+- [Connected auto-reconnect](wf_features/connected-auto-reconnect.md)
+- [Connected footer badge](wf_features/connected-footer-badge.md)
+- [Copy unsent prompt text](wf_features/copy-unsent-prompt-text.md)
+- [Custom build version labels](wf_features/custom-build-version-labels.md)
+- [File mentions include path-local ignored files](wf_features/file-mentions-include-ignored-files.md)
+- [Local shared app server](wf_features/local-shared-app-server.md)
+- [Local Unix socket communication](wf_features/local-unix-socket-communication.md)
+- [Packaged common binaries](wf_features/packaged-common-binaries.md)
+- [Session persistence retries](wf_features/session-persistence-retries.md)
+- [Usage limit pace indicator](wf_features/usage-limit-pace-indicator.md)
+
+## Upstream Docs
+
+For the upstream project overview, install instructions, and general Codex links,
+see [README_CODEX.md](README_CODEX.md). This repository remains licensed under
+the [Apache-2.0 License](LICENSE).
