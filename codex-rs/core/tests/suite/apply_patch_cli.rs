@@ -28,6 +28,7 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ExecOutputStream;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
@@ -53,6 +54,7 @@ use core_test_support::skip_if_wine_exec;
 use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::local;
+use core_test_support::test_codex::local_selections;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
 use core_test_support::wait_for_event;
@@ -281,6 +283,109 @@ async fn apply_patch_cli_uses_codex_self_exe_with_linux_sandbox_helper_alias() -
         &out,
     );
     assert_eq!(harness.read_file_text("helper-alias.txt").await?, "hello\n");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn apply_patch_cli_workspace_write_inside_workspace_auto_approved() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    for network_access in [false, true] {
+        let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.4")).await?;
+        let patch = "*** Begin Patch\n*** Add File: network-enabled.txt\n+hello\n*** End Patch";
+        let call_id = "apply-network-enabled";
+        mount_apply_patch(&harness, call_id, patch, "done").await;
+
+        let sandbox_policy = SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![],
+            network_access,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        };
+        let test = harness.test();
+        let session_model = test.session_configured.model.clone();
+        let permission_profile =
+            PermissionProfile::from_legacy_sandbox_policy_for_cwd(&sandbox_policy, harness.cwd());
+        test.codex
+            .submit(Op::UserInput {
+                items: vec![UserInput::Text {
+                    text: "apply patch under network-enabled workspace-write".into(),
+                    text_elements: Vec::new(),
+                }],
+                final_output_json_schema: None,
+                responsesapi_client_metadata: None,
+                additional_context: Default::default(),
+                thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                    environments: Some(local_selections(harness.cwd_abs())),
+                    approval_policy: Some(AskForApproval::OnRequest),
+                    sandbox_policy: Some(sandbox_policy),
+                    permission_profile: Some(permission_profile),
+                    collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                        mode: codex_protocol::config_types::ModeKind::Default,
+                        settings: codex_protocol::config_types::Settings {
+                            model: session_model,
+                            reasoning_effort: None,
+                            developer_instructions: None,
+                        },
+                    }),
+                    ..Default::default()
+                },
+            })
+            .await?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        loop {
+            let event = wait_for_event_with_timeout(
+                &test.codex,
+                |event| {
+                    matches!(
+                        event,
+                        EventMsg::ExecCommandOutputDelta(_)
+                            | EventMsg::ApplyPatchApprovalRequest(_)
+                            | EventMsg::TurnComplete(_)
+                    )
+                },
+                Duration::from_secs(20),
+            )
+            .await;
+
+            match event {
+                EventMsg::ExecCommandOutputDelta(event) => {
+                    if event.call_id != call_id {
+                        continue;
+                    }
+                    match event.stream {
+                        ExecOutputStream::Stdout => {
+                            stdout.push_str(&String::from_utf8_lossy(&event.chunk));
+                        }
+                        ExecOutputStream::Stderr => {
+                            stderr.push_str(&String::from_utf8_lossy(&event.chunk));
+                        }
+                    }
+                }
+                EventMsg::TurnComplete(_) => break,
+                EventMsg::ApplyPatchApprovalRequest(event) => {
+                    panic!(
+                        "unexpected patch approval request for network_access={network_access}: reason={:?} changes={:?} stdout={stdout:?} stderr={stderr:?}",
+                        event.reason, event.changes
+                    );
+                }
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+
+        let out = harness.apply_patch_output(call_id).await;
+        assert_regex_match(
+            r"(?s)^Exit code: 0.*Success\. Updated the following files:\nA network-enabled\.txt\n?$",
+            &out,
+        );
+        assert_eq!(
+            harness.read_file_text("network-enabled.txt").await?,
+            "hello\n"
+        );
+    }
 
     Ok(())
 }
