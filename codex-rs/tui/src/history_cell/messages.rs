@@ -370,6 +370,10 @@ impl AgentMarkdownCell {
             file_opener,
         }
     }
+
+    pub(crate) fn markdown_source(&self) -> &str {
+        &self.markdown_source
+    }
 }
 
 impl HistoryCell for AgentMarkdownCell {
