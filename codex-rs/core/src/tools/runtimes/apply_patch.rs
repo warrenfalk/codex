@@ -98,7 +98,7 @@ impl ApplyPatchRuntime {
             effective_permission_profile(attempt.permissions, req.additional_permissions.as_ref());
         Some(FileSystemSandboxContext {
             permissions,
-            cwd: Some(attempt.sandbox_cwd.clone()),
+            cwd: Some(req.action.cwd.clone()),
             windows_sandbox_level: attempt.windows_sandbox_level,
             windows_sandbox_private_desktop: attempt.windows_sandbox_private_desktop,
             use_legacy_landlock: attempt.use_legacy_landlock,

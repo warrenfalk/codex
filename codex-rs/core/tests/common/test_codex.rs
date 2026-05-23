@@ -21,6 +21,7 @@ use codex_core::shell::Shell;
 use codex_core::shell::get_shell_by_model_provided_path;
 use codex_core::thread_store_from_config;
 use codex_exec_server::CreateDirectoryOptions;
+use codex_exec_server::ExecServerRuntimePaths;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
 use codex_extension_api::ExtensionRegistry;
@@ -453,16 +454,9 @@ impl TestCodexBuilder {
             .exec_server_url
             .clone()
             .or_else(|| test_env.exec_server_url.clone());
-        #[cfg(target_os = "linux")]
-        let codex_linux_sandbox_exe = Some(
-            crate::find_codex_linux_sandbox_exe()
-                .context("should find binary for codex-linux-sandbox")?,
-        );
-        #[cfg(not(target_os = "linux"))]
-        let codex_linux_sandbox_exe = None;
-        let local_runtime_paths = codex_exec_server::ExecServerRuntimePaths::new(
-            std::env::current_exe()?,
-            codex_linux_sandbox_exe,
+        let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+            config.codex_self_exe.clone(),
+            config.codex_linux_sandbox_exe.clone(),
         )?;
         let environment_manager = Arc::new(if include_local_environment {
             codex_exec_server::EnvironmentManager::create_for_tests_with_local(

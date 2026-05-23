@@ -7,7 +7,6 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxExecRequest;
 use codex_sandboxing::SandboxManager;
@@ -67,7 +66,7 @@ impl FileSystemSandboxRunner {
         };
         add_helper_runtime_permissions(&mut file_system_policy, &helper_read_roots, cwd.as_path());
         normalize_file_system_policy_root_aliases(&mut file_system_policy);
-        let network_policy = NetworkSandboxPolicy::Restricted;
+        let network_policy = sandbox.permissions.network_sandbox_policy();
         let permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
             sandbox.permissions.enforcement(),
             &file_system_policy,

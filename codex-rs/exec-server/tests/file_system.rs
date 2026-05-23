@@ -112,6 +112,22 @@ fn sandbox_context(entries: Vec<FileSystemSandboxEntry>) -> FileSystemSandboxCon
     ))
 }
 
+fn sandbox_context_with_policy(
+    file_system_policy: FileSystemSandboxPolicy,
+    network_access: bool,
+    cwd: AbsolutePathBuf,
+) -> FileSystemSandboxContext {
+    let network_policy = if network_access {
+        NetworkSandboxPolicy::Enabled
+    } else {
+        NetworkSandboxPolicy::Restricted
+    };
+    FileSystemSandboxContext::from_permission_profile_with_cwd(
+        PermissionProfile::from_runtime_permissions(&file_system_policy, network_policy),
+        cwd,
+    )
+}
+
 #[test]
 fn sandbox_context_from_profile_preserves_workspace_write_read_only_subpaths() -> Result<()> {
     let tmp = TempDir::new()?;
@@ -135,6 +151,17 @@ fn sandbox_context_from_profile_preserves_workspace_write_read_only_subpaths() -
     assert!(writable_root.read_only_subpaths.contains(&git_dir));
 
     Ok(())
+}
+
+fn workspace_write_cwd_sandbox(
+    cwd: std::path::PathBuf,
+    network_access: bool,
+    exclude_tmpdir_env_var: bool,
+    exclude_slash_tmp: bool,
+) -> FileSystemSandboxContext {
+    let file_system_policy =
+        FileSystemSandboxPolicy::workspace_write(&[], exclude_tmpdir_env_var, exclude_slash_tmp);
+    sandbox_context_with_policy(file_system_policy, network_access, absolute_path(cwd))
 }
 
 fn assert_sandbox_denied(error: &std::io::Error) {
@@ -701,6 +728,157 @@ async fn file_system_sandboxed_write_allows_additional_write_root(use_remote: bo
         )
         .await
         .with_context(|| format!("write file through additional root mode={use_remote}"))?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(false ; "local")]
+#[test_case(true ; "remote")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_explicit_write_root_with_network_enabled(
+    use_remote: bool,
+) -> Result<()> {
+    let context = create_file_system_context(use_remote).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let allowed_dir = tmp.path().join("allowed");
+    let file_path = allowed_dir.join("note.txt");
+    std::fs::create_dir_all(&allowed_dir)?;
+
+    let writable_roots = vec![absolute_path(allowed_dir.clone())];
+    let file_system_policy = FileSystemSandboxPolicy::workspace_write(
+        &writable_roots,
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+    let sandbox = sandbox_context_with_policy(
+        file_system_policy,
+        /*network_access*/ true,
+        absolute_path(std::env::temp_dir()),
+    );
+
+    file_system
+        .write_file(
+            &absolute_path(file_path.clone()),
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| format!("write file through network-enabled root mode={use_remote}"))?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(false ; "local")]
+#[test_case(true ; "remote")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root(use_remote: bool) -> Result<()> {
+    let context = create_file_system_context(use_remote).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd, /*network_access*/ false, /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+
+    file_system
+        .write_file(
+            &absolute_path(file_path.clone()),
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| format!("write file through cwd root mode={use_remote}"))?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(false, false ; "local_network_disabled")]
+#[test_case(false, true ; "local_network_enabled")]
+#[test_case(true, false ; "remote_network_disabled")]
+#[test_case(true, true ; "remote_network_enabled")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root_with_default_tmp_roots(
+    use_remote: bool,
+    network_access: bool,
+) -> Result<()> {
+    let context = create_file_system_context(use_remote).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd,
+        network_access,
+        /*exclude_tmpdir_env_var*/ false,
+        /*exclude_slash_tmp*/ false,
+    );
+
+    file_system
+        .write_file(
+            &absolute_path(file_path.clone()),
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "write file through cwd root with tmp mode={use_remote} network={network_access}"
+            )
+        })?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(false, false ; "local_network_disabled")]
+#[test_case(false, true ; "local_network_enabled")]
+#[test_case(true, false ; "remote_network_disabled")]
+#[test_case(true, true ; "remote_network_enabled")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root_with_full_read_access(
+    use_remote: bool,
+    network_access: bool,
+) -> Result<()> {
+    let context = create_file_system_context(use_remote).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd,
+        network_access,
+        /*exclude_tmpdir_env_var*/ false,
+        /*exclude_slash_tmp*/ false,
+    );
+
+    file_system
+        .write_file(
+            &absolute_path(file_path.clone()),
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "write file through cwd root with full read mode={use_remote} network={network_access}"
+            )
+        })?;
     assert_eq!(std::fs::read(&file_path)?, b"created");
 
     Ok(())
