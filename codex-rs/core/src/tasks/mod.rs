@@ -32,6 +32,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
+use crate::thread_title;
 use codex_analytics::TurnProfileFact;
 use codex_analytics::TurnTokenUsageFact;
 use codex_login::AuthManager;
@@ -742,6 +743,7 @@ impl Session {
             });
         self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
             .await;
+        let auto_thread_title_last_agent_message = last_agent_message.clone();
         let event = EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn_context.sub_id.clone(),
             last_agent_message,
@@ -755,6 +757,25 @@ impl Session {
             .lock()
             .await
             .clear_turn(&turn_context.sub_id);
+        let should_start_auto_thread_title = matches!(
+            finished_task_guard.as_ref().map(|task| task.kind),
+            Some(TaskKind::Regular)
+        ) && turn_context.config.auto_thread_title
+            && !thread_title::auto_thread_title_disabled_for_tests()
+            && self.mark_auto_thread_title_requested().await;
+
+        if should_start_auto_thread_title {
+            let session = Arc::clone(self);
+            let turn_context = Arc::clone(&turn_context);
+            tokio::spawn(async move {
+                thread_title::maybe_generate_and_set_thread_title(
+                    session,
+                    turn_context,
+                    auto_thread_title_last_agent_message,
+                )
+                .await;
+            });
+        }
 
         let cleared_active_turn = {
             let mut active = self.active_turn.lock().await;

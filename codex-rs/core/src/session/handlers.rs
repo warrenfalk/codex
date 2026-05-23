@@ -2,6 +2,7 @@ use crate::realtime_conversation::handle_audio as handle_realtime_conversation_a
 use crate::realtime_conversation::handle_close as handle_realtime_conversation_close;
 use crate::realtime_conversation::handle_start as handle_realtime_conversation_start;
 use crate::realtime_conversation::handle_text as handle_realtime_conversation_text;
+use anyhow::Context as _;
 use async_channel::Receiver;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::protocol::Submission;
@@ -51,6 +52,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputResponse;
+use codex_thread_store::ThreadMetadataPatch;
 
 use crate::context_manager::is_user_turn_boundary;
 use codex_protocol::dynamic_tools::DynamicToolResponse;
@@ -590,6 +592,51 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
     .await;
 }
 
+pub(crate) async fn apply_thread_name_update_if_unnamed(
+    sess: &Arc<Session>,
+    name: String,
+) -> anyhow::Result<bool> {
+    let _update_guard = sess
+        .thread_name_update_lock
+        .acquire()
+        .await
+        .context("thread name update semaphore was closed")?;
+
+    let has_thread_name = {
+        let state = sess.state.lock().await;
+        state.session_configuration.thread_name.is_some()
+    };
+    if has_thread_name {
+        return Ok(false);
+    }
+
+    if let Some(existing_name) = crate::session::thread_title_from_thread_store(
+        sess.live_thread(),
+        &sess.services.thread_store,
+        sess.thread_id(),
+    )
+    .await
+    {
+        let mut state = sess.state.lock().await;
+        state.session_configuration.thread_name = Some(existing_name);
+        return Ok(false);
+    }
+
+    let live_thread = sess.live_thread_for_persistence("update thread name")?;
+    live_thread
+        .update_metadata(
+            ThreadMetadataPatch {
+                name: Some(Some(name.clone())),
+                ..Default::default()
+            },
+            /*include_archived*/ false,
+        )
+        .await?;
+
+    let mut state = sess.state.lock().await;
+    state.session_configuration.thread_name = Some(name);
+    Ok(true)
+}
 pub(super) async fn persist_thread_memory_mode_update(
     sess: &Arc<Session>,
     mode: ThreadMemoryMode,

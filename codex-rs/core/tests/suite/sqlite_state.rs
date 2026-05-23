@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerTransportConfig;
 use codex_core::config::Config;
+use codex_core::find_thread_name_by_id;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_features::Feature;
 use codex_login::CodexAuth;
@@ -19,8 +20,10 @@ use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store::ThreadMetadataPatch;
 use codex_web_search_extension::install as install_web_search_extension;
 use core_test_support::responses;
+use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
@@ -30,6 +33,8 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
+use core_test_support::streaming_sse::StreamingSseChunk;
+use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_codex::local_selections;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
@@ -37,11 +42,14 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use core_test_support::wait_for_mcp_server;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use tokio::time::Duration;
+use tokio::time::timeout;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
 use wiremock::Mock;
@@ -680,4 +688,179 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
     );
 
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn first_turn_auto_generates_thread_title() -> Result<()> {
+    let server = start_mock_server().await;
+    let request_log = mount_sse_sequence(
+        &server,
+        vec![
+            responses::sse(vec![
+                ev_response_created("resp-1"),
+                ev_assistant_message("msg-1", "I can fix the parser bug next."),
+                ev_completed("resp-1"),
+            ]),
+            responses::sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-2", r#"{"title":"Parser bug fix"}"#),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config.auto_thread_title = true;
+            config
+                .features
+                .enable(Feature::Sqlite)
+                .expect("test config should allow feature update");
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn("please fix the parser bug in the lexer")
+        .await?;
+
+    let thread_id = test.session_configured.thread_id;
+    let db = test.codex.state_db().expect("state db enabled");
+    let mut metadata = None;
+    for _ in 0..100 {
+        metadata = db.get_thread(thread_id).await?;
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.title == "Parser bug fix")
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    let metadata = metadata.expect("thread metadata should exist");
+    assert_eq!(metadata.title, "Parser bug fix");
+    assert_eq!(
+        metadata.first_user_message.as_deref(),
+        Some("please fix the parser bug in the lexer")
+    );
+    assert_eq!(
+        find_thread_name_by_id(test.codex_home_path(), &thread_id).await?,
+        Some("Parser bug fix".to_string())
+    );
+
+    let requests = request_log.requests();
+    assert_eq!(requests.len(), 2);
+    let auto_title_request = &requests[1];
+    assert!(
+        auto_title_request
+            .instructions_text()
+            .contains("Write a concise title for this Codex thread.")
+    );
+    let input_text = auto_title_request.message_input_texts("user").join("\n");
+    assert!(input_text.contains("please fix the parser bug in the lexer"));
+    assert!(input_text.contains("I can fix the parser bug next."));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn manual_thread_name_beats_pending_auto_title() -> Result<()> {
+    let (title_gate_tx, title_gate_rx) = oneshot::channel();
+    let first_chunks = vec![
+        chunk(ev_response_created("resp-1")),
+        chunk(ev_assistant_message("msg-1", "Looking into the crash now.")),
+        chunk(ev_completed("resp-1")),
+    ];
+    let second_chunks = vec![
+        chunk(ev_response_created("resp-2")),
+        gated_chunk(
+            title_gate_rx,
+            vec![ev_assistant_message(
+                "msg-2",
+                r#"{"title":"Crash investigation"}"#,
+            )],
+        ),
+        chunk(ev_completed("resp-2")),
+    ];
+    let (server, mut completions) =
+        start_streaming_sse_server(vec![first_chunks, second_chunks]).await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config.auto_thread_title = true;
+            config
+                .features
+                .enable(Feature::Sqlite)
+                .expect("test config should allow feature update");
+        })
+        .build_with_streaming_server(&server)
+        .await?;
+
+    test.submit_turn("debug the crash in startup").await?;
+
+    for _ in 0..100 {
+        if server.requests().await.len() == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(server.requests().await.len(), 2);
+
+    test.codex
+        .update_thread_metadata(
+            ThreadMetadataPatch {
+                name: Some(Some("Manual thread name".to_string())),
+                ..Default::default()
+            },
+            /*include_archived*/ false,
+        )
+        .await?;
+
+    let _ = title_gate_tx.send(());
+    timeout(Duration::from_secs(5), completions.remove(1))
+        .await
+        .expect("timed out waiting for auto-title request to complete")
+        .expect("auto-title completion channel should stay open");
+
+    let thread_id = test.session_configured.thread_id;
+    let db = test.codex.state_db().expect("state db enabled");
+    let mut metadata = None;
+    for _ in 0..100 {
+        metadata = db.get_thread(thread_id).await?;
+        if metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.title == "Manual thread name")
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    let metadata = metadata.expect("thread metadata should exist");
+    assert_eq!(metadata.title, "Manual thread name");
+    assert_eq!(
+        find_thread_name_by_id(test.codex_home_path(), &thread_id).await?,
+        Some("Manual thread name".to_string())
+    );
+
+    Ok(())
+}
+
+fn sse_event(event: Value) -> String {
+    responses::sse(vec![event])
+}
+
+fn chunk(event: Value) -> StreamingSseChunk {
+    StreamingSseChunk {
+        gate: None,
+        body: sse_event(event),
+    }
+}
+
+fn gated_chunk(gate: oneshot::Receiver<()>, events: Vec<Value>) -> StreamingSseChunk {
+    StreamingSseChunk {
+        gate: Some(gate),
+        body: responses::sse(events),
+    }
 }

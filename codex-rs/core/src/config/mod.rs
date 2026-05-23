@@ -680,6 +680,12 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
+    /// Whether unnamed threads should be titled automatically after their
+    /// first regular turn. Production config always enables this; tests can
+    /// disable it on the in-memory effective config to keep mock model request
+    /// sequences deterministic.
+    pub auto_thread_title: bool,
+
     /// Optional external notifier command. When set, Codex will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
@@ -3463,6 +3469,7 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
+            auto_thread_title: true,
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,
