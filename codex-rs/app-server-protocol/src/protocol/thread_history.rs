@@ -985,10 +985,39 @@ impl ThreadHistoryBuilder {
         self.finish_current_turn();
 
         let n = usize::try_from(payload.num_turns).unwrap_or(usize::MAX);
-        if n >= self.turns.len() {
-            self.turns.clear();
+        if n == 0 {
+            return;
+        }
+
+        let user_positions = self
+            .turns
+            .iter()
+            .enumerate()
+            .flat_map(|(turn_idx, turn)| {
+                turn.items
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(item_idx, item)| {
+                        matches!(item, ThreadItem::UserMessage { .. })
+                            .then_some((turn_idx, item_idx))
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        let Some(&(turn_idx, item_idx)) = (if n >= user_positions.len() {
+            user_positions.first()
         } else {
-            self.turns.truncate(self.turns.len().saturating_sub(n));
+            user_positions.get(user_positions.len() - n)
+        }) else {
+            return;
+        };
+
+        self.turns.truncate(turn_idx + 1);
+        if let Some(turn) = self.turns.get_mut(turn_idx) {
+            turn.items.truncate(item_idx);
+        }
+        while self.turns.last().is_some_and(|turn| turn.items.is_empty()) {
+            self.turns.pop();
         }
 
         let item_count: usize = self.turns.iter().map(|t| t.items.len()).sum();
