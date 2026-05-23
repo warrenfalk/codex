@@ -63,6 +63,10 @@ impl App {
                 .await;
             }
             AppEvent::OpenResumePicker => {
+                let picker_remote_cwd_override = app_server
+                    .remote_cwd_override()
+                    .filter(|_| app_server.uses_remote_workspace())
+                    .map(Path::to_path_buf);
                 let picker_app_server = match crate::start_app_server_for_picker(
                     &self.config,
                     &self.app_server_target,
@@ -71,7 +75,9 @@ impl App {
                 )
                 .await
                 {
-                    Ok(app_server) => app_server,
+                    Ok(app_server) => {
+                        app_server.with_remote_cwd_override(picker_remote_cwd_override)
+                    }
                     Err(err) => {
                         self.chat_widget.add_error_message(format!(
                             "Failed to start TUI session picker: {err}"
