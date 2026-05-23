@@ -1,6 +1,7 @@
 use clap::Args;
 use clap::CommandFactory;
 use clap::Parser;
+use clap::ValueEnum;
 use clap_complete::Shell;
 use clap_complete::generate;
 use codex_app_server_daemon::BootstrapOptions as AppServerBootstrapOptions;
@@ -24,6 +25,10 @@ use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
+use codex_rollout::UsageReport;
+use codex_rollout::UsageReportOptions;
+use codex_rollout::UsageReportPeriod;
+use codex_rollout::generate_usage_report;
 use codex_rollout_trace::REDUCED_STATE_FILE_NAME;
 use codex_rollout_trace::replay_bundle;
 use codex_state::StateRuntime;
@@ -39,6 +44,7 @@ use codex_utils_cli::SharedCliOptions;
 use codex_utils_cli::resume_hint;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::path::Path;
 use std::path::PathBuf;
 use supports_color::Stream;
 
@@ -187,6 +193,9 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
+    /// Report token usage from recorded rollout data.
+    Usage(UsageCommand),
+
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
@@ -211,6 +220,33 @@ struct CompletionCommand {
     /// Shell to generate completions for
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
+}
+
+#[derive(Debug, Parser)]
+struct UsageCommand {
+    /// Report usage over the last duration. Supports h, d, and w suffixes. Defaults to 7d.
+    #[arg(long, value_name = "DURATION", conflicts_with = "since")]
+    last: Option<String>,
+
+    /// Start time for the report, as RFC3339 or YYYY-MM-DD in UTC.
+    #[arg(long, value_name = "TIME")]
+    since: Option<String>,
+
+    /// Exclusive end time for the report, as RFC3339 or YYYY-MM-DD in UTC.
+    ///
+    /// Date-only values include the entire day.
+    #[arg(long, value_name = "TIME")]
+    until: Option<String>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = UsageOutputFormat::Table)]
+    format: UsageOutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum UsageOutputFormat {
+    Table,
+    Json,
 }
 
 #[derive(Debug, Parser)]
@@ -793,6 +829,171 @@ fn run_update_command() -> anyhow::Result<()> {
     }
 }
 
+async fn run_usage_command(cmd: UsageCommand) -> anyhow::Result<()> {
+    let period = UsageReportPeriod::from_args(
+        cmd.last.as_deref(),
+        cmd.since.as_deref(),
+        cmd.until.as_deref(),
+        time::OffsetDateTime::now_utc(),
+    )?;
+    let codex_home = find_codex_home()?;
+    let report = generate_usage_report(
+        &codex_home,
+        UsageReportOptions {
+            since: period.since,
+            until: period.until,
+        },
+    )
+    .await?;
+
+    match cmd.format {
+        UsageOutputFormat::Table => print_usage_report_table(&report),
+        UsageOutputFormat::Json => {
+            serde_json::to_writer_pretty(std::io::stdout(), &report)?;
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+fn print_usage_report_table(report: &UsageReport) {
+    println!("Usage from {} to {}", report.since, report.until);
+    println!();
+    println!(
+        "Estimated API cost: {}",
+        format_usage_cost(report.costs.total_usd)
+    );
+    println!(
+        "Input cost:         {} (cached {}, uncached {})",
+        format_usage_cost(report.costs.input_usd),
+        format_usage_cost(report.costs.cached_input_usd),
+        format_usage_cost(report.costs.uncached_input_usd)
+    );
+    println!(
+        "Output cost:        {} (reasoning {})",
+        format_usage_cost(report.costs.output_usd),
+        format_usage_cost(report.costs.reasoning_output_usd)
+    );
+    println!();
+    println!(
+        "Total tokens:  {}",
+        format_usage_count(report.totals.total_tokens)
+    );
+    println!(
+        "Input tokens:  {} (cached {}, uncached {})",
+        format_usage_count(report.totals.input_tokens),
+        format_usage_count(report.totals.cached_input_tokens),
+        format_usage_count(report.totals.uncached_input_tokens)
+    );
+    println!(
+        "Output tokens: {} (reasoning {})",
+        format_usage_count(report.totals.output_tokens),
+        format_usage_count(report.totals.reasoning_output_tokens)
+    );
+    println!(
+        "Rollout files: {} scanned, {} modified since start, {} parse errors",
+        format_usize_count(report.scanned_files),
+        format_usize_count(report.matched_files),
+        format_usize_count(report.parse_errors)
+    );
+
+    for warning in &report.warnings {
+        eprintln!("warning: {warning}");
+    }
+
+    if report.threads.is_empty() {
+        println!();
+        println!("No token usage found.");
+        return;
+    }
+
+    println!();
+    println!(
+        "{:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:<24} NAME (CWD)",
+        "TOTAL", "INPUT", "CACHED", "UNCACH", "OUTPUT", "REASON", "LAST"
+    );
+
+    let home_dir = dirs::home_dir();
+    for thread in &report.threads {
+        let cwd = thread
+            .cwd
+            .as_ref()
+            .map(|cwd| format_usage_cwd_for_table(cwd, home_dir.as_deref()))
+            .unwrap_or_else(|| "-".to_string());
+        let display_name = {
+            let mut chars = thread.display_name.chars();
+            let truncated = chars.by_ref().take(72).collect::<String>();
+            if chars.next().is_some() {
+                format!("{truncated}...")
+            } else {
+                truncated
+            }
+        };
+        println!(
+            "{:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:<24} {} ({})",
+            format_usage_cost(thread.costs.total_usd),
+            format_usage_cost(thread.costs.input_usd),
+            format_usage_cost(thread.costs.cached_input_usd),
+            format_usage_cost(thread.costs.uncached_input_usd),
+            format_usage_cost(thread.costs.output_usd),
+            format_usage_cost(thread.costs.reasoning_output_usd),
+            thread.last_usage_at,
+            display_name,
+            cwd
+        );
+    }
+}
+
+fn format_usage_cwd_for_table(cwd: &Path, home_dir: Option<&Path>) -> String {
+    if let Some(home_dir) = home_dir
+        && let Ok(relative) = cwd.strip_prefix(home_dir)
+    {
+        if relative.as_os_str().is_empty() {
+            return "~".to_string();
+        }
+        return format!("~/{}", relative.display());
+    }
+
+    cwd.display().to_string()
+}
+
+fn format_usage_count(count: i64) -> String {
+    let mut formatted = format_unsigned_usage_count(count.unsigned_abs());
+    if count < 0 {
+        formatted.insert(0, '-');
+    }
+    formatted
+}
+
+fn format_usize_count(count: usize) -> String {
+    format_unsigned_usage_count(count as u64)
+}
+
+fn format_usage_cost(cost: f64) -> String {
+    if cost == 0.0 {
+        "$0.00".to_string()
+    } else if cost.abs() < 0.01 {
+        format!("${cost:.6}")
+    } else if cost.abs() < 1.0 {
+        format!("${cost:.4}")
+    } else {
+        format!("${cost:.2}")
+    }
+}
+
+fn format_unsigned_usage_count(count: u64) -> String {
+    let raw = count.to_string();
+    let mut formatted = String::with_capacity(raw.len() + raw.len() / 3 + 1);
+    for (index, ch) in raw.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            formatted.push(',');
+        }
+        formatted.push(ch);
+    }
+    formatted.chars().rev().collect()
+}
+
 fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
     cmd.run()
 }
@@ -1284,6 +1485,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             )
             .await?;
             handle_app_exit(exit_info)?;
+        }
+        Some(Subcommand::Usage(cmd)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "usage",
+            )?;
+            run_usage_command(cmd).await?;
         }
         Some(Subcommand::Login(mut login_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -2052,6 +2261,7 @@ fn subcommand_name_for_local_mode_reject(subcommand: &Option<Subcommand>) -> Opt
         Some(Subcommand::Unarchive(_)) => Some("unarchive"),
         Some(Subcommand::Completion(_)) => Some("completion"),
         Some(Subcommand::Update) => Some("update"),
+        Some(Subcommand::Usage(_)) => Some("usage"),
         Some(Subcommand::Cloud(_)) => Some("cloud"),
         Some(Subcommand::Sandbox(_)) => Some("sandbox"),
         Some(Subcommand::Debug(_)) => Some("debug"),
@@ -2102,6 +2312,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Logout(_)) => Some("logout"),
         Some(Subcommand::Completion(_)) => Some("completion"),
         Some(Subcommand::Update) => Some("update"),
+        Some(Subcommand::Usage(_)) => Some("usage"),
         Some(Subcommand::Cloud(_)) => Some("cloud"),
         Some(Subcommand::Sandbox(_)) => Some("sandbox"),
         Some(Subcommand::Debug(_)) => Some("debug"),
@@ -3914,6 +4125,56 @@ mod tests {
             panic!("expected features disable");
         };
         assert_eq!(feature, "shell_tool");
+    }
+
+    #[test]
+    fn usage_parses_time_window_and_json_format() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "usage",
+            "--since",
+            "2026-05-01",
+            "--until",
+            "2026-05-03",
+            "--format",
+            "json",
+        ])
+        .expect("parse should succeed");
+        let Some(Subcommand::Usage(UsageCommand {
+            last,
+            since,
+            until,
+            format,
+        })) = cli.subcommand
+        else {
+            panic!("expected usage subcommand");
+        };
+        assert_eq!(last, None);
+        assert_eq!(since.as_deref(), Some("2026-05-01"));
+        assert_eq!(until.as_deref(), Some("2026-05-03"));
+        assert_matches!(format, UsageOutputFormat::Json);
+    }
+
+    #[test]
+    fn usage_cwd_display_replaces_home_directory_with_tilde() {
+        assert_eq!(
+            format_usage_cwd_for_table(
+                Path::new("/home/warren/source/codex-cli/codex"),
+                Some(Path::new("/home/warren")),
+            ),
+            "~/source/codex-cli/codex"
+        );
+        assert_eq!(
+            format_usage_cwd_for_table(Path::new("/home/warren"), Some(Path::new("/home/warren"))),
+            "~"
+        );
+        assert_eq!(
+            format_usage_cwd_for_table(
+                Path::new("/var/tmp/codex"),
+                Some(Path::new("/home/warren")),
+            ),
+            "/var/tmp/codex"
+        );
     }
 
     #[test]

@@ -14,6 +14,8 @@ pub(crate) mod search;
 pub(crate) mod session_index;
 mod sqlite_metrics;
 pub mod state_db;
+mod usage;
+mod usage_pricing;
 
 pub(crate) mod default_client {
     pub use codex_login::default_client::*;
@@ -75,6 +77,11 @@ pub use session_index::find_thread_name_by_id;
 pub use session_index::find_thread_names_by_ids;
 pub use state_db::StateDbHandle;
 pub use state_db::sqlite_telemetry_recorder;
+pub use usage::UsageReport;
+pub use usage::UsageReportOptions;
+pub use usage::UsageReportPeriod;
+pub use usage::generate_usage_report;
+pub use usage_pricing::UsageCostBreakdown;
 
 #[cfg(test)]
 mod tests;

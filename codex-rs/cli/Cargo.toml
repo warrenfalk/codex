@@ -48,8 +48,8 @@ codex-models-manager = { workspace = true }
 codex-plugin = { workspace = true }
 codex-protocol = { workspace = true }
 codex-responses-api-proxy = { workspace = true }
-codex-rmcp-client = { workspace = true }
 codex-rollout = { workspace = true }
+codex-rmcp-client = { workspace = true }
 codex-rollout-trace = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
@@ -59,6 +59,7 @@ codex-tui = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-path = { workspace = true }
 crossterm = { workspace = true }
+dirs = { workspace = true }
 http = { workspace = true }
 libc = { workspace = true }
 os_info = { workspace = true }
@@ -69,6 +70,7 @@ serde_json = { workspace = true }
 supports-color = { workspace = true }
 sys-locale = { workspace = true }
 tempfile = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
     "macros",
