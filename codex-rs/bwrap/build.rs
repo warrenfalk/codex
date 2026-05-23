@@ -49,6 +49,10 @@ fn try_build_bwrap() -> Result<(), String> {
     .map_err(|err| format!("failed to write {}: {err}", config_h.display()))?;
 
     let mut build = cc::Build::new();
+    // Nix enables glibc fortify hardening, which warns at -O0.
+    if env::var("OPT_LEVEL").as_deref() == Ok("0") {
+        build.opt_level(1);
+    }
     build
         .file(src_dir.join("bubblewrap.c"))
         .file(src_dir.join("bind-mount.c"))
@@ -59,6 +63,7 @@ fn try_build_bwrap() -> Result<(), String> {
         .define("_GNU_SOURCE", None)
         // Rename `main` so the Rust wrapper can expose the Cargo-built binary.
         .define("main", Some("bwrap_main"));
+    build.flag_if_supported("-Wno-missing-field-initializers");
     for include_path in libcap.include_paths {
         // Use -idirafter so target sysroot headers win (musl cross builds),
         // while still allowing libcap headers from the host toolchain.
