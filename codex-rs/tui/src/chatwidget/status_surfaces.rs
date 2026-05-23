@@ -841,6 +841,7 @@ impl ChatWidget {
         match self.connected_mode_footer_state? {
             ConnectedModeFooterState::Connected => Some("[R]".light_blue()),
             ConnectedModeFooterState::Disconnected => Some("[R]".red()),
+            ConnectedModeFooterState::LocalFallback => Some("[L]".red()),
         }
     }
 

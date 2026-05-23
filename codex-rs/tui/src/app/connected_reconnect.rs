@@ -23,6 +23,8 @@ impl App {
         }
 
         self.connected_backend_disconnected = true;
+        self.app_server_footer_state =
+            Some(crate::chatwidget::ConnectedModeFooterState::Disconnected);
         self.chat_widget.show_disconnected_mode_footer();
         self.chat_widget.add_error_message(message);
         self.chat_widget.show_connected_backend_reconnect_status();
@@ -196,6 +198,7 @@ impl App {
         reconnect: ConnectedBackendReconnect,
     ) -> Result<()> {
         self.connected_backend_disconnected = false;
+        self.app_server_footer_state = Some(crate::chatwidget::ConnectedModeFooterState::Connected);
         self.stop_connected_reconnect_task();
 
         let previous = std::mem::replace(app_server, reconnect.app_server);

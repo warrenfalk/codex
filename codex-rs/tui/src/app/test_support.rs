@@ -53,6 +53,7 @@ pub(super) async fn make_test_app() -> App {
         pending_shutdown_exit_thread_id: None,
         connected_backend_disconnected: false,
         connected_reconnect_task: None,
+        app_server_footer_state: None,
         windows_sandbox: WindowsSandboxState::default(),
         thread_event_channels: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),
