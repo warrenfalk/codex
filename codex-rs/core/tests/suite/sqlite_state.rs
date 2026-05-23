@@ -28,13 +28,14 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::ev_web_search_call_done;
+use core_test_support::responses::mount_response_once_match;
 use core_test_support::responses::mount_sse_once;
+use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
-use core_test_support::streaming_sse::StreamingSseChunk;
-use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_codex::local_selections;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
@@ -42,14 +43,11 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use core_test_support::wait_for_mcp_server;
 use pretty_assertions::assert_eq;
-use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use tokio::time::Duration;
-use tokio::time::timeout;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
 use wiremock::Mock;
@@ -693,20 +691,43 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn first_turn_auto_generates_thread_title() -> Result<()> {
     let server = start_mock_server().await;
-    let request_log = mount_sse_sequence(
+    let initial_auto_title_request = mount_sse_once_match(
         &server,
-        vec![
-            responses::sse(vec![
-                ev_response_created("resp-1"),
-                ev_assistant_message("msg-1", "I can fix the parser bug next."),
-                ev_completed("resp-1"),
-            ]),
-            responses::sse(vec![
-                ev_response_created("resp-2"),
-                ev_assistant_message("msg-2", r#"{"title":"Parser bug fix"}"#),
-                ev_completed("resp-2"),
-            ]),
-        ],
+        |request: &wiremock::Request| {
+            is_auto_thread_title_request(request)
+                && !request_body_contains(request, "Latest assistant reply")
+        },
+        responses::sse(vec![
+            ev_response_created("resp-title-1"),
+            ev_assistant_message("msg-title-1", r#"{"title":"Parser bug"}"#),
+            ev_completed("resp-title-1"),
+        ]),
+    )
+    .await;
+    let turn_request = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            !is_auto_thread_title_request(request)
+                && request_body_contains(request, "please fix the parser bug in the lexer")
+        },
+        responses::sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "I can fix the parser bug next."),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let revision_auto_title_request = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            is_auto_thread_title_request(request)
+                && request_body_contains(request, "Latest assistant reply")
+        },
+        responses::sse(vec![
+            ev_response_created("resp-title-2"),
+            ev_assistant_message("msg-title-2", r#"{"title":"Parser bug fix"}"#),
+            ev_completed("resp-title-2"),
+        ]),
     )
     .await;
 
@@ -749,42 +770,66 @@ async fn first_turn_auto_generates_thread_title() -> Result<()> {
         Some("Parser bug fix".to_string())
     );
 
-    let requests = request_log.requests();
-    assert_eq!(requests.len(), 2);
-    let auto_title_request = &requests[1];
-    assert!(
-        auto_title_request
-            .instructions_text()
-            .contains("Write a concise title for this Codex thread.")
-    );
-    let input_text = auto_title_request.message_input_texts("user").join("\n");
-    assert!(input_text.contains("please fix the parser bug in the lexer"));
-    assert!(input_text.contains("I can fix the parser bug next."));
+    assert_eq!(initial_auto_title_request.requests().len(), 1);
+    assert_eq!(turn_request.requests().len(), 1);
+    assert_eq!(revision_auto_title_request.requests().len(), 1);
+    let initial_input_text = initial_auto_title_request.requests()[0]
+        .message_input_texts("user")
+        .join("\n");
+    assert!(initial_input_text.contains("please fix the parser bug in the lexer"));
+    assert!(!initial_input_text.contains("Latest assistant reply"));
+    let revision_input_text = revision_auto_title_request.requests()[0]
+        .message_input_texts("user")
+        .join("\n");
+    assert!(revision_input_text.contains("please fix the parser bug in the lexer"));
+    assert!(revision_input_text.contains("I can fix the parser bug next."));
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manual_thread_name_beats_pending_auto_title() -> Result<()> {
-    let (title_gate_tx, title_gate_rx) = oneshot::channel();
-    let first_chunks = vec![
-        chunk(ev_response_created("resp-1")),
-        chunk(ev_assistant_message("msg-1", "Looking into the crash now.")),
-        chunk(ev_completed("resp-1")),
-    ];
-    let second_chunks = vec![
-        chunk(ev_response_created("resp-2")),
-        gated_chunk(
-            title_gate_rx,
-            vec![ev_assistant_message(
-                "msg-2",
-                r#"{"title":"Crash investigation"}"#,
-            )],
-        ),
-        chunk(ev_completed("resp-2")),
-    ];
-    let (server, mut completions) =
-        start_streaming_sse_server(vec![first_chunks, second_chunks]).await;
+    let server = start_mock_server().await;
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            is_auto_thread_title_request(request)
+                && !request_body_contains(request, "Latest assistant reply")
+        },
+        responses::sse(vec![
+            ev_response_created("resp-title-1"),
+            ev_assistant_message("msg-title-1", r#"{"title":"Startup crash"}"#),
+            ev_completed("resp-title-1"),
+        ]),
+    )
+    .await;
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            !is_auto_thread_title_request(request)
+                && request_body_contains(request, "debug the crash in startup")
+        },
+        responses::sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "Looking into the crash now."),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let revision_auto_title_request = mount_response_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            is_auto_thread_title_request(request)
+                && request_body_contains(request, "Latest assistant reply")
+        },
+        sse_response(responses::sse(vec![
+            ev_response_created("resp-title-2"),
+            ev_assistant_message("msg-title-2", r#"{"title":"Crash investigation"}"#),
+            ev_completed("resp-title-2"),
+        ]))
+        .set_delay(Duration::from_millis(500)),
+    )
+    .await;
 
     let test = test_codex()
         .with_config(|config| {
@@ -794,18 +839,18 @@ async fn manual_thread_name_beats_pending_auto_title() -> Result<()> {
                 .enable(Feature::Sqlite)
                 .expect("test config should allow feature update");
         })
-        .build_with_streaming_server(&server)
+        .build(&server)
         .await?;
 
     test.submit_turn("debug the crash in startup").await?;
 
     for _ in 0..100 {
-        if server.requests().await.len() == 2 {
+        if revision_auto_title_request.requests().len() == 1 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    assert_eq!(server.requests().await.len(), 2);
+    assert_eq!(revision_auto_title_request.requests().len(), 1);
 
     test.codex
         .update_thread_metadata(
@@ -817,11 +862,7 @@ async fn manual_thread_name_beats_pending_auto_title() -> Result<()> {
         )
         .await?;
 
-    let _ = title_gate_tx.send(());
-    timeout(Duration::from_secs(5), completions.remove(1))
-        .await
-        .expect("timed out waiting for auto-title request to complete")
-        .expect("auto-title completion channel should stay open");
+    tokio::time::sleep(Duration::from_millis(750)).await;
 
     let thread_id = test.session_configured.thread_id;
     let db = test.codex.state_db().expect("state db enabled");
@@ -847,20 +888,10 @@ async fn manual_thread_name_beats_pending_auto_title() -> Result<()> {
     Ok(())
 }
 
-fn sse_event(event: Value) -> String {
-    responses::sse(vec![event])
+fn request_body_contains(request: &wiremock::Request, needle: &str) -> bool {
+    String::from_utf8_lossy(&request.body).contains(needle)
 }
 
-fn chunk(event: Value) -> StreamingSseChunk {
-    StreamingSseChunk {
-        gate: None,
-        body: sse_event(event),
-    }
-}
-
-fn gated_chunk(gate: oneshot::Receiver<()>, events: Vec<Value>) -> StreamingSseChunk {
-    StreamingSseChunk {
-        gate: Some(gate),
-        body: responses::sse(events),
-    }
+fn is_auto_thread_title_request(request: &wiremock::Request) -> bool {
+    request_body_contains(request, "Write a concise title for this Codex thread.")
 }

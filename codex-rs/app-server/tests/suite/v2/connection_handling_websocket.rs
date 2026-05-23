@@ -1,6 +1,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
+use app_test_support::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR;
 use app_test_support::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::to_response;
@@ -395,6 +396,7 @@ pub(super) async fn spawn_websocket_server_with_args(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .env("CODEX_HOME", codex_home)
+        .env(DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR, "1")
         .env("RUST_LOG", "warn");
     let mut process = cmd
         .kill_on_drop(true)

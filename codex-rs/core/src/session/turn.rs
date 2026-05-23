@@ -51,6 +51,7 @@ use crate::stream_events_utils::mark_thread_memory_mode_polluted_if_external_con
 use crate::stream_events_utils::raw_assistant_output_text_from_item;
 use crate::stream_events_utils::record_completed_response_item_with_finalized_facts;
 use crate::tasks::emit_compact_metric;
+use crate::thread_title;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::parallel::ToolCallRuntime;
@@ -419,6 +420,13 @@ async fn run_hooks_and_record_inputs(
                 hook_outcome.additional_contexts,
             )
             .await;
+            if matches!(input_item, TurnInput::UserInput { content, .. } if !content.is_empty()) {
+                thread_title::maybe_start_initial_thread_title(
+                    Arc::clone(sess),
+                    Arc::clone(turn_context),
+                )
+                .await;
+            }
         }
     }
     blocked_input && !accepted_user_input
@@ -1371,6 +1379,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::TurnModerationMetadata(_)
         | EventMsg::ContextCompacted(_)
         | EventMsg::ThreadRolledBack(_)
+        | EventMsg::ThreadNameUpdated(_)
         | EventMsg::TurnStarted(_)
         | EventMsg::ThreadSettingsApplied(_)
         | EventMsg::TurnComplete(_)

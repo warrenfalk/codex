@@ -1,7 +1,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use app_test_support::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR;
-use app_test_support::McpProcess;
+use app_test_support::TestAppServer;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::to_response;
 use app_test_support::write_mock_responses_config_toml;
@@ -39,7 +39,7 @@ async fn automatic_thread_title_emits_thread_name_updated() -> Result<()> {
         "compact",
     )?;
 
-    let mut mcp = McpProcess::new_with_env(
+    let mut mcp = TestAppServer::new_with_env(
         codex_home.path(),
         &[(DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR, None)],
     )
