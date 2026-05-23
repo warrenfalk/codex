@@ -651,6 +651,8 @@ pub(crate) struct ChatWidget {
     /// The nudge is only a discovery aid, so once a user dismisses it or enters Plan mode we keep it
     /// hidden for that thread instead of resurfacing it on every matching draft.
     dismissed_plan_mode_nudge_scopes: HashSet<PlanModeNudgeScope>,
+    /// Bare prompt slash-command warning dismissed for the current exact command draft.
+    dismissed_prompt_command_warning: Option<SlashCommand>,
     thread_name: Option<String>,
     thread_rename_block_message: Option<String>,
     active_side_conversation: bool,
