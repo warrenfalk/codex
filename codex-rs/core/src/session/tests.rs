@@ -3786,11 +3786,13 @@ fn text_block(s: &str) -> serde_json::Value {
 }
 
 async fn build_test_config(codex_home: &Path) -> Config {
-    ConfigBuilder::without_managed_config_for_tests()
+    let mut config = ConfigBuilder::without_managed_config_for_tests()
         .codex_home(codex_home.to_path_buf())
         .build()
         .await
-        .expect("load default test config")
+        .expect("load default test config");
+    config.auto_thread_title = false;
+    config
 }
 
 fn session_telemetry(
@@ -5169,6 +5171,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
+        thread_name_update_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
@@ -7325,6 +7328,7 @@ where
         out_of_band_elicitation_paused: watch::channel(false).0,
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
+        thread_name_update_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
