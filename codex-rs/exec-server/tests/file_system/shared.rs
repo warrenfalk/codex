@@ -9,6 +9,7 @@ use codex_exec_server::RemoveOptions;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_sandboxing::policy_transforms::effective_file_system_sandbox_policy;
 use codex_sandboxing::policy_transforms::effective_network_sandbox_policy;
 use codex_utils_path_uri::PathUri;
@@ -22,6 +23,8 @@ use super::support::FileSystemImplementation;
 use super::support::absolute_path;
 use super::support::create_file_system_context;
 use super::support::read_only_sandbox;
+use super::support::sandbox_context_with_policy;
+use super::support::workspace_write_cwd_sandbox;
 use super::support::workspace_write_sandbox;
 
 #[test]
@@ -597,6 +600,161 @@ async fn file_system_sandboxed_write_allows_additional_write_root(
         )
         .await
         .with_context(|| format!("write file through additional root mode={implementation}"))?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(FileSystemImplementation::Local ; "local")]
+#[test_case(FileSystemImplementation::Remote ; "remote")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_explicit_write_root_with_network_enabled(
+    implementation: FileSystemImplementation,
+) -> Result<()> {
+    let context = create_file_system_context(implementation).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let allowed_dir = tmp.path().join("allowed");
+    let file_path = allowed_dir.join("note.txt");
+    std::fs::create_dir_all(&allowed_dir)?;
+
+    let writable_roots = vec![absolute_path(allowed_dir.clone())];
+    let file_system_policy = FileSystemSandboxPolicy::workspace_write(
+        &writable_roots,
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+    let sandbox = sandbox_context_with_policy(
+        file_system_policy,
+        /*network_access*/ true,
+        absolute_path(std::env::temp_dir()),
+    );
+
+    file_system
+        .write_file(
+            &PathUri::from_path(&file_path)?,
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| {
+            format!("write file through network-enabled root mode={implementation}")
+        })?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(FileSystemImplementation::Local ; "local")]
+#[test_case(FileSystemImplementation::Remote ; "remote")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root(
+    implementation: FileSystemImplementation,
+) -> Result<()> {
+    let context = create_file_system_context(implementation).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd, /*network_access*/ false, /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+
+    file_system
+        .write_file(
+            &PathUri::from_path(&file_path)?,
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| format!("write file through cwd root mode={implementation}"))?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(FileSystemImplementation::Local, false ; "local_network_disabled")]
+#[test_case(FileSystemImplementation::Local, true ; "local_network_enabled")]
+#[test_case(FileSystemImplementation::Remote, false ; "remote_network_disabled")]
+#[test_case(FileSystemImplementation::Remote, true ; "remote_network_enabled")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root_with_default_tmp_roots(
+    implementation: FileSystemImplementation,
+    network_access: bool,
+) -> Result<()> {
+    let context = create_file_system_context(implementation).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd,
+        network_access,
+        /*exclude_tmpdir_env_var*/ false,
+        /*exclude_slash_tmp*/ false,
+    );
+
+    file_system
+        .write_file(
+            &PathUri::from_path(&file_path)?,
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "write file through cwd root with tmp mode={implementation} network={network_access}"
+            )
+        })?;
+    assert_eq!(std::fs::read(&file_path)?, b"created");
+
+    Ok(())
+}
+
+#[test_case(FileSystemImplementation::Local, false ; "local_network_disabled")]
+#[test_case(FileSystemImplementation::Local, true ; "local_network_enabled")]
+#[test_case(FileSystemImplementation::Remote, false ; "remote_network_disabled")]
+#[test_case(FileSystemImplementation::Remote, true ; "remote_network_enabled")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn file_system_sandboxed_write_allows_context_cwd_root_with_full_read_access(
+    implementation: FileSystemImplementation,
+    network_access: bool,
+) -> Result<()> {
+    let context = create_file_system_context(implementation).await?;
+    let file_system = context.file_system;
+
+    let tmp = TempDir::new()?;
+    let cwd = tmp.path().join("workspace");
+    let file_path = cwd.join("note.txt");
+    std::fs::create_dir_all(&cwd)?;
+
+    let sandbox = workspace_write_cwd_sandbox(
+        cwd,
+        network_access,
+        /*exclude_tmpdir_env_var*/ false,
+        /*exclude_slash_tmp*/ false,
+    );
+
+    file_system
+        .write_file(
+            &PathUri::from_path(&file_path)?,
+            b"created".to_vec(),
+            Some(&sandbox),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "write file through cwd root with full read mode={implementation} network={network_access}"
+            )
+        })?;
     assert_eq!(std::fs::read(&file_path)?, b"created");
 
     Ok(())
