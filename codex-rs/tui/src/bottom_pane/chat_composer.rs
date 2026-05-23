@@ -1462,6 +1462,11 @@ impl ChatComposer {
         self.footer.status_line_text()
     }
 
+    #[cfg(test)]
+    pub(crate) fn status_line_value(&self) -> Option<Line<'static>> {
+        self.footer.status_line_value.clone()
+    }
+
     pub(crate) fn local_images(&self) -> Vec<LocalImageAttachment> {
         self.attachments.local_images()
     }

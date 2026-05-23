@@ -15,6 +15,7 @@ use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::PermissionProfile;
 use codex_utils_sandbox_summary::summarize_permission_profile;
+use ratatui::text::Span;
 
 use super::status_state::TerminalTitleStatusKind;
 
@@ -185,10 +186,15 @@ impl ChatWidget {
             }
         }
 
-        self.set_status_line(status_line_from_segments(
-            segments,
-            self.config.tui_status_line_use_colors,
-        ));
+        let mut line = status_line_from_segments(segments, self.config.tui_status_line_use_colors);
+        if let Some(badge) = self.connected_mode_status_badge() {
+            let line = line.get_or_insert_with(|| Line::from(Vec::<Span<'static>>::new()));
+            if !line.spans.is_empty() {
+                line.spans.push(" · ".dim());
+            }
+            line.spans.push(badge);
+        }
+        self.set_status_line(line);
         let hyperlink_url = selections
             .status_line_items
             .contains(&StatusLineItem::PullRequestNumber)
@@ -830,6 +836,14 @@ impl ChatWidget {
         };
         self.status_line_value_for_item(status_line_item)
     }
+
+    fn connected_mode_status_badge(&self) -> Option<Span<'static>> {
+        match self.connected_mode_footer_state? {
+            ConnectedModeFooterState::Connected => Some("[R]".light_blue()),
+            ConnectedModeFooterState::Disconnected => Some("[R]".red()),
+        }
+    }
+
     /// Resolves one configured terminal-title item into a displayable segment.
     ///
     /// Returning `None` means "omit this segment for now" so callers can keep

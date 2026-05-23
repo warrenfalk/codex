@@ -23,6 +23,7 @@ impl App {
         }
 
         self.connected_backend_disconnected = true;
+        self.chat_widget.show_disconnected_mode_footer();
         self.chat_widget.add_error_message(message);
         self.chat_widget.show_connected_backend_reconnect_status();
 
@@ -204,6 +205,7 @@ impl App {
 
         let AppServerStartedThread { session, turns } = reconnect.started;
         let restored_same_thread = self.primary_thread_id == Some(session.thread_id);
+        self.chat_widget.show_connected_mode_footer();
         self.chat_widget.clear_connected_backend_reconnect_status();
         if restored_same_thread {
             self.primary_session_configured = Some(session.clone());
