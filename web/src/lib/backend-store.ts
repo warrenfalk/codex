@@ -97,6 +97,11 @@ const EMPTY_THREAD_PREVIEWS: Record<string, string> = {};
 const EMPTY_RUNTIME_TEXT: Record<string, string> = {};
 const EMPTY_WARNINGS: string[] = [];
 const RECONNECT_DELAY_MS = 1000;
+const TURN_ITEMS_VIEW_RANK: Record<Turn["itemsView"], number> = {
+  notLoaded: 0,
+  summary: 1,
+  full: 2,
+};
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -125,10 +130,18 @@ function upsertTurn(turns: Turn[], incoming: Turn): Turn[] {
 
   const next = [...turns];
   const existingTurn = next[index]!;
+  const incomingItemsRank = TURN_ITEMS_VIEW_RANK[incoming.itemsView];
+  const existingItemsRank = TURN_ITEMS_VIEW_RANK[existingTurn.itemsView];
+  const shouldUseIncomingItems =
+    incomingItemsRank > existingItemsRank ||
+    (incomingItemsRank === existingItemsRank && incoming.items.length > 0);
   next[index] = {
     ...existingTurn,
     ...incoming,
-    items: incoming.items.length > 0 ? incoming.items : existingTurn.items,
+    items: shouldUseIncomingItems ? incoming.items : existingTurn.items,
+    itemsView: shouldUseIncomingItems
+      ? incoming.itemsView
+      : existingTurn.itemsView,
   };
   return next;
 }
@@ -246,10 +259,16 @@ function mergeTurn(existing: Turn | undefined, incoming: Turn): Turn {
     return incoming;
   }
 
+  const incomingItemsRank = TURN_ITEMS_VIEW_RANK[incoming.itemsView];
+  const existingItemsRank = TURN_ITEMS_VIEW_RANK[existing.itemsView];
+  const shouldUseIncomingItems =
+    incomingItemsRank > existingItemsRank ||
+    (incomingItemsRank === existingItemsRank && incoming.items.length > 0);
   return {
     ...existing,
     ...incoming,
-    items: incoming.items.length > 0 ? incoming.items : existing.items,
+    items: shouldUseIncomingItems ? incoming.items : existing.items,
+    itemsView: shouldUseIncomingItems ? incoming.itemsView : existing.itemsView,
   };
 }
 

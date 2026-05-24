@@ -62,6 +62,12 @@ type Action =
   | { type: "server/requestResolved"; requestId: string | number }
   | { type: "server/notification"; notification: ServerNotification };
 
+const TURN_ITEMS_VIEW_RANK: Record<Turn["itemsView"], number> = {
+  notLoaded: 0,
+  summary: 1,
+  full: 2,
+};
+
 function sortThreads(threads: Thread[]): Thread[] {
   return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
 }
@@ -107,10 +113,18 @@ function upsertTurn(turns: Turn[], incoming: Turn): Turn[] {
 
   const next = [...turns];
   const existingTurn = next[index]!;
+  const incomingItemsRank = TURN_ITEMS_VIEW_RANK[incoming.itemsView];
+  const existingItemsRank = TURN_ITEMS_VIEW_RANK[existingTurn.itemsView];
+  const shouldUseIncomingItems =
+    incomingItemsRank > existingItemsRank ||
+    (incomingItemsRank === existingItemsRank && incoming.items.length > 0);
   next[index] = {
     ...existingTurn,
     ...incoming,
-    items: incoming.items.length > 0 ? incoming.items : existingTurn.items,
+    items: shouldUseIncomingItems ? incoming.items : existingTurn.items,
+    itemsView: shouldUseIncomingItems
+      ? incoming.itemsView
+      : existingTurn.itemsView,
   };
   return next;
 }

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const DEFAULT_BACKEND_WS_URL = "ws://127.0.0.1:4222";
+export const DEFAULT_BACKEND_URL = "unix://";
 export const DEFAULT_DEV_HOST = "0.0.0.0";
 export const DEFAULT_DEV_UI_PORT = 4202;
 export const DEFAULT_DEV_PROXY_PORT = 4203;
@@ -9,7 +9,7 @@ export const DEFAULT_PROD_HOST = "127.0.0.1";
 export const DEFAULT_PROD_UI_PORT = 4200;
 
 export type RelayConfig = {
-  backendUrl: URL;
+  backendUrl: string;
   host: string;
   port: number;
   projectRoot: string;
@@ -46,6 +46,34 @@ function resolveHost(env: NodeJS.ProcessEnv): string {
   return env.NODE_ENV === "production" ? DEFAULT_PROD_HOST : DEFAULT_DEV_HOST;
 }
 
+function resolveBackendUrl(env: NodeJS.ProcessEnv): string {
+  const backendRaw =
+    env.CODEX_WEB_BACKEND_URL ??
+    env.CODEX_WEB_BACKEND_WS_URL ??
+    DEFAULT_BACKEND_URL;
+
+  if (backendRaw.startsWith("unix://")) {
+    return backendRaw;
+  }
+
+  let backendUrl: URL;
+  try {
+    backendUrl = new URL(backendRaw);
+  } catch (error) {
+    throw new Error(
+      `CODEX_WEB_BACKEND_URL is not a valid URL: ${String(error)}`,
+    );
+  }
+
+  if (!["ws:", "wss:"].includes(backendUrl.protocol)) {
+    throw new Error(
+      "CODEX_WEB_BACKEND_URL must use unix://, ws://, or wss:// protocol",
+    );
+  }
+
+  return backendUrl.toString();
+}
+
 export function resolveRelayConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): RelayConfig {
@@ -53,25 +81,9 @@ export function resolveRelayConfig(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
   );
-  const backendRaw = env.CODEX_WEB_BACKEND_WS_URL ?? DEFAULT_BACKEND_WS_URL;
-
-  let backendUrl: URL;
-  try {
-    backendUrl = new URL(backendRaw);
-  } catch (error) {
-    throw new Error(
-      `CODEX_WEB_BACKEND_WS_URL is not a valid URL: ${String(error)}`,
-    );
-  }
-
-  if (!["ws:", "wss:"].includes(backendUrl.protocol)) {
-    throw new Error(
-      "CODEX_WEB_BACKEND_WS_URL must use ws:// or wss:// protocol",
-    );
-  }
 
   return {
-    backendUrl,
+    backendUrl: resolveBackendUrl(env),
     host: resolveHost(env),
     port: resolvePort(env),
     projectRoot,

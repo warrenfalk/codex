@@ -19,6 +19,7 @@ function turnCompletedNotification(items: ThreadItem[]): ServerNotification {
         error: null,
         id: "turn-1",
         items,
+        itemsView: "full",
         startedAt: 1,
         status: "completed",
       },

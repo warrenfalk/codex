@@ -66,6 +66,7 @@ function turnCompletedNotification(
             : null,
         id: "turn-1",
         items: [],
+        itemsView: "full",
         startedAt: 1,
         status,
       },

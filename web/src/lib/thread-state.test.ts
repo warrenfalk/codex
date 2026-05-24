@@ -21,6 +21,7 @@ describe("thread state reducer", () => {
           threadId: "thr_1",
           turnId: "turn_1",
           itemId: "item_1",
+          startedAtMs: 1,
           reason: "Need approval",
           grantRoot: null,
         },
@@ -49,6 +50,7 @@ describe("thread state reducer", () => {
       threads: [
         {
           id: "thr_1",
+          sessionId: "thr_1",
           forkedFromId: null,
           preview: "preview",
           ephemeral: false,
@@ -60,6 +62,7 @@ describe("thread state reducer", () => {
           cwd: "/tmp/project",
           cliVersion: "0.0.0",
           source: "appServer",
+          threadSource: null,
           agentNickname: null,
           agentRole: null,
           gitInfo: null,
@@ -76,6 +79,7 @@ describe("thread state reducer", () => {
                   memoryCitation: null,
                 },
               ],
+              itemsView: "full",
               status: "inProgress",
               error: null,
               startedAt: 1,

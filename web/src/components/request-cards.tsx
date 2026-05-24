@@ -249,9 +249,10 @@ function CommandApprovalCard({
       {params.commandActions && params.commandActions.length > 0 && (
         <JsonPreview value={params.commandActions} />
       )}
-      {params.additionalPermissions && (
-        <JsonPreview value={params.additionalPermissions} />
-      )}
+      {params.additionalPermissions !== undefined &&
+        params.additionalPermissions !== null && (
+          <JsonPreview value={params.additionalPermissions} />
+        )}
       <div className="button-row">
         {decisions.map((decision, index) => (
           <button
