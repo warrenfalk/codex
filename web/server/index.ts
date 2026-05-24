@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const app = createApp(config.staticDir, pushService);
   const server = http.createServer(app);
 
-  await attachRelay(server, config.backendUrl.toString(), {
+  await attachRelay(server, config.backendUrl, {
     pushNotifier: pushService,
   });
 
@@ -45,9 +45,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `codex-web relay listening on http://${config.host}:${config.port}\n`,
   );
-  process.stdout.write(
-    `proxying websocket traffic to ${config.backendUrl.toString()}\n`,
-  );
+  process.stdout.write(`proxying websocket traffic to ${config.backendUrl}\n`);
 }
 
 main().catch((error) => {

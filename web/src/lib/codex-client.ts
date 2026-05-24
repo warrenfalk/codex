@@ -1,6 +1,8 @@
 import type {
   AnyServerRequest,
   ClientInfo,
+  ExperimentalThreadResumeParams,
+  ExperimentalThreadTurnsListParams,
   InitializeCapabilities,
   InitializeResponse,
   RequestId,
@@ -54,6 +56,7 @@ const CLIENT_INFO: ClientInfo = {
 
 const CAPABILITIES: InitializeCapabilities = {
   experimentalApi: true,
+  requestAttestation: false,
 };
 
 function isServerRequest(
@@ -155,13 +158,18 @@ export class CodexClient {
     { cursor, sortDirection }: ThreadTurnsPageRequest,
   ): Promise<ThreadTurnsPage> {
     try {
+      const params: ExperimentalThreadTurnsListParams = {
+        cursor,
+        itemsView: "full",
+        limit: 100,
+        sortDirection,
+        threadId,
+      };
       const response: ThreadTurnsListResponse =
-        await this.rpc.request<ThreadTurnsListResponse>("thread/turns/list", {
-          cursor,
-          limit: 100,
-          sortDirection,
-          threadId,
-        });
+        await this.rpc.request<ThreadTurnsListResponse>(
+          "thread/turns/list",
+          params,
+        );
       return {
         nextCursor: response.nextCursor,
         turns:
@@ -181,12 +189,13 @@ export class CodexClient {
   }
 
   async resumeThread(threadId: string): Promise<Thread> {
+    const params: ExperimentalThreadResumeParams = {
+      excludeTurns: true,
+      threadId,
+    };
     const response = await this.rpc.request<ThreadResumeResponse>(
       "thread/resume",
-      {
-        excludeTurns: true,
-        threadId,
-      },
+      params,
     );
     return response.thread;
   }

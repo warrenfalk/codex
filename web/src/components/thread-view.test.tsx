@@ -103,6 +103,7 @@ vi.mock("react-bottom-anchored-list", async () => {
 function buildThread(turns: Turn[] = []): Thread {
   return {
     id: "thread-1",
+    sessionId: "thread-1",
     forkedFromId: null,
     preview: "Investigate prompt controls",
     ephemeral: false,
@@ -114,6 +115,7 @@ function buildThread(turns: Turn[] = []): Thread {
     cwd: "/workspace",
     cliVersion: "0.0.0",
     source: "appServer",
+    threadSource: null,
     agentNickname: null,
     agentRole: null,
     gitInfo: null,
@@ -134,6 +136,7 @@ function buildTurn(id = "turn-1"): Turn {
         memoryCitation: null,
       },
     ],
+    itemsView: "full",
     status: "completed",
     error: null,
     startedAt: null,
@@ -158,6 +161,7 @@ function buildUserTurn(id: string, text: string): Turn {
         ],
       },
     ],
+    itemsView: "full",
     status: "completed",
     error: null,
     startedAt: null,
@@ -215,6 +219,7 @@ describe("ThreadView", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "item-1",
+        startedAtMs: 1,
         command: "printf test",
       },
     };

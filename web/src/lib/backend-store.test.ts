@@ -17,6 +17,7 @@ type StatusListener = (
 function makeThread(id: string, name = id): Thread {
   return {
     id,
+    sessionId: id,
     forkedFromId: null,
     preview: `${name} preview`,
     ephemeral: false,
@@ -28,6 +29,7 @@ function makeThread(id: string, name = id): Thread {
     cwd: "/tmp/project",
     cliVersion: "0.0.0",
     source: "appServer",
+    threadSource: null,
     agentNickname: null,
     agentRole: null,
     gitInfo: null,
@@ -40,6 +42,7 @@ function makeTurn(id: string): Turn {
   return {
     id,
     items: [],
+    itemsView: "full",
     status: "completed",
     error: null,
     startedAt: 1,
@@ -449,6 +452,85 @@ describe("BackendStateStore", () => {
         threadId: "thr_1",
       },
     ]);
+  });
+
+  it("keeps full turn items when summary turn updates arrive", async () => {
+    const fullTurn: Turn = {
+      ...makeTurn("turn_1"),
+      completedAt: null,
+      durationMs: null,
+      items: [
+        {
+          type: "agentMessage",
+          id: "item_1",
+          text: "Full response text",
+          phase: null,
+          memoryCitation: null,
+        },
+      ],
+      itemsView: "full",
+      status: "inProgress",
+    };
+    const detailedThread = {
+      ...makeThread("thr_1", "Thread 1"),
+      turns: [fullTurn],
+    };
+    const transport = new FakeTransport(
+      [makeThread("thr_1", "Thread 1")],
+      {},
+      new Map([["thr_1", detailedThread]]),
+    );
+    const store = new BackendStateStore(transport);
+    const subscriber = vi.fn();
+
+    store.subscribeThread("thr_1", subscriber);
+    await waitFor(() => {
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            turns: [
+              expect.objectContaining({
+                id: "turn_1",
+                itemsView: "full",
+                status: "inProgress",
+              }),
+            ],
+          }),
+        }),
+      );
+    });
+
+    transport.emitMessage({
+      method: "turn/completed",
+      params: {
+        threadId: "thr_1",
+        turn: {
+          ...makeTurn("turn_1"),
+          items: [],
+          itemsView: "summary",
+          status: "completed",
+        },
+      },
+    });
+
+    expect(subscriber).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        thread: expect.objectContaining({
+          turns: [
+            expect.objectContaining({
+              id: "turn_1",
+              items: [
+                expect.objectContaining({
+                  text: "Full response text",
+                }),
+              ],
+              itemsView: "full",
+              status: "completed",
+            }),
+          ],
+        }),
+      }),
+    );
   });
 
   it("surfaces global and thread warnings separately", async () => {

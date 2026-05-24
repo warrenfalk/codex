@@ -1,4 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
+import { createConnection } from "node:net";
+import os from "node:os";
+import path from "node:path";
 
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -76,7 +79,26 @@ const CLIENT_INFO = {
 
 const CAPABILITIES = {
   experimentalApi: true,
+  requestAttestation: false,
 };
+
+function defaultUnixSocketPath(): string {
+  const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+  return path.join(codexHome, "app-server-control", "app-server-control.sock");
+}
+
+function unixSocketPathFromBackendUrl(backendUrl: string): string | null {
+  if (!backendUrl.startsWith("unix://")) {
+    return null;
+  }
+
+  const rawSocketPath = backendUrl.slice("unix://".length);
+  if (rawSocketPath.length === 0) {
+    return defaultUnixSocketPath();
+  }
+
+  return path.resolve(rawSocketPath);
+}
 
 function closeIfOpen(
   socket: WebSocket,
@@ -212,7 +234,13 @@ function extractThreadFromResponse(result: unknown): Thread | null {
 
 async function openUpstreamSocket(backendUrl: string): Promise<WebSocket> {
   return await new Promise<WebSocket>((resolve, reject) => {
-    const socket = new WebSocket(backendUrl);
+    const socketPath = unixSocketPathFromBackendUrl(backendUrl);
+    const socket = socketPath
+      ? new WebSocket("ws://localhost/rpc", {
+          perMessageDeflate: false,
+          createConnection: () => createConnection(socketPath),
+        })
+      : new WebSocket(backendUrl, { perMessageDeflate: false });
 
     socket.once("open", () => resolve(socket));
     socket.once("error", (error) => reject(error));

@@ -12,7 +12,7 @@ This package is intentionally standalone:
 ## Development
 
 1. Start the backend app-server separately.
-2. Optionally set `CODEX_WEB_BACKEND_WS_URL` if the backend is not listening on `ws://127.0.0.1:4222`.
+2. Optionally set `CODEX_WEB_BACKEND_URL` if the backend is not listening on the default Codex control socket.
 3. Run `pnpm dev`.
 
 The relay process listens on `CODEX_WEB_PROXY_PORT` (default `4203`).
@@ -56,9 +56,11 @@ subscribed browsers that do not currently have a connected websocket session.
 
 ## Environment
 
-- `CODEX_WEB_BACKEND_WS_URL`
-  - backend websocket URL for the relay
-  - defaults to `ws://127.0.0.1:4222`
+- `CODEX_WEB_BACKEND_URL`
+  - backend URL for the relay
+  - accepts `unix://`, `unix://PATH`, `ws://`, or `wss://`
+  - defaults to `unix://`, which resolves to `$CODEX_HOME/app-server-control/app-server-control.sock`
+  - `CODEX_WEB_BACKEND_WS_URL` is still accepted as a legacy fallback
 - `CODEX_WEB_HOST`
   - host address for the Vite dev server and relay
   - defaults to `0.0.0.0` during development

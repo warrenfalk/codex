@@ -1,5 +1,8 @@
+import fs from "node:fs/promises";
 import http from "node:http";
 import { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 
 import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
@@ -88,8 +91,10 @@ function buildThread(id: string, name = id): Thread {
     name,
     path: null,
     preview: `${name} preview`,
+    sessionId: id,
     source: "appServer",
     status: { type: "idle" },
+    threadSource: null,
     turns: [],
     updatedAt: 1,
   };
@@ -98,6 +103,7 @@ function buildThread(id: string, name = id): Thread {
 describe("attachRelay", () => {
   const servers: http.Server[] = [];
   const sockets: WebSocket[] = [];
+  const tempDirs: string[] = [];
   const webSocketServers: WebSocketServer[] = [];
 
   afterEach(async () => {
@@ -132,6 +138,12 @@ describe("attachRelay", () => {
       ),
     );
     servers.length = 0;
+
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((dir) => fs.rm(dir, { force: true, recursive: true })),
+    );
   });
 
   it("serves a cached thread list and broadcasts proxy snapshots", async () => {
@@ -346,6 +358,110 @@ describe("attachRelay", () => {
     });
 
     client.close();
+  });
+
+  it("connects to a unix socket backend URL", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-web-"));
+    tempDirs.push(tempDir);
+    const socketPath = path.join(tempDir, "app-server.sock");
+    const backendServer = http.createServer();
+    servers.push(backendServer);
+    const backendWss = new WebSocketServer({ server: backendServer });
+    webSocketServers.push(backendWss);
+    const upgradeRequests: Array<{
+      extensions: string | undefined;
+      host: string | undefined;
+      url: string | undefined;
+    }> = [];
+    backendServer.prependListener("upgrade", (request) => {
+      upgradeRequests.push({
+        extensions: request.headers["sec-websocket-extensions"],
+        host: request.headers.host,
+        url: request.url,
+      });
+    });
+
+    backendWss.on("connection", async (socket) => {
+      sockets.push(socket);
+      const backendCollector = createCollector(socket);
+
+      const initializeRequest = await backendCollector.waitFor(
+        (message) => message.method === "initialize",
+      );
+      socket.send(
+        JSON.stringify({
+          id: initializeRequest.id,
+          result: {
+            codexHome: "/tmp/codex",
+            platformFamily: "unix",
+            platformOs: "linux",
+            userAgent: "codex-test",
+          },
+        }),
+      );
+
+      await backendCollector.waitFor(
+        (message) => message.method === "initialized",
+      );
+
+      const listRequest = await backendCollector.waitFor(
+        (message) => message.method === "thread/list",
+      );
+      socket.send(
+        JSON.stringify({
+          id: listRequest.id,
+          result: {
+            data: [buildThread("thread-uds", "Unix Socket Thread")],
+            nextCursor: null,
+          },
+        }),
+      );
+    });
+
+    await new Promise<void>((resolve) => {
+      backendServer.listen(socketPath, () => resolve());
+    });
+
+    const relayApp = express();
+    const relayServer = http.createServer(relayApp);
+    servers.push(relayServer);
+    await attachRelay(relayServer, `unix://${socketPath}`);
+    const relayPort = await listen(relayServer);
+
+    const client = new WebSocket(`ws://127.0.0.1:${relayPort}/rpc`);
+    sockets.push(client);
+    const collector = createCollector(client);
+
+    await new Promise<void>((resolve, reject) => {
+      client.on("open", () => resolve());
+      client.on("error", reject);
+    });
+
+    client.send(
+      JSON.stringify({
+        id: 1,
+        method: "thread/list",
+        params: {
+          cursor: null,
+          limit: 50,
+          sortDirection: "desc",
+        },
+      }),
+    );
+
+    expect(
+      await collector.waitFor(
+        (message) => message.id === 1 && "result" in message,
+      ),
+    ).toMatchObject({
+      id: 1,
+      result: {
+        data: [expect.objectContaining({ id: "thread-uds" })],
+      },
+    });
+    expect(upgradeRequests).toEqual([
+      { extensions: undefined, host: "localhost", url: "/rpc" },
+    ]);
   });
 
   it("notifies push service with foreground thread state by subscription endpoint", async () => {

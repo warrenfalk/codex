@@ -21,6 +21,7 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_1",
+        startedAtMs: 1,
         command: "pnpm build",
       },
     };
@@ -51,10 +52,11 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_1",
+        startedAtMs: 1,
         command: 'printf "approval protocol smoke test\\n"',
         availableDecisions: ["accept", persistentDecision, "cancel"],
       },
-    };
+    } as unknown as ServerRequest;
 
     render(<RequestCard onRespond={onRespond} request={request} />);
 
@@ -86,6 +88,8 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_1",
+        startedAtMs: 1,
+        cwd: "/tmp/project",
         reason: "Need extra write access",
         permissions: {
           network: { enabled: true },
@@ -127,6 +131,8 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_1",
+        startedAtMs: 1,
+        cwd: "/tmp/project",
         reason: "Need canonical file access",
         permissions: {
           network: null,

@@ -29,6 +29,8 @@ function buildThread(overrides: Partial<Thread> = {}): Thread {
     name: null,
     turns: [],
     ...overrides,
+    sessionId: overrides.sessionId ?? "thread-1",
+    threadSource: overrides.threadSource ?? null,
   };
 }
 

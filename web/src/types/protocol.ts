@@ -40,14 +40,15 @@ export type {
   ThreadClosedNotification,
   ThreadItem,
   ThreadListResponse,
-  ThreadTurnsListResponse,
   ThreadSetNameResponse,
   ThreadNameUpdatedNotification,
+  ThreadResumeParams,
   ThreadResumeResponse,
   ThreadStartedNotification,
   ThreadStatus,
   ThreadStatusChangedNotification,
   ThreadUnarchivedNotification,
+  TurnItemsView,
   ToolRequestUserInputParams,
   ToolRequestUserInputResponse,
   Turn,
@@ -79,6 +80,27 @@ export type UnknownServerRequest = {
   id: string | number;
   params: unknown;
   unknown: true;
+};
+
+export type ExperimentalThreadResumeParams =
+  import("../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams").ThreadResumeParams & {
+    excludeTurns?: boolean;
+  };
+
+export type ExperimentalThreadTurnsListParams = {
+  cursor?: string | null;
+  itemsView?:
+    | import("../../../codex-rs/app-server-protocol/schema/typescript/v2/TurnItemsView").TurnItemsView
+    | null;
+  limit?: number | null;
+  sortDirection?: "asc" | "desc" | null;
+  threadId: string;
+};
+
+export type ThreadTurnsListResponse = {
+  backwardsCursor: string | null;
+  data: import("../../../codex-rs/app-server-protocol/schema/typescript/v2/Turn").Turn[];
+  nextCursor: string | null;
 };
 
 export type AnyServerRequest =

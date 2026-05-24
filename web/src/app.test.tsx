@@ -65,6 +65,7 @@ afterEach(() => {
 function makeThread(id: string): Thread {
   return {
     id,
+    sessionId: id,
     forkedFromId: null,
     preview: "Continue the routing work",
     ephemeral: false,
@@ -76,6 +77,7 @@ function makeThread(id: string): Thread {
     cwd: "/workspace",
     cliVersion: "0.0.0",
     source: "appServer",
+    threadSource: null,
     agentNickname: null,
     agentRole: null,
     gitInfo: null,
@@ -200,6 +202,7 @@ describe("App routing", () => {
         threadId: thread.id,
         turnId: "turn-1",
         itemId: "item-1",
+        startedAtMs: 1,
         command: "pnpm test",
       },
     };
