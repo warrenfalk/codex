@@ -1087,19 +1087,18 @@ mod thread_processor_behavior_tests {
         thread_outgoing.abort_pending_server_requests().await;
 
         let request_message = outgoing_rx.recv().await.expect("request should be sent");
-        let OutgoingEnvelope::ToConnection {
-            connection_id: request_connection_id,
+        let OutgoingEnvelope::ToConnections {
+            connection_ids: request_connection_ids,
             message:
                 OutgoingMessage::Request(ServerRequest::ToolRequestUserInput {
                     request_id: sent_request_id,
                     ..
                 }),
-            ..
         } = request_message
         else {
             panic!("expected tool request to be sent to the subscribed connection");
         };
-        assert_eq!(request_connection_id, connection_id);
+        assert_eq!(request_connection_ids, vec![connection_id]);
         assert_eq!(sent_request_id, request_id);
 
         let response = client_request_rx

@@ -455,6 +455,13 @@ client_request_definitions! {
     },
 
     /// NEW APIs
+    // Event observation
+    EventFirehose => "event/firehose" {
+        params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
+        serialization: None,
+        response: v2::EventFirehoseResponse,
+    },
+
     // Thread lifecycle
     // Uses `inspect_params` because only some fields are experimental.
     ThreadStart => "thread/start" {
@@ -1559,6 +1566,7 @@ server_notification_definitions! {
     /// Deprecated legacy apply_patch output stream notification.
     FileChangeOutputDelta => "item/fileChange/outputDelta" (v2::FileChangeOutputDeltaNotification),
     FileChangePatchUpdated => "item/fileChange/patchUpdated" (v2::FileChangePatchUpdatedNotification),
+    ServerRequestObserved => "serverRequest/observed" (v2::ServerRequestObservedNotification),
     ServerRequestResolved => "serverRequest/resolved" (v2::ServerRequestResolvedNotification),
     McpToolCallProgress => "item/mcpToolCall/progress" (v2::McpToolCallProgressNotification),
     McpServerOauthLoginCompleted => "mcpServer/oauthLogin/completed" (v2::McpServerOauthLoginCompletedNotification),
@@ -2426,6 +2434,40 @@ mod tests {
                 "id": 1,
             }),
             serde_json::to_value(&request)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_event_firehose() -> Result<()> {
+        let request = ClientRequest::EventFirehose {
+            request_id: RequestId::Integer(1),
+            params: None,
+        };
+        assert_eq!(request.id(), &RequestId::Integer(1));
+        assert_eq!(request.method(), "event/firehose");
+        assert_eq!(
+            json!({
+                "method": "event/firehose",
+                "id": 1,
+            }),
+            serde_json::to_value(&request)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_event_firehose_without_params() -> Result<()> {
+        let request: ClientRequest = serde_json::from_value(json!({
+            "method": "event/firehose",
+            "id": 1,
+        }))?;
+        assert_eq!(
+            request,
+            ClientRequest::EventFirehose {
+                request_id: RequestId::Integer(1),
+                params: None,
+            }
         );
         Ok(())
     }

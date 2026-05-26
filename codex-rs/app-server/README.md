@@ -150,6 +150,8 @@ Example with notification opt-out:
 - `thread/goal/cleared` — notification emitted whenever a thread goal is removed.
 - `thread/settings/updated` — experimental notification emitted to subscribed clients when a loaded thread’s effective next-turn settings change; includes `threadId` and the full `threadSettings`.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).
+- `event/firehose` — subscribe the current initialized connection as a passive observer of outbound app-server events; returns `{}`. The connection receives observed broadcast notifications, thread-scoped notifications, targeted notifications, and server-initiated requests without becoming a thread subscriber.
+- `serverRequest/observed` — firehose-only notification containing `{ request }`, where `request` is the original server-initiated request. Observed requests are not answerable by the firehose connection.
 - `thread/archive` — move a thread’s rollout file into the archived directory and attempt to move any spawned descendant thread rollout files; returns `{}` on success and emits `thread/archived` for each archived thread.
 - `thread/unsubscribe` — unsubscribe this connection from thread turn/item events. If this was the last subscriber, the server keeps the thread loaded and unloads it only after it has had no subscribers and no thread activity for 30 minutes, then emits `thread/closed`.
 - `thread/name/set` — set or update a thread’s user-facing name for either a loaded thread or a persisted rollout; returns `{}` on success and emits `thread/name/updated` to initialized, opted-in clients. Thread names are not required to be unique; name lookups resolve to the most recently updated thread.
@@ -1205,6 +1207,25 @@ Examples:
 
 - Opt out of thread lifecycle notifications: `thread/started`
 - Opt out of streamed agent text deltas: `item/agentMessage/delta`
+
+### Firehose observer
+
+`event/firehose` marks the current initialized connection as a passive observer. Params may be omitted and the response is `{}`:
+
+```json
+{ "method": "event/firehose", "id": 17 }
+{ "id": 17, "result": {} }
+```
+
+After subscribing, the connection receives one observed copy of each logical outbound app-server event. Notifications are delivered with their original method and params. Server-initiated requests are delivered as `serverRequest/observed` notifications:
+
+```json
+{ "method": "serverRequest/observed", "params": {
+    "request": { "method": "item/tool/requestUserInput", "id": 9, "params": { "...": "..." } }
+} }
+```
+
+The observer connection cannot answer requests it only observed; JSON-RPC responses or errors for those ids are ignored. Firehose delivery ignores `optOutNotificationMethods`. The subscription does not add the connection to any thread subscriber set, does not replay pending thread requests, and does not keep single-client app-server mode alive by itself.
 
 ### Fuzzy file search events (experimental)
 

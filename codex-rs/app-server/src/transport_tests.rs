@@ -1,7 +1,9 @@
 use super::*;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::DynamicToolCallParams;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::ServerRequestObservedNotification;
 use codex_app_server_protocol::ThreadRealtimeStartedNotification;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -20,6 +22,40 @@ fn thread_realtime_started_notification() -> ServerNotification {
         realtime_session_id: None,
         version: RealtimeConversationVersion::V1,
     })
+}
+
+fn config_warning(summary: &str) -> ServerNotification {
+    ServerNotification::ConfigWarning(ConfigWarningNotification {
+        summary: summary.to_string(),
+        details: None,
+        path: None,
+        range: None,
+    })
+}
+
+fn initialized_connection(writer: mpsc::Sender<QueuedOutgoingMessage>) -> OutboundConnectionState {
+    OutboundConnectionState::new(
+        writer,
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(RwLock::new(HashSet::new())),
+        /*disconnect_sender*/ None,
+    )
+}
+
+fn initialized_firehose_connection(
+    writer: mpsc::Sender<QueuedOutgoingMessage>,
+    opted_out_notification_methods: HashSet<String>,
+) -> OutboundConnectionState {
+    let connection_state = OutboundConnectionState::new(
+        writer,
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(RwLock::new(opted_out_notification_methods)),
+        /*disconnect_sender*/ None,
+    );
+    connection_state.session.subscribe_firehose();
+    connection_state
 }
 
 #[tokio::test]
@@ -149,6 +185,201 @@ async fn to_connection_notifications_are_preserved_for_non_opted_out_clients() {
             ConfigWarningNotification { summary, .. }
         )) if summary == "task_started"
     ));
+}
+
+#[tokio::test]
+async fn broadcast_notifications_reach_firehose_connections_despite_opt_out() {
+    let normal_connection_id = ConnectionId(21);
+    let firehose_connection_id = ConnectionId(22);
+    let (normal_writer_tx, mut normal_writer_rx) = mpsc::channel(2);
+    let (firehose_writer_tx, mut firehose_writer_rx) = mpsc::channel(2);
+
+    let mut connections = HashMap::new();
+    connections.insert(
+        normal_connection_id,
+        initialized_connection(normal_writer_tx),
+    );
+    connections.insert(
+        firehose_connection_id,
+        initialized_firehose_connection(
+            firehose_writer_tx,
+            HashSet::from(["configWarning".to_string()]),
+        ),
+    );
+
+    route_outgoing_envelope(
+        &mut connections,
+        OutgoingEnvelope::Broadcast {
+            message: OutgoingMessage::AppServerNotification(config_warning("broadcast")),
+        },
+    )
+    .await;
+
+    let normal_message = normal_writer_rx
+        .try_recv()
+        .expect("normal connection should receive broadcast");
+    assert!(matches!(
+        normal_message.message,
+        OutgoingMessage::AppServerNotification(ServerNotification::ConfigWarning(
+            ConfigWarningNotification { summary, .. }
+        )) if summary == "broadcast"
+    ));
+
+    let firehose_message = firehose_writer_rx
+        .try_recv()
+        .expect("firehose connection should receive observed broadcast despite opt-out");
+    assert!(matches!(
+        firehose_message.message,
+        OutgoingMessage::AppServerNotification(ServerNotification::ConfigWarning(
+            ConfigWarningNotification { summary, .. }
+        )) if summary == "broadcast"
+    ));
+    assert!(
+        firehose_writer_rx.try_recv().is_err(),
+        "firehose connection should receive only one copy"
+    );
+}
+
+#[tokio::test]
+async fn targeted_notifications_emit_one_firehose_copy_per_logical_event() {
+    let target_one = ConnectionId(31);
+    let target_two = ConnectionId(32);
+    let firehose_connection_id = ConnectionId(33);
+    let (target_one_tx, mut target_one_rx) = mpsc::channel(2);
+    let (target_two_tx, mut target_two_rx) = mpsc::channel(2);
+    let (firehose_tx, mut firehose_rx) = mpsc::channel(2);
+
+    let mut connections = HashMap::new();
+    connections.insert(target_one, initialized_connection(target_one_tx));
+    connections.insert(target_two, initialized_connection(target_two_tx));
+    connections.insert(
+        firehose_connection_id,
+        initialized_firehose_connection(firehose_tx, HashSet::new()),
+    );
+
+    route_outgoing_envelope(
+        &mut connections,
+        OutgoingEnvelope::ToConnections {
+            connection_ids: vec![target_one, target_two],
+            message: OutgoingMessage::AppServerNotification(config_warning("targeted")),
+        },
+    )
+    .await;
+
+    target_one_rx
+        .try_recv()
+        .expect("first target should receive notification");
+    target_two_rx
+        .try_recv()
+        .expect("second target should receive notification");
+    let firehose_message = firehose_rx
+        .try_recv()
+        .expect("firehose should receive observed notification");
+    assert!(matches!(
+        firehose_message.message,
+        OutgoingMessage::AppServerNotification(ServerNotification::ConfigWarning(
+            ConfigWarningNotification { summary, .. }
+        )) if summary == "targeted"
+    ));
+    assert!(
+        firehose_rx.try_recv().is_err(),
+        "firehose should receive one copy for the logical targeted notification"
+    );
+}
+
+#[tokio::test]
+async fn targeted_firehose_connection_receives_only_target_copy() {
+    let target_firehose = ConnectionId(41);
+    let (writer_tx, mut writer_rx) = mpsc::channel(2);
+
+    let mut connections = HashMap::new();
+    connections.insert(
+        target_firehose,
+        initialized_firehose_connection(writer_tx, HashSet::from(["configWarning".to_string()])),
+    );
+
+    route_outgoing_envelope(
+        &mut connections,
+        OutgoingEnvelope::ToConnections {
+            connection_ids: vec![target_firehose],
+            message: OutgoingMessage::AppServerNotification(config_warning("target-firehose")),
+        },
+    )
+    .await;
+
+    writer_rx
+        .try_recv()
+        .expect("target firehose should receive target notification");
+    assert!(
+        writer_rx.try_recv().is_err(),
+        "target firehose should not receive a second observed copy"
+    );
+}
+
+#[tokio::test]
+async fn server_requests_are_observed_without_becoming_answerable() {
+    let target_connection_id = ConnectionId(51);
+    let firehose_connection_id = ConnectionId(52);
+    let (target_tx, mut target_rx) = mpsc::channel(2);
+    let (firehose_tx, mut firehose_rx) = mpsc::channel(2);
+
+    let target_state = initialized_connection(target_tx);
+    let target_session = Arc::clone(&target_state.session);
+    let firehose_state = initialized_firehose_connection(firehose_tx, HashSet::new());
+    let firehose_session = Arc::clone(&firehose_state.session);
+
+    let mut connections = HashMap::new();
+    connections.insert(target_connection_id, target_state);
+    connections.insert(firehose_connection_id, firehose_state);
+
+    let request = ServerRequest::DynamicToolCall {
+        request_id: RequestId::Integer(7),
+        params: DynamicToolCallParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            call_id: "call-1".to_string(),
+            namespace: None,
+            tool: "tool".to_string(),
+            arguments: json!({}),
+        },
+    };
+
+    route_outgoing_envelope(
+        &mut connections,
+        OutgoingEnvelope::ToConnections {
+            connection_ids: vec![target_connection_id],
+            message: OutgoingMessage::Request(request.clone()),
+        },
+    )
+    .await;
+
+    let target_message = target_rx
+        .try_recv()
+        .expect("target connection should receive request");
+    assert!(matches!(
+        target_message.message,
+        OutgoingMessage::Request(ServerRequest::DynamicToolCall { .. })
+    ));
+
+    let firehose_message = firehose_rx
+        .try_recv()
+        .expect("firehose connection should receive observed request notification");
+    assert!(matches!(
+        firehose_message.message,
+        OutgoingMessage::AppServerNotification(ServerNotification::ServerRequestObserved(
+            ServerRequestObservedNotification { request: observed }
+        )) if *observed == request
+    ));
+    assert!(
+        target_session
+            .take_answerable_server_request(&RequestId::Integer(7))
+            .await
+    );
+    assert!(
+        !firehose_session
+            .take_answerable_server_request(&RequestId::Integer(7))
+            .await
+    );
 }
 
 #[tokio::test]

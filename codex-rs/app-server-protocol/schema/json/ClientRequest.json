@@ -4371,6 +4371,29 @@
         },
         "method": {
           "enum": [
+            "event/firehose"
+          ],
+          "title": "Event/firehoseRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "title": "Event/firehoseRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
             "thread/start"
           ],
           "title": "Thread/startRequestMethod",
