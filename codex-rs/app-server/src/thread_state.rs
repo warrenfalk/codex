@@ -537,6 +537,18 @@ impl ThreadStateManager {
         true
     }
 
+    pub(crate) async fn connection_has_thread_subscriptions(
+        &self,
+        connection_id: ConnectionId,
+    ) -> bool {
+        self.state
+            .lock()
+            .await
+            .thread_ids_by_connection
+            .get(&connection_id)
+            .is_some_and(|thread_ids| !thread_ids.is_empty())
+    }
+
     pub(crate) async fn remove_connection(&self, connection_id: ConnectionId) -> Vec<ThreadId> {
         {
             let mut state = self.state.lock().await;

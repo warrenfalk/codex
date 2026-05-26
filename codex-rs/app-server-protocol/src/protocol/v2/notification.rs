@@ -1,5 +1,6 @@
 use super::TurnError;
 use crate::RequestId;
+use crate::ServerRequest;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -53,4 +54,11 @@ pub struct ErrorNotification {
 pub struct ServerRequestResolvedNotification {
     pub thread_id: String,
     pub request_id: RequestId,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ServerRequestObservedNotification {
+    pub request: Box<ServerRequest>,
 }
