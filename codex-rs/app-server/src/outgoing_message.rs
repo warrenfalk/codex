@@ -87,6 +87,10 @@ pub(crate) enum OutgoingEnvelope {
         message: OutgoingMessage,
         write_complete_tx: Option<oneshot::Sender<()>>,
     },
+    ToConnections {
+        connection_ids: Vec<ConnectionId>,
+        message: OutgoingMessage,
+    },
     Broadcast {
         message: OutgoingMessage,
     },
@@ -316,28 +320,19 @@ impl OutgoingMessageSender {
                     .await
             }
             Some(connection_ids) => {
-                let mut send_error = None;
+                if connection_ids.is_empty() {
+                    return (outgoing_message_id, rx_approve);
+                }
                 for connection_id in connection_ids {
-                    if let Err(err) = self
-                        .sender
-                        .send(OutgoingEnvelope::ToConnection {
-                            connection_id: *connection_id,
-                            message: outgoing_message.clone(),
-                            write_complete_tx: None,
-                        })
-                        .await
-                    {
-                        send_error = Some(err);
-                        break;
-                    } else {
-                        self.analytics_events_client
-                            .track_server_request(connection_id.0, request.clone());
-                    }
+                    self.analytics_events_client
+                        .track_server_request(connection_id.0, request.clone());
                 }
-                match send_error {
-                    Some(err) => Err(err),
-                    None => Ok(()),
-                }
+                self.sender
+                    .send(OutgoingEnvelope::ToConnections {
+                        connection_ids: connection_ids.to_vec(),
+                        message: outgoing_message,
+                    })
+                    .await
             }
         };
 
@@ -577,18 +572,15 @@ impl OutgoingMessageSender {
             }
             return;
         }
-        for connection_id in connection_ids {
-            if let Err(err) = self
-                .sender
-                .send(OutgoingEnvelope::ToConnection {
-                    connection_id: *connection_id,
-                    message: outgoing_message.clone(),
-                    write_complete_tx: None,
-                })
-                .await
-            {
-                warn!("failed to send server notification to client: {err:?}");
-            }
+        if let Err(err) = self
+            .sender
+            .send(OutgoingEnvelope::ToConnections {
+                connection_ids: connection_ids.to_vec(),
+                message: outgoing_message,
+            })
+            .await
+        {
+            warn!("failed to send server notification to client: {err:?}");
         }
     }
 

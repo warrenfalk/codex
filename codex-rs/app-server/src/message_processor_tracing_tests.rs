@@ -293,6 +293,38 @@ where
     }
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn lifecycle_connection_count_excludes_firehose_only_connections() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    let config = Arc::new(build_test_config(codex_home.path(), &server.uri()).await?);
+    let (processor, _outgoing_rx) = build_test_processor(config).await;
+
+    let firehose = Arc::new(ConnectionSessionState::new());
+    firehose.subscribe_firehose();
+    let normal = Arc::new(ConnectionSessionState::new());
+
+    assert_eq!(
+        0,
+        processor
+            .lifecycle_connection_count(vec![(ConnectionId(81), Arc::clone(&firehose))])
+            .await
+    );
+    assert_eq!(
+        1,
+        processor
+            .lifecycle_connection_count(vec![
+                (ConnectionId(81), firehose),
+                (ConnectionId(82), normal)
+            ])
+            .await
+    );
+
+    processor.shutdown_threads().await;
+    processor.drain_background_tasks().await;
+    Ok(())
+}
+
 fn span_attr<'a>(span: &'a SpanData, key: &str) -> Option<&'a str> {
     span.attributes
         .iter()
@@ -484,6 +516,25 @@ async fn read_thread_started_notification(
                 }
             }
             crate::outgoing_message::OutgoingEnvelope::Broadcast { message } => {
+                let crate::outgoing_message::OutgoingMessage::AppServerNotification(notification) =
+                    message
+                else {
+                    continue;
+                };
+                if matches!(
+                    notification,
+                    codex_app_server_protocol::ServerNotification::ThreadStarted(_)
+                ) {
+                    return;
+                }
+            }
+            crate::outgoing_message::OutgoingEnvelope::ToConnections {
+                connection_ids,
+                message,
+            } => {
+                if !connection_ids.contains(&TEST_CONNECTION_ID) {
+                    continue;
+                }
                 let crate::outgoing_message::OutgoingMessage::AppServerNotification(notification) =
                     message
                 else {

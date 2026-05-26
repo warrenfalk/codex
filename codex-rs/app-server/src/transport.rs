@@ -1,7 +1,9 @@
 use crate::message_processor::ConnectionSessionState;
 use crate::outgoing_message::OutgoingEnvelope;
 use codex_app_server_protocol::ExperimentalApi;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ServerRequestObservedNotification;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -63,11 +65,13 @@ pub(crate) struct OutboundConnectionState {
     pub(crate) initialized: Arc<AtomicBool>,
     pub(crate) experimental_api_enabled: Arc<AtomicBool>,
     pub(crate) opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
+    pub(crate) session: Arc<ConnectionSessionState>,
     pub(crate) writer: mpsc::Sender<QueuedOutgoingMessage>,
     disconnect_sender: Option<CancellationToken>,
 }
 
 impl OutboundConnectionState {
+    #[cfg(test)]
     pub(crate) fn new(
         writer: mpsc::Sender<QueuedOutgoingMessage>,
         initialized: Arc<AtomicBool>,
@@ -75,10 +79,29 @@ impl OutboundConnectionState {
         opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
         disconnect_sender: Option<CancellationToken>,
     ) -> Self {
+        Self::new_with_session(
+            writer,
+            initialized,
+            experimental_api_enabled,
+            opted_out_notification_methods,
+            Arc::new(ConnectionSessionState::new()),
+            disconnect_sender,
+        )
+    }
+
+    pub(crate) fn new_with_session(
+        writer: mpsc::Sender<QueuedOutgoingMessage>,
+        initialized: Arc<AtomicBool>,
+        experimental_api_enabled: Arc<AtomicBool>,
+        opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
+        session: Arc<ConnectionSessionState>,
+        disconnect_sender: Option<CancellationToken>,
+    ) -> Self {
         Self {
             initialized,
             experimental_api_enabled,
             opted_out_notification_methods,
+            session,
             writer,
             disconnect_sender,
         }
@@ -86,6 +109,10 @@ impl OutboundConnectionState {
 
     fn can_disconnect(&self) -> bool {
         self.disconnect_sender.is_some()
+    }
+
+    fn is_firehose_subscribed(&self) -> bool {
+        self.session.firehose_subscribed()
     }
 
     pub(crate) fn request_disconnect(&self) {
@@ -112,6 +139,9 @@ fn should_skip_notification_for_connection(
                     .load(Ordering::Acquire)
             {
                 return true;
+            }
+            if connection_state.is_firehose_subscribed() {
+                return false;
             }
             let method = notification.to_string();
             opted_out_notification_methods.contains(method.as_str())
@@ -145,7 +175,26 @@ async fn send_message_to_connection(
     if should_skip_notification_for_connection(connection_state, &message) {
         return false;
     }
+    if let OutgoingMessage::Request(request) = &message {
+        connection_state
+            .session
+            .note_answerable_server_request(request.id().clone())
+            .await;
+    }
 
+    queue_message_to_connection(connections, connection_id, message, write_complete_tx).await
+}
+
+async fn queue_message_to_connection(
+    connections: &mut HashMap<ConnectionId, OutboundConnectionState>,
+    connection_id: ConnectionId,
+    message: OutgoingMessage,
+    write_complete_tx: Option<tokio::sync::oneshot::Sender<()>>,
+) -> bool {
+    let Some(connection_state) = connections.get(&connection_id) else {
+        warn!("dropping message for disconnected connection: {connection_id:?}");
+        return false;
+    };
     let writer = connection_state.writer.clone();
     let queued_message = QueuedOutgoingMessage {
         message,
@@ -168,6 +217,53 @@ async fn send_message_to_connection(
         disconnect_connection(connections, connection_id)
     } else {
         false
+    }
+}
+
+fn firehose_observed_message(message: &OutgoingMessage) -> Option<OutgoingMessage> {
+    match message {
+        OutgoingMessage::AppServerNotification(notification) => {
+            Some(OutgoingMessage::AppServerNotification(notification.clone()))
+        }
+        OutgoingMessage::Request(request) => Some(OutgoingMessage::AppServerNotification(
+            ServerNotification::ServerRequestObserved(ServerRequestObservedNotification {
+                request: Box::new(request.clone()),
+            }),
+        )),
+        OutgoingMessage::Response(_) | OutgoingMessage::Error(_) => None,
+    }
+}
+
+async fn send_firehose_observed_message(
+    connections: &mut HashMap<ConnectionId, OutboundConnectionState>,
+    message: &OutgoingMessage,
+    excluded_connection_ids: &[ConnectionId],
+) {
+    let Some(observed_message) = firehose_observed_message(message) else {
+        return;
+    };
+    let target_connections = connections
+        .iter()
+        .filter_map(|(connection_id, connection_state)| {
+            if connection_state.initialized.load(Ordering::Acquire)
+                && connection_state.is_firehose_subscribed()
+                && !excluded_connection_ids.contains(connection_id)
+            {
+                Some(*connection_id)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for connection_id in target_connections {
+        let _ = queue_message_to_connection(
+            connections,
+            connection_id,
+            observed_message.clone(),
+            /*write_complete_tx*/ None,
+        )
+        .await;
     }
 }
 
@@ -205,15 +301,35 @@ pub(crate) async fn route_outgoing_envelope(
             message,
             write_complete_tx,
         } => {
+            if matches!(message, OutgoingMessage::AppServerNotification(_)) {
+                send_firehose_observed_message(connections, &message, &[connection_id]).await;
+            }
             let _ =
                 send_message_to_connection(connections, connection_id, message, write_complete_tx)
                     .await;
         }
+        OutgoingEnvelope::ToConnections {
+            connection_ids,
+            message,
+        } => {
+            send_firehose_observed_message(connections, &message, &connection_ids).await;
+            for connection_id in connection_ids {
+                let _ = send_message_to_connection(
+                    connections,
+                    connection_id,
+                    message.clone(),
+                    /*write_complete_tx*/ None,
+                )
+                .await;
+            }
+        }
         OutgoingEnvelope::Broadcast { message } => {
+            send_firehose_observed_message(connections, &message, &[]).await;
             let target_connections: Vec<ConnectionId> = connections
                 .iter()
                 .filter_map(|(connection_id, connection_state)| {
                     if connection_state.initialized.load(Ordering::Acquire)
+                        && !connection_state.is_firehose_subscribed()
                         && !should_skip_notification_for_connection(connection_state, &message)
                     {
                         Some(*connection_id)

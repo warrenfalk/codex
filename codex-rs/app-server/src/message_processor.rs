@@ -3,6 +3,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use crate::attestation::app_server_attestation_provider;
 use crate::config_manager::ConfigManager;
@@ -58,12 +59,14 @@ use codex_app_server_protocol::ClientNotification;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::EventFirehoseResponse;
 use codex_app_server_protocol::ExperimentalApi;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequestPayload;
 use codex_app_server_protocol::experimental_required_message;
 use codex_arg0::Arg0DispatchPaths;
@@ -215,6 +218,8 @@ pub(crate) struct MessageProcessor {
 pub(crate) struct ConnectionSessionState {
     pub(crate) rpc_gate: Arc<ConnectionRpcGate>,
     initialized: OnceLock<InitializedConnectionSessionState>,
+    firehose_subscribed: Arc<AtomicBool>,
+    answerable_server_request_ids: Mutex<HashSet<RequestId>>,
 }
 
 #[derive(Debug)]
@@ -238,6 +243,8 @@ impl ConnectionSessionState {
         Self {
             rpc_gate: Arc::new(ConnectionRpcGate::new()),
             initialized: OnceLock::new(),
+            firehose_subscribed: Arc::new(AtomicBool::new(false)),
+            answerable_server_request_ids: Mutex::new(HashSet::new()),
         }
     }
 
@@ -281,6 +288,29 @@ impl ConnectionSessionState {
             .get()
             .is_some_and(|session| session.supports_openai_form_elicitation)
     }
+
+    pub(crate) fn subscribe_firehose(&self) {
+        self.firehose_subscribed.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn firehose_subscribed(&self) -> bool {
+        self.firehose_subscribed.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn note_answerable_server_request(&self, request_id: RequestId) {
+        self.answerable_server_request_ids
+            .lock()
+            .await
+            .insert(request_id);
+    }
+
+    pub(crate) async fn take_answerable_server_request(&self, request_id: &RequestId) -> bool {
+        self.answerable_server_request_ids
+            .lock()
+            .await
+            .remove(request_id)
+    }
+
     pub(crate) fn initialize(&self, session: InitializedConnectionSessionState) -> Result<(), ()> {
         self.initialized.set(session).map_err(|_| ())
     }
@@ -811,16 +841,46 @@ impl MessageProcessor {
             .subscribe_running_assistant_turn_count()
     }
 
+    pub(crate) async fn lifecycle_connection_count(
+        &self,
+        connections: Vec<(ConnectionId, Arc<ConnectionSessionState>)>,
+    ) -> usize {
+        let mut count = 0;
+        for (connection_id, session) in connections {
+            if !session.firehose_subscribed()
+                || self
+                    .thread_processor
+                    .connection_has_thread_subscriptions(connection_id)
+                    .await
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
     /// Handle a standalone JSON-RPC response originating from the peer.
-    pub(crate) async fn process_response(&self, response: JSONRPCResponse) {
+    pub(crate) async fn process_response(
+        &self,
+        response: JSONRPCResponse,
+        session: &ConnectionSessionState,
+    ) {
         tracing::info!("<- response: {:?}", response);
         let JSONRPCResponse { id, result, .. } = response;
+        if !session.take_answerable_server_request(&id).await {
+            tracing::warn!(request_id = ?id, "ignoring response for unowned server request");
+            return;
+        }
         self.outgoing.notify_client_response(id, result).await
     }
 
     /// Handle an error object received from the peer.
-    pub(crate) async fn process_error(&self, err: JSONRPCError) {
+    pub(crate) async fn process_error(&self, err: JSONRPCError, session: &ConnectionSessionState) {
         tracing::error!("<- error: {:?}", err);
+        if !session.take_answerable_server_request(&err.id).await {
+            tracing::warn!(request_id = ?err.id, "ignoring error for unowned server request");
+            return;
+        }
         self.outgoing.notify_client_error(err.id, err.error).await;
     }
 
@@ -892,6 +952,13 @@ impl MessageProcessor {
             &codex_request,
         );
 
+        if let ClientRequest::EventFirehose { .. } = codex_request {
+            session.subscribe_firehose();
+            self.outgoing
+                .send_response(connection_request_id, EventFirehoseResponse {})
+                .await;
+            return Ok(());
+        }
         let serialization_scope = codex_request.serialization_scope();
         let app_server_client_name = session.app_server_client_name().map(str::to_string);
         let client_version = session.client_version().map(str::to_string);
@@ -900,26 +967,164 @@ impl MessageProcessor {
         let rpc_gate = Arc::clone(&session.rpc_gate);
         let processor = Arc::clone(self);
         let span = request_context.span();
-        let request = QueuedInitializedRequest::new(
-            rpc_gate,
-            async move {
-                let processor_for_request = Arc::clone(&processor);
-                let result = processor_for_request
-                    .handle_initialized_client_request(
-                        connection_request_id,
-                        codex_request,
-                        request_context,
-                        app_server_client_name,
-                        client_version,
-                        supports_openai_form_elicitation,
-                    )
-                    .await;
-                if let Err(error) = result {
-                    processor.outgoing.send_error(error_request_id, error).await;
+        let request = match codex_request {
+            ClientRequest::ThreadStart { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .thread_processor
+                        .thread_start(
+                            connection_request_id.clone(),
+                            params,
+                            app_server_client_name,
+                            client_version,
+                            /*supports_openai_form_elicitation*/
+                            supports_openai_form_elicitation,
+                            request_context,
+                        )
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
                 }
-            }
-            .instrument(span),
-        );
+                .instrument(span),
+            ),
+            ClientRequest::GetConversationSummary { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .thread_processor
+                        .conversation_summary(params)
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadList { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor.thread_processor.thread_list(params).await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadArchive { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .thread_processor
+                        .thread_archive(connection_request_id.clone(), params)
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadUnarchive { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .thread_processor
+                        .thread_unarchive(connection_request_id.clone(), params)
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadRead { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor.thread_processor.thread_read(params).await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadTurnsList { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor.thread_processor.thread_turns_list(params).await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::ThreadTurnsItemsList { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .thread_processor
+                        .thread_turns_items_list(params)
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::TurnStart { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .turn_processor
+                        .turn_start(
+                            connection_request_id.clone(),
+                            params,
+                            app_server_client_name,
+                            client_version,
+                            /*supports_openai_form_elicitation*/
+                            supports_openai_form_elicitation,
+                        )
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            ClientRequest::McpResourceRead { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor
+                        .mcp_processor
+                        .mcp_resource_read(&connection_request_id, params)
+                        .await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
+            codex_request => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let processor_for_request = Arc::clone(&processor);
+                    let result = processor_for_request
+                        .handle_initialized_client_request(
+                            connection_request_id,
+                            codex_request,
+                            request_context,
+                            app_server_client_name,
+                            client_version,
+                            supports_openai_form_elicitation,
+                        )
+                        .await;
+                    if let Err(error) = result {
+                        processor.outgoing.send_error(error_request_id, error).await;
+                    }
+                }
+                .instrument(span),
+            ),
+        };
 
         if let Some(scope) = serialization_scope {
             let (key, access) = RequestSerializationQueueKey::from_scope(connection_id, scope);
@@ -1087,6 +1292,7 @@ impl MessageProcessor {
                 .model_provider_capabilities_read()
                 .await
                 .map(|response| Some(response.into())),
+            ClientRequest::EventFirehose { .. } => Ok(Some(EventFirehoseResponse {}.into())),
             ClientRequest::ThreadStart { params, .. } => {
                 self.thread_processor
                     .thread_start(
@@ -1503,6 +1709,16 @@ impl MessageProcessor {
             }
         };
 
+        self.send_initialized_request_result(request_id, result)
+            .await;
+        Ok(())
+    }
+
+    async fn send_initialized_request_result(
+        &self,
+        request_id: ConnectionRequestId,
+        result: Result<Option<ClientResponsePayload>, JSONRPCErrorError>,
+    ) {
         match result {
             Ok(Some(response)) => {
                 self.outgoing
@@ -1514,7 +1730,6 @@ impl MessageProcessor {
                 self.outgoing.send_error(request_id.clone(), error).await;
             }
         }
-        Ok(())
     }
 }
 
