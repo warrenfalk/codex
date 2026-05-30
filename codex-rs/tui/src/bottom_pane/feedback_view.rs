@@ -359,7 +359,10 @@ pub(crate) fn feedback_success_cell(
             ]);
         }
     }
-    history_cell::WebHyperlinkHistoryCell::new(lines)
+    history_cell::WebHyperlinkHistoryCell::new_with_visibility_kind(
+        lines,
+        history_cell::HistoryVisibilityKind::Noise,
+    )
 }
 
 fn issue_url_for_category(

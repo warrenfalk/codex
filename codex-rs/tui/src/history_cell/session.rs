@@ -194,7 +194,7 @@ pub(crate) fn new_session_info(
             ]),
         ];
 
-        parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
+        parts.push(Box::new(PlainHistoryCell::new(help_lines)));
     } else {
         if config.show_tooltips
             && let Some(tooltips) = tooltip_override
@@ -209,11 +209,11 @@ pub(crate) fn new_session_info(
                 format!("requested: {requested_model}").into(),
                 format!("used: {}", session.model).into(),
             ];
-            parts.push(Box::new(PlainHistoryCell { lines }));
+            parts.push(Box::new(PlainHistoryCell::new(lines)));
         }
     }
 
-    SessionInfoCell(CompositeHistoryCell { parts })
+    SessionInfoCell(CompositeHistoryCell::new(parts))
 }
 
 pub(crate) fn is_yolo_mode(config: &Config) -> bool {

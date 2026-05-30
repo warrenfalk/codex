@@ -296,7 +296,7 @@ impl App {
     pub(crate) fn open_transcript_overlay(&mut self, tui: &mut tui::Tui) {
         let _ = tui.enter_alt_screen();
         self.overlay = Some(Overlay::new_transcript(
-            self.transcript_cells.clone(),
+            self.transcript_cells_for_current_scrollback(),
             self.keymap.pager.clone(),
         ));
         tui.frame_requester().schedule_frame();
@@ -414,11 +414,12 @@ impl App {
     }
 
     /// Apply a computed backtrack selection to the overlay and internal counter.
-    fn apply_backtrack_selection_internal(&mut self, nth_user_message: usize) {
+    pub(crate) fn apply_backtrack_selection_internal(&mut self, nth_user_message: usize) {
         if let Some(cell_idx) = nth_user_position(&self.transcript_cells, nth_user_message) {
             self.backtrack.nth_user_message = nth_user_message;
+            let scrollback_idx = self.scrollback_index_for_transcript_cell_index(cell_idx);
             if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                t.set_highlight_cell(Some(cell_idx));
+                t.set_highlight_cell(scrollback_idx);
             }
         } else {
             self.backtrack.nth_user_message = usize::MAX;
@@ -679,9 +680,7 @@ impl App {
     /// 3. Drop deferred transcript lines buffered while overlay was open to avoid flushing lines
     ///    for cells that were just removed by the trim.
     fn sync_overlay_after_transcript_trim(&mut self) {
-        if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-            t.replace_cells(self.transcript_cells.clone());
-        }
+        self.sync_transcript_overlay_cells();
         if self.backtrack.overlay_preview_active {
             let total_users = user_count(&self.transcript_cells);
             let next_selection = if total_users == 0 {

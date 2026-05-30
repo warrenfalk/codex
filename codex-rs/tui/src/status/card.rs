@@ -1,5 +1,6 @@
 use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::plain_lines;
 use crate::history_cell::with_border_with_inner_width;
@@ -239,7 +240,10 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     );
 
     (
-        CompositeHistoryCell::new(vec![Box::new(command), Box::new(card)]),
+        CompositeHistoryCell::new_with_visibility_kind(
+            vec![Box::new(command), Box::new(card)],
+            HistoryVisibilityKind::Noise,
+        ),
         handle,
     )
 }
@@ -924,6 +928,10 @@ impl HistoryCell for StatusHistoryCell {
         width: u16,
     ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
         self.display_hyperlink_lines(width)
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 }
 
