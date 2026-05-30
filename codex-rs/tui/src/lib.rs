@@ -654,6 +654,7 @@ fn session_target_from_app_server_thread(
         Ok(thread_id) => Some(resume_picker::SessionTarget {
             path: thread.path,
             thread_id,
+            archived: false,
         }),
         Err(err) => {
             warn!(
@@ -2314,6 +2315,7 @@ mod tests {
         let target = crate::resume_picker::SessionTarget {
             path: None,
             thread_id,
+            archived: false,
         };
 
         assert_eq!(target.display_label(), format!("thread {thread_id}"));

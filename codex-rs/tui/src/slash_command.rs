@@ -88,7 +88,7 @@ impl SlashCommand {
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
-            SlashCommand::Archive => "archive this session and exit",
+            SlashCommand::Archive => "archive the current chat and start a new one",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::App => "continue this session in Codex Desktop",
@@ -158,6 +158,7 @@ impl SlashCommand {
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
+                | SlashCommand::Archive
                 | SlashCommand::Raw
                 | SlashCommand::Pets
                 | SlashCommand::Side

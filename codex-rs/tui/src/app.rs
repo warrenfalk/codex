@@ -410,6 +410,12 @@ pub(crate) enum AppRunControl {
     Exit(ExitReason),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviousSessionSummaryHint {
+    Show,
+    Suppress,
+}
+
 #[derive(Debug, Clone)]
 pub enum ExitReason {
     UserRequested,
@@ -913,6 +919,15 @@ impl App {
                 (chat_widget, None)
             }
             SessionSelection::Resume(target_session) => {
+                if target_session.archived {
+                    app_server
+                        .thread_unarchive(target_session.thread_id)
+                        .await
+                        .wrap_err_with(|| {
+                            let target_label = target_session.display_label();
+                            format!("Failed to unarchive session from {target_label}")
+                        })?;
+                }
                 let resumed = app_server
                     .resume_thread(config.clone(), target_session.thread_id)
                     .await
