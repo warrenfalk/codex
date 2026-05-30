@@ -542,6 +542,7 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
+        summary_hint: PreviousSessionSummaryHint,
         session_start_source: Option<ThreadStartSource>,
         initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) {
@@ -552,12 +553,15 @@ impl App {
             .await;
         let model = self.chat_widget.current_model().to_string();
         let config = self.fresh_session_config();
-        let summary = session_summary(
-            self.chat_widget.token_usage(),
-            self.chat_widget.thread_id(),
-            self.chat_widget.thread_name(),
-            self.chat_widget.rollout_path().as_deref(),
-        );
+        let summary = match summary_hint {
+            PreviousSessionSummaryHint::Show => session_summary(
+                self.chat_widget.token_usage(),
+                self.chat_widget.thread_id(),
+                self.chat_widget.thread_name(),
+                self.chat_widget.rollout_path().as_deref(),
+            ),
+            PreviousSessionSummaryHint::Suppress => None,
+        };
         self.shutdown_current_thread(app_server).await;
         let tracked_thread_ids: Vec<ThreadId> =
             self.thread_event_channels.keys().copied().collect();
@@ -787,6 +791,16 @@ impl App {
             }
         };
         self.apply_runtime_policy_overrides(&mut resume_config);
+
+        if target_session.archived
+            && let Err(err) = app_server.thread_unarchive(target_session.thread_id).await
+        {
+            let path_display = target_session.display_label();
+            self.chat_widget.add_error_message(format!(
+                "Failed to unarchive session from {path_display}: {err}"
+            ));
+            return Ok(AppRunControl::Continue);
+        }
 
         let summary = session_summary(
             self.chat_widget.token_usage(),

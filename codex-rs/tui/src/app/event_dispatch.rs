@@ -22,7 +22,10 @@ impl App {
         match event {
             AppEvent::NewSession => {
                 self.start_fresh_session_with_summary_hint(
-                    tui, app_server, /*session_start_source*/ None,
+                    tui,
+                    app_server,
+                    PreviousSessionSummaryHint::Show,
+                    /*session_start_source*/ None,
                     /*initial_user_message*/ None,
                 )
                 .await;
@@ -38,6 +41,7 @@ impl App {
                 self.start_fresh_session_with_summary_hint(
                     tui,
                     app_server,
+                    PreviousSessionSummaryHint::Show,
                     Some(ThreadStartSource::Clear),
                     /*initial_user_message*/ None,
                 )
@@ -53,6 +57,7 @@ impl App {
                 self.start_fresh_session_with_summary_hint(
                     tui,
                     app_server,
+                    PreviousSessionSummaryHint::Show,
                     Some(ThreadStartSource::Clear),
                     crate::chatwidget::create_initial_user_message(
                         Some(text),
@@ -156,8 +161,46 @@ impl App {
                     }
                 }
             }
-            AppEvent::ArchiveCurrentThread => {
-                return Ok(self.archive_current_thread(app_server).await);
+            AppEvent::ArchiveCurrentSession => {
+                let Some(thread_id) = self.active_thread_id.or(self.chat_widget.thread_id()) else {
+                    self.chat_widget.add_error_message(
+                        "A thread must contain at least one turn before it can be archived."
+                            .to_string(),
+                    );
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                };
+                if self.side_threads.contains_key(&thread_id) {
+                    self.chat_widget.add_error_message(
+                        "'/archive' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
+                            .to_string(),
+                    );
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                }
+
+                match app_server.thread_archive(thread_id).await {
+                    Ok(()) => {
+                        self.start_fresh_session_with_summary_hint(
+                            tui,
+                            app_server,
+                            PreviousSessionSummaryHint::Suppress,
+                            /*session_start_source*/ None,
+                            /*initial_user_message*/ None,
+                        )
+                        .await;
+                        self.chat_widget.add_info_message(
+                            "Archived previous chat.".to_string(),
+                            /*hint*/ None,
+                        );
+                    }
+                    Err(err) => {
+                        self.chat_widget
+                            .add_error_message(format!("Failed to archive current session: {err}"));
+                    }
+                }
+
+                tui.frame_requester().schedule_frame();
             }
             AppEvent::DeleteCurrentThread => {
                 return Ok(self.delete_current_thread(app_server).await);
@@ -2340,33 +2383,6 @@ impl App {
             ExitMode::Immediate => {
                 self.pending_shutdown_exit_thread_id = None;
                 AppRunControl::Exit(ExitReason::UserRequested)
-            }
-        }
-    }
-
-    pub(super) async fn archive_current_thread(
-        &mut self,
-        app_server: &mut AppServerSession,
-    ) -> AppRunControl {
-        let Some(thread_id) = self.active_thread_id.or(self.chat_widget.thread_id()) else {
-            self.chat_widget
-                .add_error_message("A thread must start before it can be archived.".to_string());
-            return AppRunControl::Continue;
-        };
-        if self.side_threads.contains_key(&thread_id) {
-            self.chat_widget.add_error_message(
-                "'/archive' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
-                    .to_string(),
-            );
-            return AppRunControl::Continue;
-        }
-
-        match app_server.thread_archive(thread_id).await {
-            Ok(()) => AppRunControl::Exit(ExitReason::UserRequested),
-            Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("Failed to archive current thread: {err}"));
-                AppRunControl::Continue
             }
         }
     }

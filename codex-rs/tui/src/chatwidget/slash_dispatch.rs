@@ -174,33 +174,7 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::NewSession);
             }
             SlashCommand::Archive => {
-                self.bottom_pane.show_selection_view(SelectionViewParams {
-                    title: Some("Archive this session?".to_string()),
-                    subtitle: Some(
-                        "Are you sure? This will archive the current session and exit Codex"
-                            .to_string(),
-                    ),
-                    footer_hint: Some(standard_popup_hint_line()),
-                    items: vec![
-                        SelectionItem {
-                            name: "No, don't archive".to_string(),
-                            description: Some("Return to the current session".to_string()),
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                        SelectionItem {
-                            name: "Yes, archive and exit".to_string(),
-                            description: Some("Archive this session now".to_string()),
-                            actions: vec![Box::new(|tx| {
-                                tx.send(AppEvent::ArchiveCurrentThread);
-                            })],
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                    ],
-                    ..Default::default()
-                });
-                self.request_redraw();
+                self.app_event_tx.send(AppEvent::ArchiveCurrentSession);
             }
             SlashCommand::Delete => {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -549,6 +523,13 @@ impl ChatWidget {
             return;
         }
         if !self.ensure_side_command_allowed_outside_review(cmd) {
+            return;
+        }
+        if cmd == SlashCommand::Archive && !args.trim().is_empty() {
+            self.add_to_history(history_cell::new_error_event(
+                "'/archive' does not accept arguments.".to_string(),
+            ));
+            self.request_redraw();
             return;
         }
         if !cmd.supports_inline_args() {

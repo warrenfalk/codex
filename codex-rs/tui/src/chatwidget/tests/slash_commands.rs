@@ -2501,21 +2501,34 @@ async fn slash_import_opens_claude_code_import_picker() {
 }
 
 #[tokio::test]
-async fn slash_archive_confirmation_requests_current_thread_archive() {
+async fn slash_archive_requests_current_archive() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command(SlashCommand::Archive);
 
-    assert!(chat.bottom_pane.has_active_view());
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::ArchiveCurrentSession));
+}
 
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("slash_archive_confirmation_popup", popup);
+#[tokio::test]
+async fn slash_archive_with_arg_reports_unsupported_argument() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.bottom_pane
+        .set_composer_text("/archive done".to_string(), Vec::new(), Vec::new());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::ArchiveCurrentThread));
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("'/archive' does not accept arguments."),
+        "expected unsupported-argument message, got: {rendered:?}"
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

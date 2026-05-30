@@ -83,6 +83,7 @@ const PICKER_LIST_HORIZONTAL_INSET: u16 = 4;
 pub struct SessionTarget {
     pub path: Option<PathBuf>,
     pub thread_id: ThreadId,
+    pub archived: bool,
 }
 
 impl SessionTarget {
@@ -129,8 +130,17 @@ impl SessionPickerAction {
         }
     }
 
-    fn selection(self, path: Option<PathBuf>, thread_id: ThreadId) -> SessionSelection {
-        let target_session = SessionTarget { path, thread_id };
+    fn selection(
+        self,
+        path: Option<PathBuf>,
+        thread_id: ThreadId,
+        archive_scope: SessionArchiveScope,
+    ) -> SessionSelection {
+        let target_session = SessionTarget {
+            path,
+            thread_id,
+            archived: archive_scope.is_archived(),
+        };
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
             SessionPickerAction::Fork => SessionSelection::Fork(target_session),
@@ -146,6 +156,7 @@ struct PageLoadRequest {
     cwd_filter: Option<PathBuf>,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
+    archive_scope: SessionArchiveScope,
 }
 
 enum PickerLoadRequest {
@@ -185,8 +196,28 @@ impl SessionFilterMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionArchiveScope {
+    Active,
+    Archived,
+}
+
+impl SessionArchiveScope {
+    fn toggle(self) -> Self {
+        match self {
+            Self::Active => Self::Archived,
+            Self::Archived => Self::Active,
+        }
+    }
+
+    fn is_archived(self) -> bool {
+        matches!(self, Self::Archived)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolbarControl {
     Filter,
+    Scope,
     Sort,
 }
 
@@ -194,13 +225,15 @@ impl ToolbarControl {
     fn previous(self) -> Self {
         match self {
             Self::Filter => Self::Sort,
-            Self::Sort => Self::Filter,
+            Self::Scope => Self::Filter,
+            Self::Sort => Self::Scope,
         }
     }
 
     fn next(self) -> Self {
         match self {
-            Self::Filter => Self::Sort,
+            Self::Filter => Self::Scope,
+            Self::Scope => Self::Sort,
             Self::Sort => Self::Filter,
         }
     }
@@ -571,6 +604,7 @@ fn spawn_app_server_page_loader(
                         request.cwd_filter.as_deref(),
                         request.provider_filter,
                         request.sort_key,
+                        request.archive_scope,
                         include_non_interactive,
                     )
                     .await;
@@ -655,6 +689,7 @@ struct PickerState {
     view_width: Option<u16>,
     provider_filter: ProviderFilter,
     filter_mode: SessionFilterMode,
+    archive_scope: SessionArchiveScope,
     filter_cwd: Option<PathBuf>,
     local_filter_cwd: Option<PathBuf>,
     toolbar_focus: ToolbarControl,
@@ -741,6 +776,7 @@ async fn load_app_server_page(
     cwd_filter: Option<&Path>,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
+    archive_scope: SessionArchiveScope,
     include_non_interactive: bool,
 ) -> std::io::Result<PickerPage> {
     let response = app_server
@@ -749,6 +785,7 @@ async fn load_app_server_page(
             cwd_filter,
             provider_filter,
             sort_key,
+            archive_scope,
             include_non_interactive,
         ))
         .await
@@ -929,6 +966,7 @@ impl PickerState {
             view_width: None,
             provider_filter,
             filter_mode: SessionFilterMode::from_show_all(show_all, filter_cwd.as_deref()),
+            archive_scope: SessionArchiveScope::Active,
             local_filter_cwd: filter_cwd.clone(),
             filter_cwd,
             toolbar_focus: ToolbarControl::Filter,
@@ -1123,7 +1161,11 @@ impl PickerState {
                         },
                     };
                     if let Some(thread_id) = thread_id {
-                        return Ok(Some(self.action.selection(path, thread_id)));
+                        return Ok(Some(self.action.selection(
+                            path,
+                            thread_id,
+                            self.archive_scope,
+                        )));
                     }
                     self.inline_error = Some(match path {
                         Some(path) => {
@@ -1281,6 +1323,7 @@ impl PickerState {
             cwd_filter: self.active_cwd_filter(),
             provider_filter: self.provider_filter.clone(),
             sort_key: self.sort_key,
+            archive_scope: self.archive_scope,
         }));
     }
 
@@ -1591,6 +1634,7 @@ impl PickerState {
             cwd_filter: self.active_cwd_filter(),
             provider_filter: self.provider_filter.clone(),
             sort_key: self.sort_key,
+            archive_scope: self.archive_scope,
         }));
     }
 
@@ -1633,6 +1677,11 @@ impl PickerState {
         self.start_initial_load();
     }
 
+    fn toggle_archive_scope(&mut self) {
+        self.archive_scope = self.archive_scope.toggle();
+        self.start_initial_load();
+    }
+
     fn active_cwd_filter(&self) -> Option<PathBuf> {
         match self.filter_mode {
             SessionFilterMode::Cwd => self.filter_cwd.clone(),
@@ -1650,8 +1699,9 @@ impl PickerState {
 
     fn change_focused_toolbar_value(&mut self) {
         match self.toolbar_focus {
-            ToolbarControl::Sort => self.toggle_sort_key(),
             ToolbarControl::Filter => self.toggle_filter_mode(),
+            ToolbarControl::Scope => self.toggle_archive_scope(),
+            ToolbarControl::Sort => self.toggle_sort_key(),
         }
     }
 
@@ -1813,6 +1863,7 @@ fn thread_list_params(
     cwd_filter: Option<&Path>,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
+    archive_scope: SessionArchiveScope,
     include_non_interactive: bool,
 ) -> ThreadListParams {
     ThreadListParams {
@@ -1825,7 +1876,7 @@ fn thread_list_params(
             ProviderFilter::MatchDefault(default_provider) => Some(vec![default_provider]),
         },
         source_kinds: Some(crate::resume_source_kinds(include_non_interactive)),
-        archived: Some(false),
+        archived: Some(archive_scope.is_archived()),
         parent_thread_id: None,
         cwd: cwd_filter.map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
         use_state_db_only: false,
@@ -1941,8 +1992,37 @@ fn toolbar_line(state: &PickerState, compact: bool) -> Line<'static> {
     let mut spans = Vec::new();
     spans.extend(filter_control_spans(state, compact));
     spans.push("   ".dim());
+    spans.extend(scope_control_spans(state, compact));
+    spans.push("   ".dim());
     spans.extend(sort_control_spans(state, compact));
     spans.into()
+}
+
+fn scope_control_spans(state: &PickerState, compact: bool) -> Vec<Span<'static>> {
+    let scope_focused = state.toolbar_focus == ToolbarControl::Scope;
+    if compact {
+        return vec![
+            "Scope:".dim(),
+            toolbar_value(
+                archive_scope_label(state.archive_scope),
+                /*active*/ true,
+                scope_focused,
+            ),
+        ];
+    }
+    vec![
+        "Scope: ".dim(),
+        toolbar_value(
+            archive_scope_label(SessionArchiveScope::Active),
+            state.archive_scope == SessionArchiveScope::Active,
+            scope_focused,
+        ),
+        toolbar_value(
+            archive_scope_label(SessionArchiveScope::Archived),
+            state.archive_scope == SessionArchiveScope::Archived,
+            scope_focused,
+        ),
+    ]
 }
 
 fn sort_control_spans(state: &PickerState, compact: bool) -> Vec<Span<'static>> {
@@ -2016,6 +2096,13 @@ fn filter_mode_label(filter_mode: SessionFilterMode) -> &'static str {
     match filter_mode {
         SessionFilterMode::Cwd => "Cwd",
         SessionFilterMode::All => "All",
+    }
+}
+
+fn archive_scope_label(archive_scope: SessionArchiveScope) -> &'static str {
+    match archive_scope {
+        SessionArchiveScope::Active => "Active",
+        SessionArchiveScope::Archived => "Archived",
     }
 }
 
@@ -2205,7 +2292,7 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         },
         PickerFooterHint {
             key: "tab",
-            wide_label: String::from("focus sort/filter"),
+            wide_label: String::from("focus controls"),
             compact_label: String::from("focus"),
             priority: 7,
         },
@@ -3316,6 +3403,7 @@ mod tests {
             cwd_filter.as_deref(),
             ProviderFilter::MatchDefault(String::from("openai")),
             ThreadSortKey::UpdatedAt,
+            SessionArchiveScope::Active,
             /*include_non_interactive*/ false,
         );
 
@@ -3323,6 +3411,20 @@ mod tests {
             params.cwd,
             Some(ThreadListCwdFilter::One(String::from("/tmp/project")))
         );
+    }
+
+    #[test]
+    fn local_picker_thread_list_params_include_archive_scope() {
+        let params = thread_list_params(
+            Some(String::from("cursor-1")),
+            /*cwd_filter*/ None,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            ThreadSortKey::UpdatedAt,
+            SessionArchiveScope::Archived,
+            /*include_non_interactive*/ false,
+        );
+
+        assert_eq!(params.archived, Some(true));
     }
 
     #[test]
@@ -3541,6 +3643,7 @@ mod tests {
             Some(Path::new("repo/on/server")),
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
+            SessionArchiveScope::Active,
             /*include_non_interactive*/ false,
         );
 
@@ -3563,6 +3666,7 @@ mod tests {
             /*cwd_filter*/ None,
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
+            SessionArchiveScope::Active,
             /*include_non_interactive*/ true,
         );
 
@@ -4661,8 +4765,11 @@ session_picker_view = "dense"
         let line = search_line(&state, /*width*/ 40).to_string();
 
         assert!(line.contains("Filter:[Cwd]"));
+        assert!(line.contains("Scope:[Active]"));
         assert!(line.contains("Sort:[Updated]"));
         assert!(line.find("Filter:[Cwd]") < line.find("Sort:[Updated]"));
+        assert!(line.find("Filter:[Cwd]") < line.find("Scope:[Active]"));
+        assert!(line.find("Scope:[Active]") < line.find("Sort:[Updated]"));
     }
 
     fn dense_snapshot_row() -> Row {
@@ -5339,13 +5446,55 @@ session_picker_view = "dense"
             .await
             .unwrap();
         state
-            .handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL))
+            .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+            .await
+            .unwrap();
+        state
+            .handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
             .await
             .unwrap();
 
         let guard = recorded_requests.lock().unwrap();
         assert_eq!(guard.len(), 2);
         assert_eq!(guard[1].sort_key, ThreadSortKey::CreatedAt);
+    }
+
+    #[tokio::test]
+    async fn toggle_archive_scope_reloads_archived_threads() {
+        let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
+        let request_sink = recorded_requests.clone();
+        let loader = page_only_loader(move |req: PageLoadRequest| {
+            request_sink.lock().unwrap().push(req);
+        });
+
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+
+        state.start_initial_load();
+        {
+            let guard = recorded_requests.lock().unwrap();
+            assert_eq!(guard.len(), 1);
+            assert_eq!(guard[0].archive_scope, SessionArchiveScope::Active);
+        }
+
+        state
+            .handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+            .await
+            .unwrap();
+        state
+            .handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
+            .await
+            .unwrap();
+
+        let guard = recorded_requests.lock().unwrap();
+        assert_eq!(guard.len(), 2);
+        assert_eq!(guard[1].archive_scope, SessionArchiveScope::Archived);
     }
 
     #[tokio::test]
@@ -5715,7 +5864,55 @@ session_picker_view = "dense"
             Some(SessionSelection::Resume(SessionTarget {
                 path: None,
                 thread_id: selected_thread_id,
-            })) => assert_eq!(selected_thread_id, thread_id),
+                archived,
+            })) => {
+                assert_eq!(selected_thread_id, thread_id);
+                assert!(!archived);
+            }
+            other => panic!("unexpected selection: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn enter_on_archived_scope_marks_resume_target_archived() {
+        let loader = page_only_loader(|_| {});
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+        state.archive_scope = SessionArchiveScope::Archived;
+        let thread_id = ThreadId::new();
+        let row = Row {
+            path: None,
+            preview: String::from("archived thread"),
+            thread_id: Some(thread_id),
+            thread_name: None,
+            created_at: None,
+            updated_at: None,
+            cwd: None,
+            git_branch: None,
+        };
+        state.all_rows = vec![row.clone()];
+        state.filtered_rows = vec![row];
+
+        let selection = state
+            .handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+            .await
+            .expect("enter should not abort the picker");
+
+        match selection {
+            Some(SessionSelection::Resume(SessionTarget {
+                thread_id: selected_thread_id,
+                archived,
+                ..
+            })) => {
+                assert_eq!(selected_thread_id, thread_id);
+                assert!(archived);
+            }
             other => panic!("unexpected selection: {other:?}"),
         }
     }
