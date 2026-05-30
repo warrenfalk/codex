@@ -11,6 +11,7 @@
 //!    first drawn.
 //! 4. Completed runs only persist when they have output or a non-success status.
 use super::HistoryCell;
+use super::HistoryVisibilityKind;
 use super::plain_lines;
 use crate::motion::MotionMode;
 use crate::motion::ReducedMotionIndicator;
@@ -337,6 +338,10 @@ impl HistoryCell for HookCell {
             push_running_hook_group(&mut lines, &group, self.animations_enabled);
         }
         lines
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 
     /// Hook transcript output matches viewport output.

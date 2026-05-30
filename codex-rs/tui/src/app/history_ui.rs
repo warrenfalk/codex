@@ -10,25 +10,25 @@ const DESKTOP_THREAD_OPENED_MESSAGE: &str = "Opened this session in Codex Deskto
 impl App {
     pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
         let cell: Arc<dyn HistoryCell> = cell.into();
-        if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+        let should_display = self.cell_visible_in_current_scrollback(cell.as_ref());
+        if should_display && let Some(Overlay::Transcript(t)) = &mut self.overlay {
             t.insert_cell(cell.clone());
             tui.frame_requester().schedule_frame();
         }
         self.transcript_cells.push(cell.clone());
-        if self.initial_history_replay_buffer.as_ref().is_some() {
-            self.insert_history_cell_lines_with_initial_replay_buffer(
-                tui,
-                cell.as_ref(),
-                self.chat_widget
-                    .history_wrap_width(tui.terminal.last_known_screen_size.width),
-            );
-        } else {
-            self.insert_history_cell_lines(
-                tui,
-                cell.as_ref(),
-                self.chat_widget
-                    .history_wrap_width(tui.terminal.last_known_screen_size.width),
-            );
+        if should_display {
+            let width = self
+                .chat_widget
+                .history_wrap_width(tui.terminal.last_known_screen_size.width);
+            if self.initial_history_replay_buffer.as_ref().is_some() {
+                self.insert_history_cell_lines_with_initial_replay_buffer(
+                    tui,
+                    cell.as_ref(),
+                    width,
+                );
+            } else {
+                self.insert_history_cell_lines(tui, cell.as_ref(), width);
+            }
         }
         // A committed cell can unblock a settled /usage card that was waiting
         // behind a transient active cell or a provisional stream tail.
@@ -165,6 +165,7 @@ impl App {
     pub(super) fn reset_transcript_state_after_clear(&mut self) {
         self.overlay = None;
         self.transcript_cells.clear();
+        self.clean_scrollback_enabled = false;
         self.deferred_history_lines.clear();
         self.has_emitted_history_lines = false;
         self.transcript_reflow.clear();

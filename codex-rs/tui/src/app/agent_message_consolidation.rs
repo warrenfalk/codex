@@ -34,7 +34,8 @@ impl App {
         // source-backed cell during consolidation.
         if let Some(cell) = deferred_history_cell {
             let cell: Arc<dyn HistoryCell> = cell.into();
-            if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+            let should_display = self.cell_visible_in_current_scrollback(cell.as_ref());
+            if should_display && let Some(Overlay::Transcript(t)) = &mut self.overlay {
                 t.insert_cell(cell.clone());
             }
             self.transcript_cells.push(cell);
@@ -61,8 +62,8 @@ impl App {
             self.transcript_cells
                 .splice(start..end, std::iter::once(consolidated.clone()));
 
-            if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                t.consolidate_cells(start..end, consolidated.clone());
+            if self.overlay.is_some() {
+                self.sync_transcript_overlay_cells();
                 tui.frame_requester().schedule_frame();
             }
 

@@ -2713,6 +2713,48 @@ fn agent_message_cell_transcript_lines_wrap_link_fragments_without_losing_href()
     );
 }
 
+#[test]
+fn history_visibility_classifies_representative_visible_cells() {
+    let cwd = PathBuf::from("/tmp/project");
+    assert_eq!(
+        PlainHistoryCell::new(vec![Line::from("plain")]).history_visibility_kind(),
+        HistoryVisibilityKind::Normal
+    );
+    assert_eq!(
+        AgentMarkdownCell::new("assistant".to_string(), &cwd).history_visibility_kind(),
+        HistoryVisibilityKind::Normal
+    );
+    assert_eq!(
+        new_proposed_plan("1. plan".to_string(), &cwd).history_visibility_kind(),
+        HistoryVisibilityKind::Normal
+    );
+    assert_eq!(
+        new_context_compaction_event().history_visibility_kind(),
+        HistoryVisibilityKind::Normal
+    );
+}
+
+#[test]
+fn history_visibility_classifies_representative_noise_cells() {
+    let cwd = PathBuf::from("/tmp/project");
+    assert_eq!(
+        new_info_event("status".to_string(), None).history_visibility_kind(),
+        HistoryVisibilityKind::Noise
+    );
+    assert_eq!(
+        new_unified_exec_processes_output(Vec::new()).history_visibility_kind(),
+        HistoryVisibilityKind::Noise
+    );
+    assert_eq!(
+        new_patch_event(HashMap::new(), &cwd).history_visibility_kind(),
+        HistoryVisibilityKind::Noise
+    );
+    assert_eq!(
+        new_error_event("error".to_string()).history_visibility_kind(),
+        HistoryVisibilityKind::Noise
+    );
+}
+
 /// Simulate the consolidation backward-walk logic from `App::handle_event`
 /// to verify it correctly identifies and replaces `AgentMessageCell` runs.
 #[test]

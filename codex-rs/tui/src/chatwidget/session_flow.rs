@@ -205,7 +205,7 @@ impl ChatWidget {
             .into()
         };
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            PlainHistoryCell::new(vec![line]),
+            PlainHistoryCell::new_with_visibility_kind(vec![line], HistoryVisibilityKind::Noise),
         )));
     }
 

@@ -584,6 +584,7 @@ impl TranscriptOverlay {
     /// main transcript. The range is clamped defensively: cells may have been
     /// inserted after the overlay opened, leaving it with fewer entries than
     /// the main transcript.
+    #[cfg(test)]
     pub(crate) fn consolidate_cells(
         &mut self,
         range: std::ops::Range<usize>,

@@ -14,6 +14,10 @@ impl HistoryCell for CompletedMcpToolCallWithImageOutput {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         vec![Line::from("tool result (image output)")]
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 fn mcp_auth_status_label(status: McpAuthStatus) -> &'static str {
     match status {
@@ -244,6 +248,10 @@ impl HistoryCell for McpToolCallCell {
         }
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 pub(crate) fn new_active_mcp_tool_call(
@@ -335,7 +343,7 @@ pub(crate) fn empty_mcp_output() -> PlainHistoryCell {
         .style(Style::default().add_modifier(Modifier::DIM)),
     ];
 
-    PlainHistoryCell::new(lines)
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 #[cfg(test)]
@@ -509,7 +517,7 @@ pub(crate) fn new_mcp_tools_output(
         lines.push(Line::from(""));
     }
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 /// Build the `/mcp` history cell from app-server `McpServerStatus` responses.
@@ -612,7 +620,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
         lines.push(Line::from(""));
     }
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 /// A transient history cell that shows an animated spinner while the MCP
 /// inventory RPC is in flight.
@@ -663,6 +671,10 @@ impl HistoryCell for McpInventoryLoadingCell {
             return None;
         }
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 }
 

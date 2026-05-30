@@ -256,10 +256,11 @@ pub fn new_approval_decision_cell(
         },
     };
 
-    Box::new(PrefixedWrappedHistoryCell::new(
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
         Line::from(summary),
         symbol,
         "  ",
+        HistoryVisibilityKind::Noise,
     ))
 }
 
@@ -293,10 +294,11 @@ pub fn new_guardian_denied_patch_request(files: Vec<String>) -> Box<dyn HistoryC
         summary.push(" files".into());
     }
 
-    Box::new(PrefixedWrappedHistoryCell::new(
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
         Line::from(summary),
         "✗ ".red(),
         "  ",
+        HistoryVisibilityKind::Noise,
     ))
 }
 
@@ -307,7 +309,12 @@ pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCel
         " for ".into(),
         Span::from(summary).dim(),
     ]);
-    Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
+        line,
+        "✗ ".red(),
+        "  ",
+        HistoryVisibilityKind::Noise,
+    ))
 }
 
 pub fn new_guardian_approved_action_request(summary: String) -> Box<dyn HistoryCell> {
@@ -317,7 +324,12 @@ pub fn new_guardian_approved_action_request(summary: String) -> Box<dyn HistoryC
         " for ".into(),
         Span::from(summary).dim(),
     ]);
-    Box::new(PrefixedWrappedHistoryCell::new(line, "✔ ".green(), "  "))
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
+        line,
+        "✔ ".green(),
+        "  ",
+        HistoryVisibilityKind::Noise,
+    ))
 }
 
 pub fn new_guardian_timed_out_patch_request(files: Vec<String>) -> Box<dyn HistoryCell> {
@@ -335,10 +347,11 @@ pub fn new_guardian_timed_out_patch_request(files: Vec<String>) -> Box<dyn Histo
         summary.push(" files".into());
     }
 
-    Box::new(PrefixedWrappedHistoryCell::new(
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
         Line::from(summary),
         "✗ ".red(),
         "  ",
+        HistoryVisibilityKind::Noise,
     ))
 }
 
@@ -349,12 +362,15 @@ pub fn new_guardian_timed_out_action_request(summary: String) -> Box<dyn History
         " before ".into(),
         Span::from(summary).dim(),
     ]);
-    Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
+    Box::new(PrefixedWrappedHistoryCell::new_with_visibility_kind(
+        line,
+        "✗ ".red(),
+        "  ",
+        HistoryVisibilityKind::Noise,
+    ))
 }
 
 /// Cyan history cell line showing the current review status.
 pub(crate) fn new_review_status_line(message: String) -> PlainHistoryCell {
-    PlainHistoryCell {
-        lines: vec![Line::from(message.cyan())],
-    }
+    PlainHistoryCell::new(vec![Line::from(message.cyan())])
 }
