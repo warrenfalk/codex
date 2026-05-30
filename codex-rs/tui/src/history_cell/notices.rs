@@ -79,10 +79,19 @@ impl HistoryCell for UpdateAvailableHistoryCell {
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.display_hyperlink_lines(width)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn new_warning_event(message: String) -> PrefixedWrappedHistoryCell {
-    PrefixedWrappedHistoryCell::new(message.yellow(), "⚠ ".yellow(), "  ")
+    PrefixedWrappedHistoryCell::new_with_visibility_kind(
+        message.yellow(),
+        "⚠ ".yellow(),
+        "  ",
+        HistoryVisibilityKind::Noise,
+    )
 }
 
 const TRUSTED_ACCESS_FOR_CYBER_URL: &str = "https://chatgpt.com/cyber";
@@ -145,6 +154,10 @@ impl HistoryCell for CyberPolicyNoticeCell {
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.display_hyperlink_lines(width)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 #[derive(Debug)]
@@ -183,6 +196,10 @@ impl HistoryCell for DeprecationNoticeCell {
         }
         lines
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHistoryCell {
     let mut line = vec!["• ".dim(), message.into()];
@@ -191,7 +208,7 @@ pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHist
         line.push(hint.dark_gray());
     }
     let lines: Vec<Line<'static>> = vec![line.into()];
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {
@@ -199,5 +216,9 @@ pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {
     // before the text. VS16 is intentionally omitted to keep spacing tighter
     // in terminals like Ghostty.
     let lines: Vec<Line<'static>> = vec![vec![format!("■ {message}").red()].into()];
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
+}
+
+pub(crate) fn new_context_compaction_event() -> PlainHistoryCell {
+    PlainHistoryCell::new(vec![vec!["• ".dim(), "Context compacted".into()].into()])
 }

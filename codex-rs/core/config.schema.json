@@ -2851,6 +2851,7 @@
               "open_transcript": null,
               "queue": null,
               "submit": null,
+              "toggle_clean_scrollback": null,
               "toggle_fast_mode": null,
               "toggle_raw_output": null,
               "toggle_shortcuts": null,
@@ -3404,6 +3405,14 @@
           ],
           "description": "Submit the current composer draft."
         },
+        "toggle_clean_scrollback": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Toggle clean scrollback mode for hiding committed tool/status noise."
+        },
         "toggle_fast_mode": {
           "allOf": [
             {
@@ -3526,6 +3535,7 @@
             "open_transcript": null,
             "queue": null,
             "submit": null,
+            "toggle_clean_scrollback": null,
             "toggle_fast_mode": null,
             "toggle_raw_output": null,
             "toggle_shortcuts": null,

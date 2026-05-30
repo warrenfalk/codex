@@ -420,7 +420,10 @@ impl ApprovalOverlay {
                 "You granted additional permissions"
             };
             self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-                crate::history_cell::PlainHistoryCell::new(vec![message.into()]),
+                crate::history_cell::PlainHistoryCell::new_with_visibility_kind(
+                    vec![message.into()],
+                    crate::history_cell::HistoryVisibilityKind::Noise,
+                ),
             )));
         }
         let thread_id = request.thread_id();

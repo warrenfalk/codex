@@ -205,25 +205,25 @@ impl App {
             }
             AppEvent::InsertHistoryCell(cell) => {
                 let cell: Arc<dyn HistoryCell> = cell.into();
-                if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                let should_display = self.cell_visible_in_current_scrollback(cell.as_ref());
+                if should_display && let Some(Overlay::Transcript(t)) = &mut self.overlay {
                     t.insert_cell(cell.clone());
                     tui.frame_requester().schedule_frame();
                 }
                 self.transcript_cells.push(cell.clone());
-                if self.initial_history_replay_buffer.as_ref().is_some() {
-                    self.insert_history_cell_lines_with_initial_replay_buffer(
-                        tui,
-                        cell.as_ref(),
-                        self.chat_widget
-                            .history_wrap_width(tui.terminal.last_known_screen_size.width),
-                    );
-                } else {
-                    self.insert_history_cell_lines(
-                        tui,
-                        cell.as_ref(),
-                        self.chat_widget
-                            .history_wrap_width(tui.terminal.last_known_screen_size.width),
-                    );
+                if should_display {
+                    let width = self
+                        .chat_widget
+                        .history_wrap_width(tui.terminal.last_known_screen_size.width);
+                    if self.initial_history_replay_buffer.as_ref().is_some() {
+                        self.insert_history_cell_lines_with_initial_replay_buffer(
+                            tui,
+                            cell.as_ref(),
+                            width,
+                        );
+                    } else {
+                        self.insert_history_cell_lines(tui, cell.as_ref(), width);
+                    }
                 }
             }
             AppEvent::EndInitialHistoryReplayBuffer => {
@@ -259,24 +259,26 @@ impl App {
                     self.transcript_cells
                         .splice(start..end, std::iter::once(consolidated.clone()));
 
-                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                        t.consolidate_cells(start..end, consolidated.clone());
+                    if self.overlay.is_some() {
+                        self.sync_transcript_overlay_cells();
                         tui.frame_requester().schedule_frame();
                     }
 
                     self.finish_required_stream_reflow(tui)?;
                 } else {
                     self.transcript_cells.push(consolidated.clone());
-                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                    let should_display =
+                        self.cell_visible_in_current_scrollback(consolidated.as_ref());
+                    if should_display && let Some(Overlay::Transcript(t)) = &mut self.overlay {
                         t.insert_cell(consolidated.clone());
                         tui.frame_requester().schedule_frame();
                     }
-                    self.insert_history_cell_lines(
-                        tui,
-                        consolidated.as_ref(),
-                        self.chat_widget
-                            .history_wrap_width(tui.terminal.last_known_screen_size.width),
-                    );
+                    if should_display {
+                        let width = self
+                            .chat_widget
+                            .history_wrap_width(tui.terminal.last_known_screen_size.width);
+                        self.insert_history_cell_lines(tui, consolidated.as_ref(), width);
+                    }
 
                     self.maybe_finish_stream_reflow(tui)?;
                 }

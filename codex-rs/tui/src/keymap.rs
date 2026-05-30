@@ -70,6 +70,8 @@ pub(crate) struct AppKeymap {
     pub(crate) toggle_fast_mode: Vec<KeyBinding>,
     /// Toggle raw scrollback mode for copy-friendly transcript selection.
     pub(crate) toggle_raw_output: Vec<KeyBinding>,
+    /// Toggle clean scrollback mode for hiding committed tool/status noise.
+    pub(crate) toggle_clean_scrollback: Vec<KeyBinding>,
 }
 
 /// Chat-level keybindings evaluated at the app event layer.
@@ -421,6 +423,11 @@ impl RuntimeKeymap {
                 keymap.global.toggle_raw_output.as_ref(),
                 &defaults.app.toggle_raw_output,
                 "tui.keymap.global.toggle_raw_output",
+            )?,
+            toggle_clean_scrollback: resolve_bindings(
+                keymap.global.toggle_clean_scrollback.as_ref(),
+                &defaults.app.toggle_clean_scrollback,
+                "tui.keymap.global.toggle_clean_scrollback",
             )?,
         };
 
@@ -916,6 +923,7 @@ impl RuntimeKeymap {
                 toggle_vim_mode: default_bindings![],
                 toggle_fast_mode: default_bindings![],
                 toggle_raw_output: default_bindings![alt(KeyCode::Char('r'))],
+                toggle_clean_scrollback: default_bindings![alt(KeyCode::Char('n'))],
             },
             chat: ChatKeymap {
                 interrupt_turn: default_bindings![plain(KeyCode::Esc)],
@@ -1177,6 +1185,10 @@ impl RuntimeKeymap {
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
                 ("chat.interrupt_turn", self.chat.interrupt_turn.as_slice()),
                 (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
+                (
                     "chat.decrease_reasoning_effort",
                     self.chat.decrease_reasoning_effort.as_slice(),
                 ),
@@ -1219,6 +1231,10 @@ impl RuntimeKeymap {
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
                 ("chat.interrupt_turn", self.chat.interrupt_turn.as_slice()),
+                (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
                 (
                     "chat.decrease_reasoning_effort",
                     self.chat.decrease_reasoning_effort.as_slice(),
@@ -1267,6 +1283,10 @@ impl RuntimeKeymap {
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
+                (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
             ],
             [
                 ("list.move_up", self.list.move_up.as_slice()),
@@ -1341,6 +1361,10 @@ impl RuntimeKeymap {
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
+                (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
                 (
                     "composer.history_search_previous",
                     self.composer.history_search_previous.as_slice(),
@@ -2828,6 +2852,28 @@ mod tests {
         assert_eq!(
             runtime.app.toggle_raw_output,
             vec![key_hint::plain(KeyCode::F(12))]
+        );
+    }
+
+    #[test]
+    fn clean_scrollback_toggle_defaults_to_alt_n() {
+        let runtime = RuntimeKeymap::defaults();
+        assert_eq!(
+            runtime.app.toggle_clean_scrollback,
+            vec![key_hint::alt(KeyCode::Char('n'))]
+        );
+    }
+
+    #[test]
+    fn clean_scrollback_toggle_can_be_remapped() {
+        let mut keymap = TuiKeymap::default();
+        keymap.global.toggle_clean_scrollback = Some(one("f11"));
+
+        let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
+
+        assert_eq!(
+            runtime.app.toggle_clean_scrollback,
+            vec![key_hint::plain(KeyCode::F(11))]
         );
     }
 

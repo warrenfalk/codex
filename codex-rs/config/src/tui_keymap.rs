@@ -111,6 +111,8 @@ pub struct TuiGlobalKeymap {
     pub toggle_fast_mode: Option<KeybindingsSpec>,
     /// Toggle raw scrollback mode for copy-friendly transcript selection.
     pub toggle_raw_output: Option<KeybindingsSpec>,
+    /// Toggle clean scrollback mode for hiding committed tool/status noise.
+    pub toggle_clean_scrollback: Option<KeybindingsSpec>,
 }
 
 /// Chat context keybindings.

@@ -302,6 +302,7 @@ use crate::get_git_diff::get_git_diff;
 use crate::history_cell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::HistoryRenderMode;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::HookCell;
 use crate::history_cell::McpInvocation;
 use crate::history_cell::McpToolCallCell;
@@ -1548,7 +1549,10 @@ impl ChatWidget {
     }
 
     pub(crate) fn add_plain_history_lines(&mut self, lines: Vec<Line<'static>>) {
-        self.add_boxed_history(Box::new(PlainHistoryCell::new(lines)));
+        self.add_boxed_history(Box::new(PlainHistoryCell::new_with_visibility_kind(
+            lines,
+            HistoryVisibilityKind::Noise,
+        )));
         self.request_redraw();
     }
 
@@ -1580,7 +1584,7 @@ impl ChatWidget {
         if let Some(hint) = resume_hint(Some(name), thread_id) {
             line.extend([". To resume this session run ".into(), hint.cyan()]);
         }
-        PlainHistoryCell::new(vec![line.into()])
+        PlainHistoryCell::new_with_visibility_kind(vec![line.into()], HistoryVisibilityKind::Noise)
     }
 
     /// Begin the asynchronous MCP inventory flow: show a loading spinner and

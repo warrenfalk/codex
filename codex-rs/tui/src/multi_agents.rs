@@ -4,6 +4,7 @@
 //! entries, and the fast-switch keyboard shortcuts. Higher-level coordination, such as deciding
 //! which thread becomes active or when a thread closes, stays in [`crate::app::App`].
 
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::PlainHistoryCell;
 use crate::render::line_utils::prefix_lines;
 use crate::text_formatting::truncate_text;
@@ -396,7 +397,7 @@ fn collab_event(title: Line<'static>, details: Vec<Line<'static>>) -> PlainHisto
     if !details.is_empty() {
         lines.extend(prefix_lines(details, "  └ ".dim(), "    ".into()));
     }
-    PlainHistoryCell::new(lines)
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 fn title_text(title: impl Into<String>) -> Line<'static> {

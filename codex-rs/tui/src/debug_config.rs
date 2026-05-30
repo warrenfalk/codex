@@ -1,3 +1,4 @@
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::PlainHistoryCell;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::Permissions;
@@ -51,7 +52,7 @@ pub(crate) fn new_debug_config_output(
         lines.push(format!("    - ALL_PROXY   = {all_proxy}").into());
     }
 
-    PlainHistoryCell::new(lines)
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 fn sandbox_mode_is_allowed_by_permissions(
