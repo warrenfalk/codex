@@ -100,6 +100,38 @@ function buildThread(id: string, name = id): Thread {
   };
 }
 
+function sendJson(socket: WebSocket, message: JsonRpcMessage): void {
+  socket.send(JSON.stringify(message));
+}
+
+function installDefaultBackendResponses(
+  socket: WebSocket,
+  options: { respondToThreadTurnsList?: boolean } = {},
+): void {
+  const respondToThreadTurnsList = options.respondToThreadTurnsList ?? true;
+  socket.on("message", (rawMessage) => {
+    const message = JSON.parse(rawMessage.toString()) as JsonRpcMessage;
+    if (message.method === "event/firehose") {
+      sendJson(socket, {
+        id: message.id,
+        result: {},
+      });
+      return;
+    }
+
+    if (respondToThreadTurnsList && message.method === "thread/turns/list") {
+      sendJson(socket, {
+        id: message.id,
+        result: {
+          backwardsCursor: null,
+          data: [],
+          nextCursor: null,
+        },
+      });
+    }
+  });
+}
+
 describe("attachRelay", () => {
   const servers: http.Server[] = [];
   const sockets: WebSocket[] = [];
@@ -156,6 +188,7 @@ describe("attachRelay", () => {
     backendWss.on("connection", async (socket) => {
       backendSocket = socket;
       sockets.push(socket);
+      installDefaultBackendResponses(socket);
       const backendCollector = createCollector(socket);
 
       const initializeRequest = await backendCollector.waitFor(
@@ -178,6 +211,11 @@ describe("attachRelay", () => {
         (message) => message.method === "initialized",
       );
       expect(initialized.method).toBe("initialized");
+
+      const firehoseRequest = await backendCollector.waitFor(
+        (message) => message.method === "event/firehose",
+      );
+      expect(firehoseRequest.method).toBe("event/firehose");
 
       const listRequest = await backendCollector.waitFor(
         (message) => message.method === "thread/list",
@@ -252,6 +290,9 @@ describe("attachRelay", () => {
       method: PROXY_THREAD_LIST_UPDATED_METHOD,
       params: {
         previewsByThreadId: {},
+        threadActivityByThreadId: {
+          "thread-1": expect.objectContaining({ state: "ready" }),
+        },
         threads: [expect.objectContaining({ id: "thread-1" })],
       },
     });
@@ -278,6 +319,9 @@ describe("attachRelay", () => {
         data: [expect.objectContaining({ id: "thread-1" })],
         nextCursor: null,
         previewsByThreadId: {},
+        threadActivityByThreadId: {
+          "thread-1": expect.objectContaining({ state: "ready" }),
+        },
       },
     });
 
@@ -304,6 +348,9 @@ describe("attachRelay", () => {
       method: PROXY_THREAD_LIST_UPDATED_METHOD,
       params: {
         previewsByThreadId: {},
+        threadActivityByThreadId: expect.objectContaining({
+          "thread-2": expect.objectContaining({ state: "ready" }),
+        }),
         threads: [
           expect.objectContaining({ id: "thread-1" }),
           expect.objectContaining({ id: "thread-2" }),
@@ -351,10 +398,178 @@ describe("attachRelay", () => {
     ).toMatchObject({
       method: PROXY_THREAD_LIST_UPDATED_METHOD,
       params: {
+        threadActivityByThreadId: {
+          "thread-1": expect.objectContaining({ state: "ready" }),
+          "thread-2": expect.objectContaining({
+            lastUserMessage: "Latest prompt",
+            state: "working",
+          }),
+        },
         previewsByThreadId: {
           "thread-2": "**You:** Latest prompt",
         },
       },
+    });
+
+    client.close();
+  });
+
+  it("hydrates list activity from only the newest turn", async () => {
+    const backendServer = http.createServer();
+    servers.push(backendServer);
+    const backendWss = new WebSocketServer({ server: backendServer });
+    webSocketServers.push(backendWss);
+    let turnsListParams: unknown = null;
+
+    backendWss.on("connection", async (socket) => {
+      sockets.push(socket);
+      installDefaultBackendResponses(socket, {
+        respondToThreadTurnsList: false,
+      });
+      const backendCollector = createCollector(socket);
+
+      const initializeRequest = await backendCollector.waitFor(
+        (message) => message.method === "initialize",
+      );
+      sendJson(socket, {
+        id: initializeRequest.id,
+        result: {
+          codexHome: "/tmp/codex",
+          platformFamily: "unix",
+          platformOs: "linux",
+          userAgent: "codex-test",
+        },
+      });
+
+      await backendCollector.waitFor(
+        (message) => message.method === "initialized",
+      );
+      await backendCollector.waitFor(
+        (message) => message.method === "event/firehose",
+      );
+
+      const listRequest = await backendCollector.waitFor(
+        (message) => message.method === "thread/list",
+      );
+      sendJson(socket, {
+        id: listRequest.id,
+        result: {
+          data: [buildThread("thread-1", "Thread 1")],
+          nextCursor: null,
+        },
+      });
+
+      const turnsRequest = await backendCollector.waitFor(
+        (message) => message.method === "thread/turns/list",
+      );
+      turnsListParams = turnsRequest.params;
+      sendJson(socket, {
+        id: turnsRequest.id,
+        result: {
+          backwardsCursor: null,
+          data: [
+            {
+              completedAt: null,
+              durationMs: null,
+              error: null,
+              id: "turn-1",
+              items: [
+                {
+                  content: [
+                    {
+                      text: "Most recent prompt",
+                      text_elements: [],
+                      type: "text",
+                    },
+                  ],
+                  id: "user-1",
+                  type: "userMessage",
+                },
+              ],
+              itemsView: "summary",
+              startedAt: 5,
+              status: "inProgress",
+            },
+          ],
+          nextCursor: "older-turns",
+        },
+      });
+    });
+
+    const backendPort = await listen(backendServer);
+
+    const relayApp = express();
+    const relayServer = http.createServer(relayApp);
+    servers.push(relayServer);
+    await attachRelay(relayServer, `ws://127.0.0.1:${backendPort}`);
+    const relayPort = await listen(relayServer);
+
+    const client = new WebSocket(`ws://127.0.0.1:${relayPort}/rpc`);
+    sockets.push(client);
+    const collector = createCollector(client);
+
+    await new Promise<void>((resolve, reject) => {
+      client.on("open", () => resolve());
+      client.on("error", reject);
+    });
+
+    client.send(
+      JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          capabilities: { experimentalApi: true },
+          clientInfo: {
+            name: "codex_web",
+            title: "Codex Web",
+            version: "0.0.0",
+          },
+        },
+      }),
+    );
+    await collector.waitFor(
+      (message) => message.id === 1 && "result" in message,
+    );
+    client.send(
+      JSON.stringify({
+        method: "initialized",
+        params: {},
+      }),
+    );
+
+    expect(
+      await collector.waitFor(
+        (message) =>
+          message.method === PROXY_THREAD_LIST_UPDATED_METHOD &&
+          (
+            message.params as {
+              threadActivityByThreadId?: Record<
+                string,
+                { lastUserMessage?: string }
+              >;
+            }
+          ).threadActivityByThreadId?.["thread-1"]?.lastUserMessage ===
+            "Most recent prompt",
+      ),
+    ).toMatchObject({
+      method: PROXY_THREAD_LIST_UPDATED_METHOD,
+      params: {
+        threadActivityByThreadId: {
+          "thread-1": {
+            lastAgentMessage: null,
+            lastUserMessage: "Most recent prompt",
+            state: "working",
+          },
+        },
+      },
+    });
+
+    expect(turnsListParams).toMatchObject({
+      cursor: null,
+      itemsView: "summary",
+      limit: 1,
+      sortDirection: "desc",
+      threadId: "thread-1",
     });
 
     client.close();
@@ -383,6 +598,7 @@ describe("attachRelay", () => {
 
     backendWss.on("connection", async (socket) => {
       sockets.push(socket);
+      installDefaultBackendResponses(socket);
       const backendCollector = createCollector(socket);
 
       const initializeRequest = await backendCollector.waitFor(
@@ -402,6 +618,10 @@ describe("attachRelay", () => {
 
       await backendCollector.waitFor(
         (message) => message.method === "initialized",
+      );
+
+      await backendCollector.waitFor(
+        (message) => message.method === "event/firehose",
       );
 
       const listRequest = await backendCollector.waitFor(
@@ -474,6 +694,7 @@ describe("attachRelay", () => {
     backendWss.on("connection", async (socket) => {
       backendSocket = socket;
       sockets.push(socket);
+      installDefaultBackendResponses(socket);
       const backendCollector = createCollector(socket);
 
       const initializeRequest = await backendCollector.waitFor(
@@ -493,6 +714,10 @@ describe("attachRelay", () => {
 
       await backendCollector.waitFor(
         (message) => message.method === "initialized",
+      );
+
+      await backendCollector.waitFor(
+        (message) => message.method === "event/firehose",
       );
 
       const listRequest = await backendCollector.waitFor(

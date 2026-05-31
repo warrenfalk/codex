@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown, type StreamdownProps } from "streamdown";
 
 import type { Thread } from "@/types/protocol";
+import type { ProxyThreadActivity } from "@/lib/proxy-protocol";
 
 import { PushNotificationControl } from "./push-notification-control";
 
 type Props = {
   threads: Thread[];
   previewsByThreadId: Record<string, string>;
+  threadActivityByThreadId: Record<string, ProxyThreadActivity>;
   loading: boolean;
   onRefresh: () => void;
   onSelect: (threadId: string) => void;
@@ -38,7 +40,39 @@ function statusLabel(thread: Thread): string {
   }
 }
 
-function searchTextForThread(thread: Thread, latestPreview: string): string {
+function activityForThread(
+  thread: Thread,
+  activity: ProxyThreadActivity | undefined,
+): ProxyThreadActivity {
+  if (activity) {
+    return activity;
+  }
+
+  return {
+    lastAgentMessage: null,
+    lastUserMessage: null,
+    state: thread.status.type === "active" ? "working" : "ready",
+  };
+}
+
+function activityStatusLabel(activity: ProxyThreadActivity): string {
+  switch (activity.state) {
+    case "virgin":
+      return "virgin";
+    case "working":
+      return "working";
+    case "ready":
+      return "ready";
+    default:
+      return "unknown";
+  }
+}
+
+function searchTextForThread(
+  thread: Thread,
+  latestPreview: string,
+  activity: ProxyThreadActivity,
+): string {
   const branch = thread.gitInfo?.branch;
   const originUrl = thread.gitInfo?.originUrl;
   const sha = thread.gitInfo?.sha;
@@ -47,6 +81,9 @@ function searchTextForThread(thread: Thread, latestPreview: string): string {
     threadTitle(thread),
     thread.preview,
     latestPreview,
+    activity.lastUserMessage,
+    activity.lastAgentMessage,
+    activity.state,
     thread.cwd,
     `cwd:${thread.cwd}`,
     branch,
@@ -144,6 +181,7 @@ function ThreadActionsMenu({ onRefresh }: { onRefresh: () => void }) {
 export function ThreadList({
   threads,
   previewsByThreadId,
+  threadActivityByThreadId,
   loading,
   onRefresh,
   onSelect,
@@ -160,10 +198,14 @@ export function ThreadList({
 
     return threads.filter((thread) => {
       const latestPreview = previewsByThreadId[thread.id] ?? thread.preview;
-      const searchText = searchTextForThread(thread, latestPreview);
+      const activity = activityForThread(
+        thread,
+        threadActivityByThreadId[thread.id],
+      );
+      const searchText = searchTextForThread(thread, latestPreview, activity);
       return searchTerms.every((term) => searchText.includes(term));
     });
-  }, [previewsByThreadId, searchTerms, threads]);
+  }, [previewsByThreadId, searchTerms, threadActivityByThreadId, threads]);
 
   return (
     <section className="list-shell">
@@ -189,6 +231,15 @@ export function ThreadList({
       <div className="thread-list">
         {filteredThreads.map((thread) => {
           const branch = thread.gitInfo?.branch;
+          const activity = activityForThread(
+            thread,
+            threadActivityByThreadId[thread.id],
+          );
+          const fallbackPreview =
+            previewsByThreadId[thread.id] ?? thread.preview;
+          const hasActivityMessages =
+            Boolean(activity.lastUserMessage) ||
+            Boolean(activity.lastAgentMessage);
           return (
             <button
               key={thread.id}
@@ -198,19 +249,47 @@ export function ThreadList({
             >
               <div className="thread-row-top">
                 <h2>{threadTitle(thread)}</h2>
-                <span className={`status-pill status-${thread.status.type}`}>
-                  {statusLabel(thread)}
+                <span className={`status-pill status-thread-${activity.state}`}>
+                  {activityStatusLabel(activity)}
                 </span>
               </div>
               <div className="thread-preview">
-                <Streamdown
-                  className="thread-preview-markdown"
-                  dir="auto"
-                  linkSafety={markdownLinkSafety}
-                >
-                  {(previewsByThreadId[thread.id] ?? thread.preview) ||
-                    "No preview yet"}
-                </Streamdown>
+                {hasActivityMessages ? (
+                  <>
+                    {activity.lastUserMessage && (
+                      <div className="thread-preview-line">
+                        <span className="thread-preview-label">You</span>
+                        <Streamdown
+                          className="thread-preview-markdown"
+                          dir="auto"
+                          linkSafety={markdownLinkSafety}
+                        >
+                          {activity.lastUserMessage}
+                        </Streamdown>
+                      </div>
+                    )}
+                    {activity.lastAgentMessage && (
+                      <div className="thread-preview-line">
+                        <span className="thread-preview-label">Codex</span>
+                        <Streamdown
+                          className="thread-preview-markdown"
+                          dir="auto"
+                          linkSafety={markdownLinkSafety}
+                        >
+                          {activity.lastAgentMessage}
+                        </Streamdown>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <Streamdown
+                    className="thread-preview-markdown"
+                    dir="auto"
+                    linkSafety={markdownLinkSafety}
+                  >
+                    {fallbackPreview || statusLabel(thread) || "No preview yet"}
+                  </Streamdown>
+                )}
               </div>
               <div className="thread-row-meta">
                 <span>{thread.cwd}</span>

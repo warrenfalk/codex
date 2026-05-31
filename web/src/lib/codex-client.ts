@@ -128,6 +128,8 @@ export class CodexClient {
   async listAllThreads(): Promise<ProxyThreadListSnapshot> {
     const threads: Thread[] = [];
     const previewsByThreadId: Record<string, string> = {};
+    const threadActivityByThreadId: ProxyThreadListSnapshot["threadActivityByThreadId"] =
+      {};
     let cursor: string | null = null;
 
     do {
@@ -144,11 +146,18 @@ export class CodexClient {
       if ("previewsByThreadId" in response) {
         Object.assign(previewsByThreadId, response.previewsByThreadId);
       }
+      if ("threadActivityByThreadId" in response) {
+        Object.assign(
+          threadActivityByThreadId,
+          response.threadActivityByThreadId,
+        );
+      }
       cursor = response.nextCursor;
     } while (cursor);
 
     return {
       previewsByThreadId,
+      threadActivityByThreadId,
       threads,
     };
   }

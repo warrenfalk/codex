@@ -16,9 +16,13 @@ import type {
   TurnStartedNotification,
 } from "../src/types/protocol";
 
-import type { ProxyThreadListSnapshot } from "../src/lib/proxy-protocol";
+import type {
+  ProxyThreadActivity,
+  ProxyThreadListSnapshot,
+} from "../src/lib/proxy-protocol";
 
 type AgentMessageItem = Extract<ThreadItem, { type: "agentMessage" }>;
+type UserMessageItem = Extract<ThreadItem, { type: "userMessage" }>;
 const TURN_ITEMS_VIEW_RANK: Record<Turn["itemsView"], number> = {
   notLoaded: 0,
   summary: 1,
@@ -37,14 +41,23 @@ function isNonEmptyAgentMessage(item: ThreadItem): item is AgentMessageItem {
   return item.type === "agentMessage" && Boolean(item.text.trim());
 }
 
+function isUserMessage(item: ThreadItem): item is UserMessageItem {
+  return item.type === "userMessage";
+}
+
+function userMessageText(item: UserMessageItem): string | null {
+  const text = trimPreviewMarkdown(
+    item.content
+      .flatMap((entry) => (entry.type === "text" ? [entry.text] : []))
+      .join("\n\n"),
+  );
+  return text || null;
+}
+
 function previewFromItem(item: ThreadItem): string | null {
   switch (item.type) {
     case "userMessage": {
-      const text = trimPreviewMarkdown(
-        item.content
-          .flatMap((entry) => (entry.type === "text" ? [entry.text] : []))
-          .join("\n\n"),
-      );
+      const text = userMessageText(item);
       return text ? `**You:** ${text}` : "**You:** Sent input";
     }
     case "agentMessage": {
@@ -81,6 +94,72 @@ function previewFromTurns(turns: Turn[]): string | null {
   }
 
   return null;
+}
+
+function latestKnownTurn(turns: Turn[]): Turn | null {
+  let latest: Turn | null = null;
+  for (const turn of turns) {
+    if (!latest || turnSortValue(turn) >= turnSortValue(latest)) {
+      latest = turn;
+    }
+  }
+  return latest;
+}
+
+function turnSortValue(turn: Turn): number {
+  return turn.startedAt ?? turn.completedAt ?? 0;
+}
+
+function latestUserMessageFromTurn(turn: Turn): string | null {
+  for (let index = turn.items.length - 1; index >= 0; index -= 1) {
+    const item = turn.items[index];
+    if (item && isUserMessage(item)) {
+      return userMessageText(item);
+    }
+  }
+  return null;
+}
+
+function latestAgentMessageFromTurn(turn: Turn): string | null {
+  for (let index = turn.items.length - 1; index >= 0; index -= 1) {
+    const item = turn.items[index];
+    if (item && isNonEmptyAgentMessage(item)) {
+      return item.text.trim();
+    }
+  }
+  return null;
+}
+
+function activityFromThread(thread: Thread): ProxyThreadActivity {
+  const latestTurn = latestKnownTurn(thread.turns);
+  const lastUserMessage = latestTurn
+    ? latestUserMessageFromTurn(latestTurn)
+    : null;
+  const lastAgentMessage = latestTurn
+    ? latestAgentMessageFromTurn(latestTurn)
+    : null;
+
+  if (thread.status.type === "active" || latestTurn?.status === "inProgress") {
+    return {
+      lastAgentMessage,
+      lastUserMessage,
+      state: "working",
+    };
+  }
+
+  if (!lastUserMessage && thread.turns.length === 0 && !thread.preview.trim()) {
+    return {
+      lastAgentMessage,
+      lastUserMessage,
+      state: "virgin",
+    };
+  }
+
+  return {
+    lastAgentMessage,
+    lastUserMessage,
+    state: "ready",
+  };
 }
 
 function stripThreadDetails(thread: Thread): Thread {
@@ -410,21 +489,49 @@ function updatedAtNow(thread: Thread): Thread {
 }
 
 export class ThreadCache {
+  private readonly activityByThreadId = new Map<string, ProxyThreadActivity>();
   private readonly previewsByThreadId = new Map<string, string>();
   private readonly threadsById = new Map<string, Thread>();
 
   replaceThreads(threads: Thread[]): boolean {
-    this.threadsById.clear();
     for (const thread of threads) {
-      this.threadsById.set(thread.id, thread);
+      this.threadsById.set(
+        thread.id,
+        mergeThread(this.threadsById.get(thread.id), thread),
+      );
     }
     return this.rebuildPreviews();
+  }
+
+  clear(): void {
+    this.activityByThreadId.clear();
+    this.previewsByThreadId.clear();
+    this.threadsById.clear();
   }
 
   mergeThread(thread: Thread): boolean {
     this.threadsById.set(
       thread.id,
       mergeThread(this.threadsById.get(thread.id), thread),
+    );
+    return this.rebuildPreviews();
+  }
+
+  mergeThreadTurns(threadId: string, turns: Turn[]): boolean {
+    const thread = this.threadsById.get(threadId);
+    if (!thread || turns.length === 0) {
+      return false;
+    }
+
+    this.threadsById.set(
+      thread.id,
+      turns.reduce(
+        (current, turn) => ({
+          ...current,
+          turns: upsertTurn(current.turns, turn),
+        }),
+        thread,
+      ),
     );
     return this.rebuildPreviews();
   }
@@ -621,20 +728,27 @@ export class ThreadCache {
       [...this.threadsById.values()].map(stripThreadDetails),
     );
     return {
+      threadActivityByThreadId: Object.fromEntries(this.activityByThreadId),
       previewsByThreadId: Object.fromEntries(this.previewsByThreadId),
       threads,
     };
   }
 
   private rebuildPreviews(): boolean {
+    const nextActivity = new Map<string, ProxyThreadActivity>();
     const nextPreviews = new Map<string, string>();
     for (const thread of this.threadsById.values()) {
+      nextActivity.set(thread.id, activityFromThread(thread));
       const preview = previewFromTurns(thread.turns);
       if (preview) {
         nextPreviews.set(thread.id, preview);
       }
     }
 
+    this.activityByThreadId.clear();
+    for (const [threadId, activity] of nextActivity) {
+      this.activityByThreadId.set(threadId, activity);
+    }
     this.previewsByThreadId.clear();
     for (const [threadId, preview] of nextPreviews) {
       this.previewsByThreadId.set(threadId, preview);
