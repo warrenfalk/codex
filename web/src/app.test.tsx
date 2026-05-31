@@ -124,6 +124,7 @@ describe("App routing", () => {
       initializeSummary: "codex 0.0.0 on linux",
       loading: false,
       previewsByThreadId: {},
+      threadActivityByThreadId: {},
       threads: [thread],
       warnings: [],
     });

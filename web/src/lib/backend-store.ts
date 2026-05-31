@@ -27,6 +27,7 @@ import {
 } from "./codex-client";
 import {
   PROXY_THREAD_LIST_UPDATED_METHOD,
+  type ProxyThreadActivity,
   type ProxyThreadListSnapshot,
 } from "./proxy-protocol";
 import { requestIdKey } from "./request-id";
@@ -44,6 +45,7 @@ export type ThreadListSnapshot = {
   initializeSummary: string | null;
   loading: boolean;
   previewsByThreadId: Record<string, string>;
+  threadActivityByThreadId: Record<string, ProxyThreadActivity>;
   threads: Thread[];
   warnings: string[];
 };
@@ -66,6 +68,7 @@ export interface BackendTransport {
   interruptTurn(threadId: string, turnId: string): Promise<void>;
   listAllThreads(): Promise<{
     previewsByThreadId: Record<string, string>;
+    threadActivityByThreadId: Record<string, ProxyThreadActivity>;
     threads: Thread[];
   }>;
   listThreadTurnsPage(
@@ -93,6 +96,7 @@ type ThreadEntry = {
 };
 
 const EMPTY_REQUESTS: AnyServerRequest[] = [];
+const EMPTY_THREAD_ACTIVITY: Record<string, ProxyThreadActivity> = {};
 const EMPTY_THREAD_PREVIEWS: Record<string, string> = {};
 const EMPTY_RUNTIME_TEXT: Record<string, string> = {};
 const EMPTY_WARNINGS: string[] = [];
@@ -575,6 +579,7 @@ export class BackendStateStore {
     initializeSummary: null,
     loading: true,
     previewsByThreadId: EMPTY_THREAD_PREVIEWS,
+    threadActivityByThreadId: EMPTY_THREAD_ACTIVITY,
     threads: [],
     warnings: [],
   };
@@ -588,6 +593,7 @@ export class BackendStateStore {
     Record<string, string>
   >();
   private readonly threadWarningsByThread = new Map<string, string[]>();
+  private readonly activityByThreadId = new Map<string, ProxyThreadActivity>();
   private readonly previewByThreadId = new Map<string, string>();
   private readonly threadDetails = new Map<string, Thread>();
   private readonly threadEntries = new Map<string, ThreadEntry>();
@@ -745,6 +751,12 @@ export class BackendStateStore {
         return preview ? [[thread.id, preview] as const] : [];
       }),
     );
+    const threadActivityByThreadId = Object.fromEntries(
+      this.threads.flatMap((thread) => {
+        const activity = this.activityByThreadId.get(thread.id);
+        return activity ? [[thread.id, activity] as const] : [];
+      }),
+    );
 
     this.listSnapshot = {
       connectionError: this.connectionError,
@@ -752,6 +764,7 @@ export class BackendStateStore {
       initializeSummary: this.initializeSummary,
       loading: this.threadsLoading,
       previewsByThreadId,
+      threadActivityByThreadId,
       threads: this.threads,
       warnings: this.globalWarnings,
     };
@@ -762,6 +775,12 @@ export class BackendStateStore {
   }
 
   private replaceListState(listState: ProxyThreadListSnapshot): void {
+    this.activityByThreadId.clear();
+    for (const [threadId, activity] of Object.entries(
+      listState.threadActivityByThreadId ?? {},
+    )) {
+      this.activityByThreadId.set(threadId, activity);
+    }
     this.previewByThreadId.clear();
     for (const [threadId, preview] of Object.entries(
       listState.previewsByThreadId,
@@ -902,10 +921,11 @@ export class BackendStateStore {
     this.updateListSnapshot();
     this.listSyncPromise = (async () => {
       try {
-        const { previewsByThreadId, threads } =
+        const { previewsByThreadId, threadActivityByThreadId, threads } =
           await this.client.listAllThreads();
         this.replaceListState({
           previewsByThreadId,
+          threadActivityByThreadId,
           threads,
         });
       } finally {

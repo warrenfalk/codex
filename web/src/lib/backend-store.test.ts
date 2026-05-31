@@ -6,7 +6,10 @@ import type { InitializeResponse, Thread, Turn } from "@/types/protocol";
 import { BackendStateStore, type BackendTransport } from "./backend-store";
 import type { BackendMessage } from "./codex-client";
 import type { ThreadTurnsPage, ThreadTurnsPageRequest } from "./codex-client";
-import { PROXY_THREAD_LIST_UPDATED_METHOD } from "./proxy-protocol";
+import {
+  PROXY_THREAD_LIST_UPDATED_METHOD,
+  type ProxyThreadActivity,
+} from "./proxy-protocol";
 
 type MessageListener = (message: BackendMessage) => void;
 type StatusListener = (
@@ -75,6 +78,10 @@ class FakeTransport implements BackendTransport {
   constructor(
     private readonly threads: Thread[],
     private readonly previewsByThreadId: Record<string, string> = {},
+    private readonly threadActivityByThreadId: Record<
+      string,
+      ProxyThreadActivity
+    > = {},
     private readonly detailedThreads = new Map<string, Thread>(),
     private readonly turnPagesByThread = new Map<string, ThreadTurnsPage[]>(),
   ) {}
@@ -97,11 +104,13 @@ class FakeTransport implements BackendTransport {
 
   async listAllThreads(): Promise<{
     previewsByThreadId: Record<string, string>;
+    threadActivityByThreadId: Record<string, ProxyThreadActivity>;
     threads: Thread[];
   }> {
     this.listCalls += 1;
     return {
       previewsByThreadId: { ...this.previewsByThreadId },
+      threadActivityByThreadId: { ...this.threadActivityByThreadId },
       threads: this.threads.map((thread) => ({ ...thread })),
     };
   }
@@ -218,6 +227,7 @@ describe("BackendStateStore", () => {
       method: PROXY_THREAD_LIST_UPDATED_METHOD,
       params: {
         previewsByThreadId: {},
+        threadActivityByThreadId: {},
         threads: [
           makeThread("thr_1", "Thread 1"),
           makeThread("thr_2", "Thread 2"),
@@ -286,6 +296,38 @@ describe("BackendStateStore", () => {
     });
   });
 
+  it("hydrates newest-turn activity from thread list responses", async () => {
+    const transport = new FakeTransport(
+      [makeThread("thr_1", "Thread 1")],
+      {},
+      {
+        thr_1: {
+          lastAgentMessage: null,
+          lastUserMessage: "latest prompt",
+          state: "working",
+        },
+      },
+    );
+    const store = new BackendStateStore(transport);
+    const subscriber = vi.fn();
+
+    store.subscribeThreadList(subscriber);
+
+    await waitFor(() => {
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          threadActivityByThreadId: {
+            thr_1: {
+              lastAgentMessage: null,
+              lastUserMessage: "latest prompt",
+              state: "working",
+            },
+          },
+        }),
+      );
+    });
+  });
+
   it("updates the thread list preview from proxy snapshots", async () => {
     const transport = new FakeTransport([makeThread("thr_1", "Thread 1")]);
     const store = new BackendStateStore(transport);
@@ -301,6 +343,13 @@ describe("BackendStateStore", () => {
         previewsByThreadId: {
           thr_1: "**Codex:** Working on it",
         },
+        threadActivityByThreadId: {
+          thr_1: {
+            lastAgentMessage: "Working on it",
+            lastUserMessage: "Prompt",
+            state: "working",
+          },
+        },
         threads: [makeThread("thr_1", "Thread 1")],
       },
     });
@@ -309,6 +358,13 @@ describe("BackendStateStore", () => {
       expect.objectContaining({
         previewsByThreadId: {
           thr_1: "**Codex:** Working on it",
+        },
+        threadActivityByThreadId: {
+          thr_1: {
+            lastAgentMessage: "Working on it",
+            lastUserMessage: "Prompt",
+            state: "working",
+          },
         },
       }),
     );
@@ -319,6 +375,7 @@ describe("BackendStateStore", () => {
     const persistedTurns = [makeTurn("turn_1")];
     const transport = new FakeTransport(
       [makeThread("thr_1", "Thread 1")],
+      {},
       {},
       new Map([["thr_1", detailedThread]]),
       new Map([
@@ -379,6 +436,7 @@ describe("BackendStateStore", () => {
     const listedThread = makeThread("thr_1", "Thread 1");
     const transport = new FakeTransport(
       [listedThread],
+      {},
       {},
       new Map([
         [
@@ -478,6 +536,7 @@ describe("BackendStateStore", () => {
     const transport = new FakeTransport(
       [makeThread("thr_1", "Thread 1")],
       {},
+      {},
       new Map([["thr_1", detailedThread]]),
     );
     const store = new BackendStateStore(transport);
@@ -575,6 +634,7 @@ describe("BackendStateStore", () => {
     const thread = makeThread("thr_1", "Old thread");
     const transport = new FakeTransport(
       [thread],
+      {},
       {},
       new Map([["thr_1", thread]]),
     );

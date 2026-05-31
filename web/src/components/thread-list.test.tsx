@@ -45,6 +45,7 @@ describe("ThreadList", () => {
         onRefresh={onRefresh}
         onSelect={onSelect}
         previewsByThreadId={{ "thread-1": "**Codex:** Latest `response`" }}
+        threadActivityByThreadId={{}}
         threads={[buildThread()]}
       />,
     );
@@ -71,6 +72,7 @@ describe("ThreadList", () => {
         onRefresh={vi.fn()}
         onSelect={vi.fn()}
         previewsByThreadId={{}}
+        threadActivityByThreadId={{}}
         threads={[
           buildThread({
             id: "thread-1",
@@ -121,6 +123,7 @@ describe("ThreadList", () => {
         onRefresh={onRefresh}
         onSelect={vi.fn()}
         previewsByThreadId={{}}
+        threadActivityByThreadId={{}}
         threads={[buildThread()]}
       />,
     );
@@ -138,5 +141,30 @@ describe("ThreadList", () => {
 
     expect(onRefresh).toHaveBeenCalledOnce();
     expect(actionsTrigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("renders newest-turn activity when available", () => {
+    render(
+      <ThreadList
+        loading={false}
+        onRefresh={vi.fn()}
+        onSelect={vi.fn()}
+        previewsByThreadId={{}}
+        threadActivityByThreadId={{
+          "thread-1": {
+            lastAgentMessage: "Latest response",
+            lastUserMessage: "Latest prompt",
+            state: "ready",
+          },
+        }}
+        threads={[buildThread()]}
+      />,
+    );
+
+    expect(screen.getByText("ready")).toBeInTheDocument();
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("Latest prompt")).toBeInTheDocument();
+    expect(screen.getByText("Codex")).toBeInTheDocument();
+    expect(screen.getByText("Latest response")).toBeInTheDocument();
   });
 });

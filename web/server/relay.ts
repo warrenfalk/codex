@@ -11,6 +11,7 @@ import type {
   ServerNotification,
   Thread,
   ThreadListResponse,
+  ThreadTurnsListResponse,
 } from "../src/types/protocol";
 import {
   PROXY_PUSH_SUBSCRIPTION_UPDATED_METHOD,
@@ -81,6 +82,8 @@ const CAPABILITIES = {
   experimentalApi: true,
   requestAttestation: false,
 };
+const RECENT_THREAD_TURN_HYDRATION_CONCURRENCY = 8;
+const RECENT_THREAD_TURN_HYDRATION_LIMIT = 100;
 
 function defaultUnixSocketPath(): string {
   const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
@@ -219,6 +222,33 @@ function isInitializeResponse(value: unknown): value is InitializeResponse {
   );
 }
 
+function isJsonRpcErrorCode(error: unknown, code: number): boolean {
+  return (
+    isObject(error) && typeof error.code === "number" && error.code === code
+  );
+}
+
+function isExpectedThreadTurnsListError(error: unknown): boolean {
+  if (isJsonRpcErrorCode(error, -32601)) {
+    return true;
+  }
+
+  if (!isObject(error) || typeof error.message !== "string") {
+    return false;
+  }
+
+  return (
+    error.message.includes("thread/turns/list is unavailable") ||
+    error.message.includes("ephemeral threads do not support thread/turns/list")
+  );
+}
+
+function recentThreadsForHydration(threads: Thread[]): Thread[] {
+  return [...threads]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, RECENT_THREAD_TURN_HYDRATION_LIMIT);
+}
+
 function isThread(value: unknown): value is Thread {
   return isObject(value) && typeof value.id === "string";
 }
@@ -347,12 +377,27 @@ class RelayController {
         method: "initialized",
         params: {},
       });
+      await this.subscribeToFirehose();
       await this.reloadThreadCacheFromUpstream();
     })().finally(() => {
       this.connectPromise = null;
     });
 
     return this.connectPromise;
+  }
+
+  private async subscribeToFirehose(): Promise<void> {
+    try {
+      await this.requestUpstream("event/firehose", undefined);
+    } catch (error) {
+      if (isJsonRpcErrorCode(error, -32601)) {
+        console.warn(
+          "App server does not support event/firehose; thread list state will rely on relay-targeted events only.",
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   private async reloadThreadCacheFromUpstream(): Promise<void> {
@@ -371,6 +416,58 @@ class RelayController {
     } while (cursor);
 
     this.cache.replaceThreads(threads);
+    void this.refreshRecentThreadTurnsFromUpstream(threads).catch(
+      (error: unknown) => {
+        console.warn("Failed to refresh recent thread turns.", error);
+      },
+    );
+  }
+
+  private async refreshRecentThreadTurnsFromUpstream(
+    threads: Thread[],
+  ): Promise<void> {
+    const recentThreads = recentThreadsForHydration(threads);
+    for (
+      let index = 0;
+      index < recentThreads.length;
+      index += RECENT_THREAD_TURN_HYDRATION_CONCURRENCY
+    ) {
+      const batch = recentThreads.slice(
+        index,
+        index + RECENT_THREAD_TURN_HYDRATION_CONCURRENCY,
+      );
+      await Promise.all(
+        batch.map((thread) => this.refreshLatestThreadTurnFromUpstream(thread)),
+      );
+    }
+  }
+
+  private async refreshLatestThreadTurnFromUpstream(
+    thread: Thread,
+  ): Promise<void> {
+    try {
+      const response = await this.requestUpstream<ThreadTurnsListResponse>(
+        "thread/turns/list",
+        {
+          cursor: null,
+          itemsView: "summary",
+          limit: 1,
+          sortDirection: "desc",
+          threadId: thread.id,
+        },
+      );
+      if (this.cache.mergeThreadTurns(thread.id, response.data)) {
+        this.broadcastThreadListSnapshot();
+      }
+    } catch (error) {
+      if (isExpectedThreadTurnsListError(error)) {
+        return;
+      }
+      console.warn(
+        `Failed to refresh latest turn for thread ${thread.id}.`,
+        error,
+      );
+    }
   }
 
   private handleBrowserConnection(socket: WebSocket): void {
@@ -645,6 +742,7 @@ class RelayController {
       data: snapshot.threads,
       nextCursor: null,
       previewsByThreadId: snapshot.previewsByThreadId,
+      threadActivityByThreadId: snapshot.threadActivityByThreadId,
     };
   }
 
@@ -782,6 +880,7 @@ class RelayController {
     this.pendingServerRequestIds.clear();
     this.respondedServerRequestIds.clear();
     this.browserPushStatesBySocket.clear();
+    this.cache.clear();
 
     for (const socket of this.browserSockets) {
       closeIfOpen(socket, 1011, reason || "upstream connection closed");

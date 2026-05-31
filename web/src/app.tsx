@@ -233,6 +233,7 @@ function AppRoute() {
             onRefresh={() => void refreshThreadList()}
             onSelect={handleSelectThread}
             previewsByThreadId={listState.previewsByThreadId}
+            threadActivityByThreadId={listState.threadActivityByThreadId}
             threads={listState.threads}
           />
         </>
