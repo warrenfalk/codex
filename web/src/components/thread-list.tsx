@@ -84,6 +84,10 @@ function searchTextForThread(
     activity.lastUserMessage,
     activity.lastAgentMessage,
     activity.state,
+    statusLabel(thread),
+    thread.status.type === "active"
+      ? thread.status.activeFlags.join(" ")
+      : null,
     thread.cwd,
     `cwd:${thread.cwd}`,
     branch,
@@ -240,17 +244,30 @@ export function ThreadList({
           const hasActivityMessages =
             Boolean(activity.lastUserMessage) ||
             Boolean(activity.lastAgentMessage);
+          const isAwaitingApproval =
+            thread.status.type === "active" &&
+            thread.status.activeFlags.includes("waitingOnApproval");
+          const activityState = isAwaitingApproval
+            ? "approval"
+            : activity.state;
+          const activityLabel = isAwaitingApproval
+            ? "needs approval"
+            : activityStatusLabel(activity);
           return (
             <button
               key={thread.id}
-              className="thread-row"
+              className={
+                isAwaitingApproval
+                  ? "thread-row thread-row-awaiting-approval"
+                  : "thread-row"
+              }
               type="button"
               onClick={() => onSelect(thread.id)}
             >
               <div className="thread-row-top">
                 <h2>{threadTitle(thread)}</h2>
-                <span className={`status-pill status-thread-${activity.state}`}>
-                  {activityStatusLabel(activity)}
+                <span className={`status-pill status-thread-${activityState}`}>
+                  {activityLabel}
                 </span>
               </div>
               <div className="thread-preview">
@@ -260,7 +277,7 @@ export function ThreadList({
                       <div className="thread-preview-line">
                         <span className="thread-preview-label">You</span>
                         <Streamdown
-                          className="thread-preview-markdown"
+                          className="thread-preview-markdown thread-preview-last-message"
                           dir="auto"
                           linkSafety={markdownLinkSafety}
                         >
@@ -272,7 +289,7 @@ export function ThreadList({
                       <div className="thread-preview-line">
                         <span className="thread-preview-label">Codex</span>
                         <Streamdown
-                          className="thread-preview-markdown"
+                          className="thread-preview-markdown thread-preview-last-message"
                           dir="auto"
                           linkSafety={markdownLinkSafety}
                         >
