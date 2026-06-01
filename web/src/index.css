@@ -369,6 +369,18 @@ a {
   text-align: left;
 }
 
+.thread-row-awaiting-approval {
+  background:
+    linear-gradient(rgba(240, 179, 91, 0.08), rgba(240, 179, 91, 0.08)),
+    var(--bg-strong);
+  border-color: rgba(240, 179, 91, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(240, 179, 91, 0.16);
+}
+
+.thread-row-awaiting-approval:hover {
+  border-color: rgba(240, 179, 91, 0.84);
+}
+
 .thread-search {
   margin-bottom: 1rem;
   min-width: 0;
@@ -470,6 +482,14 @@ a {
   min-width: 0;
 }
 
+.thread-preview-last-message {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  max-height: calc(1.35em * 2);
+  overflow: hidden;
+}
+
 .thread-preview-markdown
   :where(p, ul, ol, li, blockquote, pre, table, h1, h2, h3, h4, h5, h6) {
   display: inline;
@@ -534,6 +554,11 @@ a {
 .status-thread-working {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.status-thread-approval {
+  background: rgba(240, 179, 91, 0.18);
+  color: var(--warning);
 }
 
 .status-thread-virgin {

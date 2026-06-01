@@ -144,7 +144,7 @@ describe("ThreadList", () => {
   });
 
   it("renders newest-turn activity when available", () => {
-    render(
+    const { container } = render(
       <ThreadList
         loading={false}
         onRefresh={vi.fn()}
@@ -166,5 +166,41 @@ describe("ThreadList", () => {
     expect(screen.getByText("Latest prompt")).toBeInTheDocument();
     expect(screen.getByText("Codex")).toBeInTheDocument();
     expect(screen.getByText("Latest response")).toBeInTheDocument();
+    expect(
+      container.querySelectorAll(".thread-preview-last-message"),
+    ).toHaveLength(2);
+  });
+
+  it("highlights threads waiting on approval", () => {
+    render(
+      <ThreadList
+        loading={false}
+        onRefresh={vi.fn()}
+        onSelect={vi.fn()}
+        previewsByThreadId={{}}
+        threadActivityByThreadId={{
+          "thread-1": {
+            lastAgentMessage: null,
+            lastUserMessage: "Run the command",
+            state: "working",
+          },
+        }}
+        threads={[
+          buildThread({
+            status: {
+              type: "active",
+              activeFlags: ["waitingOnApproval"],
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Original prompt/i }),
+    ).toHaveClass("thread-row-awaiting-approval");
+    expect(screen.getByText("needs approval")).toHaveClass(
+      "status-thread-approval",
+    );
   });
 });
