@@ -9,6 +9,7 @@ import type {
   JsonValue,
   McpServerElicitationRequestResponse,
   PermissionGrantScope,
+  ThreadItem,
   ToolRequestUserInputResponse,
 } from "@/types/protocol";
 
@@ -31,6 +32,20 @@ type CommandApprovalRequest = Extract<
 type CommandApprovalParamsCompat = CommandApprovalRequest["params"] & {
   additionalPermissions?: unknown;
   availableDecisions?: CommandExecutionApprovalDecision[] | null;
+};
+
+type FileChange = Extract<
+  ThreadItem,
+  { type: "fileChange" }
+>["changes"][number];
+
+type FileChangeRequest = Extract<
+  AnyServerRequest,
+  { method: "item/fileChange/requestApproval" }
+>;
+
+type FileChangeParamsCompat = FileChangeRequest["params"] & {
+  fileChanges?: Record<string, unknown>;
 };
 
 type FileSystemSpecialPathCompat =
@@ -208,6 +223,40 @@ function commandDecisionClassName(
     : "approval-decision-button approval-decision-no";
 }
 
+function patchChangeKindLabel(change: FileChange): string {
+  switch (change.kind.type) {
+    case "add":
+      return "ADD";
+    case "delete":
+      return "DELETE";
+    case "update":
+      return "EDIT";
+  }
+}
+
+function fileChangeDecisionLabel(
+  decision: "accept" | "acceptForSession" | "decline" | "cancel",
+): string {
+  switch (decision) {
+    case "accept":
+      return "Yes, proceed";
+    case "acceptForSession":
+      return "Yes, and don't ask again for these files";
+    case "decline":
+      return "No, continue without applying changes";
+    case "cancel":
+      return "No, and tell Codex what to do differently";
+  }
+}
+
+function fileChangeDecisionClassName(
+  decision: "accept" | "acceptForSession" | "decline" | "cancel",
+): string {
+  return decision === "accept" || decision === "acceptForSession"
+    ? "approval-decision-button approval-decision-yes"
+    : "approval-decision-button approval-decision-no";
+}
+
 function CardShell({
   title,
   children,
@@ -271,6 +320,7 @@ function CommandApprovalCard({
 }
 
 function FileChangeCard({
+  fileChanges = [],
   request,
   onRespond,
   responding,
@@ -280,19 +330,57 @@ function FileChangeCard({
     { method: "item/fileChange/requestApproval" }
   >;
 }) {
+  const params = request.params as FileChangeParamsCompat;
+  const legacyFilePaths = params.fileChanges
+    ? Object.keys(params.fileChanges)
+    : [];
+
   return (
     <CardShell title="File change approval">
       {request.params.reason && <p>{request.params.reason}</p>}
+      {params.grantRoot && (
+        <p className="detail-meta">write root: {params.grantRoot}</p>
+      )}
+      {fileChanges.length > 0 ? (
+        <div>
+          <h4>Files</h4>
+          <ul className="approval-file-list">
+            {fileChanges.map((change) => (
+              <li key={change.path}>
+                <span className="approval-file-kind">
+                  {patchChangeKindLabel(change)}
+                </span>
+                <span className="mono">{change.path}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        legacyFilePaths.length > 0 && (
+          <div>
+            <h4>Files</h4>
+            <ul className="approval-file-list">
+              {legacyFilePaths.map((path) => (
+                <li key={path}>
+                  <span className="approval-file-kind">EDIT</span>
+                  <span className="mono">{path}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      )}
       <div className="button-row">
         {(["accept", "acceptForSession", "decline", "cancel"] as const).map(
           (decision) => (
             <button
               key={decision}
+              className={fileChangeDecisionClassName(decision)}
               disabled={responding}
               type="button"
               onClick={() => onRespond(request, { decision })}
             >
-              {decision}
+              {fileChangeDecisionLabel(decision)}
             </button>
           ),
         )}
@@ -982,12 +1070,14 @@ function UnknownRequestCard({ request, onRespond }: RequestCardProps) {
 }
 
 type RequestCardProps = {
+  fileChanges?: FileChange[];
   request: AnyServerRequest;
   onRespond: (request: AnyServerRequest, response: unknown) => void;
   responding?: boolean;
 };
 
 export function RequestCard({
+  fileChanges = [],
   request,
   onRespond,
   responding,
@@ -1005,6 +1095,7 @@ export function RequestCard({
   if (isRequestMethod(request, "item/fileChange/requestApproval")) {
     return (
       <FileChangeCard
+        fileChanges={fileChanges}
         onRespond={onRespond}
         request={request}
         responding={responding}

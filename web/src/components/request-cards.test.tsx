@@ -78,6 +78,65 @@ describe("RequestCard", () => {
     ).toHaveClass("approval-decision-no");
   });
 
+  it("renders file change approval paths and labels decisions", async () => {
+    const user = userEvent.setup();
+    const onRespond = vi.fn();
+    const request: ServerRequest = {
+      method: "item/fileChange/requestApproval",
+      id: 6,
+      params: {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        itemId: "patch_1",
+        startedAtMs: 1,
+        reason: "Need to apply a patch",
+        grantRoot: "/tmp/project",
+      },
+    };
+
+    render(
+      <RequestCard
+        fileChanges={[
+          {
+            path: "src/components/request-cards.tsx",
+            kind: { type: "update", move_path: null },
+            diff: "@@ -1 +1 @@",
+          },
+        ]}
+        onRespond={onRespond}
+        request={request}
+      />,
+    );
+
+    expect(screen.getByText("Need to apply a patch")).toBeInTheDocument();
+    expect(screen.getByText("write root: /tmp/project")).toBeInTheDocument();
+    expect(screen.getByText("EDIT")).toBeInTheDocument();
+    expect(
+      screen.getByText("src/components/request-cards.tsx"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yes, proceed" }));
+
+    expect(onRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 6 }), {
+      decision: "accept",
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "Yes, and don't ask again for these files",
+      }),
+    ).toHaveClass("approval-decision-yes");
+    expect(
+      screen.getByRole("button", {
+        name: "No, continue without applying changes",
+      }),
+    ).toHaveClass("approval-decision-no");
+    expect(
+      screen.getByRole("button", {
+        name: "No, and tell Codex what to do differently",
+      }),
+    ).toHaveClass("approval-decision-no");
+  });
+
   it("submits permission grants with selected scope", async () => {
     const user = userEvent.setup();
     const onRespond = vi.fn();

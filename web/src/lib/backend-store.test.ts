@@ -429,6 +429,78 @@ describe("BackendStateStore", () => {
     unsubscribeSecond();
   });
 
+  it("applies file change patch updates to loaded thread details", async () => {
+    const detailedThread: Thread = {
+      ...makeThread("thr_1", "Thread 1"),
+      turns: [
+        {
+          ...makeTurn("turn_1"),
+          status: "inProgress",
+          itemsView: "full",
+        },
+      ],
+    };
+    const transport = new FakeTransport(
+      [makeThread("thr_1", "Thread 1")],
+      {},
+      {},
+      new Map([["thr_1", detailedThread]]),
+    );
+    const store = new BackendStateStore(transport);
+    const subscriber = vi.fn();
+
+    store.subscribeThread("thr_1", subscriber);
+    await waitFor(() => {
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({ id: "thr_1" }),
+        }),
+      );
+    });
+
+    transport.emitMessage({
+      method: "item/fileChange/patchUpdated",
+      params: {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        itemId: "patch_1",
+        changes: [
+          {
+            path: "src/lib/backend-store.ts",
+            kind: { type: "update", move_path: null },
+            diff: "@@ -1 +1 @@",
+          },
+        ],
+      },
+    });
+
+    expect(subscriber).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        thread: expect.objectContaining({
+          turns: [
+            expect.objectContaining({
+              items: [
+                {
+                  type: "fileChange",
+                  id: "patch_1",
+                  status: "inProgress",
+                  changes: [
+                    {
+                      path: "src/lib/backend-store.ts",
+                      kind: { type: "update", move_path: null },
+                      diff: "@@ -1 +1 @@",
+                    },
+                  ],
+                },
+              ],
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("renders the newest turn page before loading older history", async () => {
     let releaseResume: () => void = () => {
       throw new Error("resume gate was not initialized");
