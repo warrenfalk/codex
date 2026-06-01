@@ -10,6 +10,7 @@
     "dev:relay": "tsx server/index.ts",
     "dev:ui": "vite",
     "preview": "pnpm run start",
+    "server:shutdown": "tsx server/request-shutdown.ts",
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run --coverage",
     "test:watch": "vitest",

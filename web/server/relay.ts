@@ -2,6 +2,7 @@ import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { createConnection } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import type { Duplex } from "node:stream";
 
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -71,6 +72,12 @@ type BrowserPushState = {
   foregroundThreadId: string | null;
   pushSubscriptionEndpoint: string | null;
 };
+
+type UpgradeHandler = (
+  request: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+) => void;
 
 const CLIENT_INFO = {
   name: "codex_web_proxy",
@@ -277,9 +284,59 @@ async function openUpstreamSocket(backendUrl: string): Promise<WebSocket> {
   });
 }
 
+async function closeSocketAndWait(
+  socket: WebSocket,
+  code: number,
+  reason: string,
+): Promise<void> {
+  if (socket.readyState === WebSocket.CLOSED) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    let timeout: NodeJS.Timeout;
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      socket.off("close", settle);
+      socket.off("error", settle);
+      resolve();
+    };
+    timeout = setTimeout(() => {
+      if (socket.readyState !== WebSocket.CLOSED) {
+        socket.terminate();
+      }
+      settle();
+    }, 250);
+    timeout.unref();
+
+    socket.once("close", settle);
+    socket.once("error", settle);
+    closeIfOpen(socket, code, reason);
+  });
+}
+
+async function closeWebSocketServer(server: WebSocketServer): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 class RelayController {
   private connectPromise: Promise<void> | null = null;
   private initializeResponse: InitializeResponse | null = null;
+  private relayServer: WebSocketServer | null = null;
+  private readonly upgradeHandler: UpgradeHandler;
   private nextUpstreamRequestId = 1;
   private readonly browserSockets = new Set<WebSocket>();
   private readonly cache = new ThreadCache();
@@ -306,7 +363,9 @@ class RelayController {
   constructor(
     private readonly backendUrl: string,
     private readonly pushNotifier: PushNotifier | null,
-  ) {}
+  ) {
+    this.upgradeHandler = this.handleUpgrade.bind(this);
+  }
 
   async start(): Promise<void> {
     await this.ensureUpstreamConnected();
@@ -314,28 +373,74 @@ class RelayController {
 
   attach(server: HttpServer): void {
     const relayServer = new WebSocketServer({ noServer: true });
+    this.relayServer = relayServer;
 
     relayServer.on("connection", (socket) => {
       this.handleBrowserConnection(socket);
     });
 
-    server.on("upgrade", (request, socket, head) => {
-      const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    server.on("upgrade", this.upgradeHandler);
+  }
 
-      if (pathname !== "/rpc") {
-        socket.destroy();
-        return;
-      }
+  detach(server: HttpServer): void {
+    server.off("upgrade", this.upgradeHandler);
+  }
 
-      relayServer.handleUpgrade(
-        request as IncomingMessage,
-        socket,
-        head,
-        (webSocket) => {
-          relayServer.emit("connection", webSocket, request);
-        },
-      );
-    });
+  async close(): Promise<void> {
+    const reason = "server shutting down";
+    const shutdownError = new Error(reason);
+    for (const pending of this.pendingProxyRequests.values()) {
+      pending.reject(shutdownError);
+    }
+    this.pendingProxyRequests.clear();
+    this.forwardedBrowserRequests.clear();
+    this.pendingServerRequests.clear();
+    this.pendingServerRequestIds.clear();
+    this.respondedServerRequestIds.clear();
+    this.browserPushStatesBySocket.clear();
+    this.cache.clear();
+    this.initializeResponse = null;
+
+    const sockets = [...this.browserSockets];
+    this.browserSockets.clear();
+    await Promise.all(
+      sockets.map((socket) => closeSocketAndWait(socket, 1001, reason)),
+    );
+
+    const upstreamSocket = this.upstreamSocket;
+    this.upstreamSocket = null;
+    if (upstreamSocket) {
+      upstreamSocket.removeAllListeners();
+      await closeSocketAndWait(upstreamSocket, 1001, reason);
+    }
+
+    const relayServer = this.relayServer;
+    this.relayServer = null;
+    if (relayServer) {
+      await closeWebSocketServer(relayServer);
+    }
+  }
+
+  private handleUpgrade(
+    request: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+  ): void {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+
+    if (pathname !== "/rpc") {
+      socket.destroy();
+      return;
+    }
+
+    this.relayServer?.handleUpgrade(
+      request as IncomingMessage,
+      socket,
+      head,
+      (webSocket) => {
+        this.relayServer?.emit("connection", webSocket, request);
+      },
+    );
   }
 
   private async ensureUpstreamConnected(): Promise<void> {
@@ -892,12 +997,22 @@ export type RelayOptions = {
   pushNotifier?: PushNotifier | null;
 };
 
+export type RelayHandle = {
+  close(): Promise<void>;
+};
+
 export async function attachRelay(
   server: HttpServer,
   backendUrl: string,
   options: RelayOptions = {},
-): Promise<void> {
+): Promise<RelayHandle> {
   const relay = new RelayController(backendUrl, options.pushNotifier ?? null);
   await relay.start();
   relay.attach(server);
+  return {
+    async close(): Promise<void> {
+      relay.detach(server);
+      await relay.close();
+    },
+  };
 }

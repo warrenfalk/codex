@@ -35,6 +35,11 @@ In production, the relay process also serves the built `dist/` assets, so there
 is no separate Vite server. The browser and `/rpc` websocket both use the same
 origin.
 
+For rebuild loops that already supervise `pnpm run start`, run
+`pnpm run build && pnpm run server:shutdown`. The running web server writes a
+local authenticated control file and removes it after a clean controlled
+shutdown, so the shutdown command does not need process lookup or port scanning.
+
 ## Home Screen app
 
 Production builds include a web app manifest, app icons, and a light service
@@ -79,3 +84,7 @@ subscribed browsers that do not currently have a connected websocket session.
   - must be a `mailto:` address or HTTPS URL
   - defaults to the public HTTPS origin captured when the browser saves a push
     subscription
+- `CODEX_WEB_CONTROL_PATH`
+  - local control file used by `pnpm run server:shutdown`
+  - defaults to `$CODEX_HOME/codex-web-control.json`, or
+    `~/.codex/codex-web-control.json` when `CODEX_HOME` is unset
