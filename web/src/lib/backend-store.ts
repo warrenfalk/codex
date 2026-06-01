@@ -62,6 +62,12 @@ export type ThreadDetailsSnapshot = {
   warnings: string[];
 };
 
+type FileChangeItem = Extract<ThreadItem, { type: "fileChange" }>;
+type FileChangePatchUpdatedParams = Extract<
+  ServerNotification,
+  { method: "item/fileChange/patchUpdated" }
+>["params"];
+
 export interface BackendTransport {
   connect(): Promise<InitializeResponse>;
   disconnect(): void;
@@ -471,6 +477,29 @@ function applyCommandOutputDelta(
   );
 }
 
+function applyFileChangePatchUpdated(
+  thread: Thread,
+  notification: FileChangePatchUpdatedParams,
+): Thread {
+  return updateTurn(thread, notification.turnId, (turn) => {
+    const existing = turn.items.find(
+      (item): item is FileChangeItem =>
+        item.id === notification.itemId && item.type === "fileChange",
+    );
+    const nextItem: FileChangeItem = {
+      id: notification.itemId,
+      type: "fileChange",
+      changes: notification.changes,
+      status: existing?.status ?? "inProgress",
+    };
+
+    return {
+      ...turn,
+      items: upsertItem(turn.items, nextItem),
+    };
+  });
+}
+
 function getThreadIdFromValue(value: unknown): string | null {
   if (!isObject(value) || typeof value.threadId !== "string") {
     return null;
@@ -558,6 +587,10 @@ function applyDetailedNotification(
     case "item/commandExecution/outputDelta":
       return notification.params.threadId === thread.id
         ? applyCommandOutputDelta(thread, notification.params)
+        : thread;
+    case "item/fileChange/patchUpdated":
+      return notification.params.threadId === thread.id
+        ? applyFileChangePatchUpdated(thread, notification.params)
         : thread;
     default:
       return thread;

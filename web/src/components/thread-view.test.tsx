@@ -243,6 +243,56 @@ describe("ThreadView", () => {
     );
   });
 
+  it("shows file paths for file change approval prompts", () => {
+    const pendingRequest: AnyServerRequest = {
+      method: "item/fileChange/requestApproval",
+      id: 8,
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "patch-1",
+        startedAtMs: 1,
+        reason: "Need to edit files",
+        grantRoot: null,
+      },
+    };
+    renderThreadView({
+      pendingRequests: [pendingRequest],
+      thread: buildThread([
+        {
+          id: "turn-1",
+          items: [
+            {
+              type: "fileChange",
+              id: "patch-1",
+              status: "inProgress",
+              changes: [
+                {
+                  path: "src/components/thread-view.tsx",
+                  kind: { type: "update", move_path: null },
+                  diff: "@@ -1 +1 @@",
+                },
+              ],
+            },
+          ],
+          itemsView: "full",
+          status: "inProgress",
+          error: null,
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
+        },
+      ]),
+    });
+
+    expect(screen.getByText("Need to edit files")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByText("src/components/thread-view.tsx")
+        .some((element) => element.classList.contains("mono")),
+    ).toBe(true);
+  });
+
   it("submits the prompt with Ctrl+Enter", async () => {
     scrollToEndMock.mockReset();
     scrollToItemMock.mockReset();

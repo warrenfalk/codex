@@ -8,7 +8,12 @@ import {
 import type { ConnectionViewState } from "@/lib/backend-store";
 import { requestIdKey } from "@/lib/request-id";
 import { syncTextareaHeight } from "@/lib/textarea-autosize";
-import type { AnyServerRequest, Thread, Turn } from "@/types/protocol";
+import type {
+  AnyServerRequest,
+  Thread,
+  ThreadItem,
+  Turn,
+} from "@/types/protocol";
 
 import { ThreadItemView } from "./thread-item-view";
 import { RequestCard } from "./request-cards";
@@ -47,8 +52,37 @@ type TextSelection = {
   end: number;
 };
 
+type FileChangeItem = Extract<ThreadItem, { type: "fileChange" }>;
+type FileChange = FileChangeItem["changes"][number];
+type FileChangeApprovalRequest = Extract<
+  AnyServerRequest,
+  { method: "item/fileChange/requestApproval" }
+>;
+
 function userMessageAnchorId(itemId: string): string {
   return `user-message-anchor-${itemId}`;
+}
+
+function isFileChangeApprovalRequest(
+  request: AnyServerRequest,
+): request is FileChangeApprovalRequest {
+  return request.method === "item/fileChange/requestApproval";
+}
+
+function fileChangesForRequest(
+  thread: Thread | null,
+  request: AnyServerRequest,
+): FileChange[] {
+  if (!isFileChangeApprovalRequest(request)) {
+    return [];
+  }
+
+  const turn = thread?.turns.find((turn) => turn.id === request.params.turnId);
+  const item = turn?.items.find(
+    (item): item is FileChangeItem =>
+      item.id === request.params.itemId && item.type === "fileChange",
+  );
+  return item?.changes ?? [];
 }
 
 function shouldSubmitPromptOnEnter(
@@ -454,6 +488,7 @@ export function ThreadView({
           <div className="request-stack">
             {pendingRequests.map((request) => (
               <RequestCard
+                fileChanges={fileChangesForRequest(thread, request)}
                 key={`${request.method}-${request.id}`}
                 onRespond={onRespondToRequest}
                 request={request}

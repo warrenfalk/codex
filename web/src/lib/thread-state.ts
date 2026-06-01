@@ -38,6 +38,12 @@ export type AppState = {
   initializeSummary: string | null;
 };
 
+type FileChangeItem = Extract<ThreadItem, { type: "fileChange" }>;
+type FileChangePatchUpdatedParams = Extract<
+  ServerNotification,
+  { method: "item/fileChange/patchUpdated" }
+>["params"];
+
 export const initialState: AppState = {
   connectionState: "idle",
   connectionError: null,
@@ -417,6 +423,31 @@ function applyCommandOutputDelta(
   );
 }
 
+function applyFileChangePatchUpdated(
+  threads: Thread[],
+  notification: FileChangePatchUpdatedParams,
+): Thread[] {
+  return updateThread(threads, notification.threadId, (thread) =>
+    updateTurn(thread, notification.turnId, (turn) => {
+      const existing = turn.items.find(
+        (item): item is FileChangeItem =>
+          item.id === notification.itemId && item.type === "fileChange",
+      );
+      const nextItem: FileChangeItem = {
+        id: notification.itemId,
+        type: "fileChange",
+        changes: notification.changes,
+        status: existing?.status ?? "inProgress",
+      };
+
+      return {
+        ...turn,
+        items: upsertItem(turn.items, nextItem),
+      };
+    }),
+  );
+}
+
 function applyNotification(
   state: AppState,
   notification: ServerNotification,
@@ -519,6 +550,14 @@ function applyNotification(
       return {
         ...state,
         threads: applyCommandOutputDelta(state.threads, notification.params),
+      };
+    case "item/fileChange/patchUpdated":
+      return {
+        ...state,
+        threads: applyFileChangePatchUpdated(
+          state.threads,
+          notification.params,
+        ),
       };
     case "item/fileChange/outputDelta":
       return {
