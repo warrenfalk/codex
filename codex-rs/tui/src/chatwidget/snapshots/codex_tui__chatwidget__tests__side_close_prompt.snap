@@ -1,0 +1,15 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+expression: normalized_backend_snapshot(terminal.backend())
+---
+"                                                                                "
+"                                                                                "
+"  Close side conversation                                                       "
+"  Choose what to do with this ephemeral side thread.                            "
+"                                                                                "
+"› 1. Cancel (default)  Return to the side conversation.                         "
+"  2. Summarize         Ask the side agent for a summary and save it to the      "
+"                       parent.                                                  "
+"  3. Leave             Discard the side conversation without saving a summary.  "
+"                                                                                "
+"  Press enter to confirm or esc to go back                                      "

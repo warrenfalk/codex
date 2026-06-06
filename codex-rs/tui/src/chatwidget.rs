@@ -404,6 +404,8 @@ mod service_tiers;
 mod settings;
 mod settings_popups;
 mod side;
+#[cfg(test)]
+pub(crate) use self::side::SIDE_CLOSE_PROMPT_VIEW_ID;
 mod status_state;
 mod windows_sandbox_prompts;
 use self::status_state::StatusIndicatorState;
@@ -1798,6 +1800,16 @@ impl ChatWidget {
     #[cfg(test)]
     pub(crate) fn has_active_view(&self) -> bool {
         self.bottom_pane.has_active_view()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_view_id(&self) -> Option<&'static str> {
+        self.bottom_pane.active_view_id()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn selected_index_for_active_view(&self, view_id: &'static str) -> Option<usize> {
+        self.bottom_pane.selected_index_for_active_view(view_id)
     }
 
     pub(crate) fn show_esc_backtrack_hint(&mut self) {
