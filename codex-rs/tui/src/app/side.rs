@@ -575,8 +575,6 @@ impl App {
             /*inc*/ 1,
             &[("source", "slash_command")],
         );
-        self.refresh_in_memory_config_from_disk_best_effort("starting a side conversation")
-            .await;
 
         let fork_config = self.side_fork_config();
         match app_server.fork_thread(fork_config, parent_thread_id).await {
