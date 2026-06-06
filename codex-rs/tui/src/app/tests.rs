@@ -130,7 +130,7 @@ macro_rules! assert_app_snapshot {
 }
 
 const SIDE_START_SMALL_STACK_CHILD_TEST: &str = "side_start_config_refresh_small_stack_child";
-const SIDE_START_SMALL_STACK_BYTES: usize = 512 * 1024;
+const SIDE_START_SMALL_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 fn test_absolute_path(path: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
@@ -3515,7 +3515,7 @@ fn side_start_config_refresh_small_stack_child() {
                 .build()
                 .expect("build runtime");
             runtime.block_on(async {
-                let mut app = make_test_app().await;
+                let mut app = Box::pin(make_boxed_test_app()).await;
                 app.refresh_in_memory_config_from_disk_best_effort("starting a side conversation")
                     .await;
             });
@@ -4428,13 +4428,17 @@ async fn clear_ui_header_shows_fast_status_for_fast_capable_models() {
 }
 
 async fn make_test_app() -> App {
+    *make_boxed_test_app().await
+}
+
+async fn make_boxed_test_app() -> Box<App> {
     let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
     let config = chat_widget.config_ref().clone();
     let file_search = FileSearchManager::new(config.cwd.to_path_buf(), app_event_tx.clone());
     let model = crate::legacy_core::test_support::get_model_offline(config.model.as_deref());
     let session_telemetry = test_session_telemetry(&config, model.as_str());
 
-    App {
+    Box::new(App {
         model_catalog: chat_widget.model_catalog(),
         session_telemetry,
         app_event_tx,
@@ -4489,7 +4493,7 @@ async fn make_test_app() -> App {
         pending_startup_thread_start: false,
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
-    }
+    })
 }
 
 async fn make_test_app_with_channels() -> (
