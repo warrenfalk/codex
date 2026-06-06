@@ -1535,7 +1535,28 @@ impl App {
             // thread, so unrelated shutdowns cannot consume this marker.
             self.pending_shutdown_exit_thread_id = None;
         }
+        let completed_side_summary_turn = match &event {
+            ThreadBufferedEvent::Notification(ServerNotification::TurnStarted(notification)) => {
+                if let Ok(thread_id) = ThreadId::from_string(&notification.thread_id) {
+                    self.note_side_summary_turn_started(thread_id, &notification.turn.id);
+                }
+                None
+            }
+            ThreadBufferedEvent::Notification(ServerNotification::TurnCompleted(notification)) => {
+                ThreadId::from_string(&notification.thread_id)
+                    .ok()
+                    .map(|thread_id| (thread_id, notification.turn.clone()))
+            }
+            ThreadBufferedEvent::Request(_)
+            | ThreadBufferedEvent::Notification(_)
+            | ThreadBufferedEvent::HistoryEntryResponse(_)
+            | ThreadBufferedEvent::FeedbackSubmission(_) => None,
+        };
         self.handle_thread_event_now(event);
+        if let Some((thread_id, turn)) = completed_side_summary_turn {
+            self.handle_side_summary_turn_completed(tui, app_server, thread_id, turn)
+                .await?;
+        }
         if self.backtrack_render_pending {
             tui.frame_requester().schedule_frame();
         }
