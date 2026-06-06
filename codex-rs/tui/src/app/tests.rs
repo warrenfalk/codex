@@ -110,6 +110,7 @@ use ratatui::prelude::Line;
 use std::net::TcpListener;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tempfile::tempdir;
@@ -127,6 +128,9 @@ macro_rules! assert_app_snapshot {
         });
     };
 }
+
+const SIDE_START_SMALL_STACK_CHILD_TEST: &str = "side_start_config_refresh_small_stack_child";
+const SIDE_START_SMALL_STACK_BYTES: usize = 512 * 1024;
 
 fn test_absolute_path(path: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
@@ -3479,6 +3483,46 @@ async fn side_start_block_message_tracks_open_side_conversation() {
 
     app.side_threads.remove(&side_thread_id);
     assert_eq!(app.side_start_block_message(), None);
+}
+
+#[test]
+fn side_start_config_refresh_completes_on_tui_sized_stack() {
+    let output = Command::new(std::env::current_exe().expect("current test binary"))
+        .arg(SIDE_START_SMALL_STACK_CHILD_TEST)
+        .arg("--ignored")
+        .arg("--nocapture")
+        .output()
+        .expect("run side start small-stack child test");
+
+    assert!(
+        output.status.success(),
+        "side start config refresh failed on a small TUI-sized stack\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+#[ignore = "subprocess child for side_start_config_refresh_completes_on_tui_sized_stack"]
+fn side_start_config_refresh_small_stack_child() {
+    std::thread::Builder::new()
+        .name("side-start-small-stack".to_string())
+        .stack_size(SIDE_START_SMALL_STACK_BYTES)
+        .spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime");
+            runtime.block_on(async {
+                let mut app = make_test_app().await;
+                app.refresh_in_memory_config_from_disk_best_effort("starting a side conversation")
+                    .await;
+            });
+        })
+        .expect("spawn side start small-stack thread")
+        .join()
+        .expect("side start config refresh should not panic");
 }
 
 #[tokio::test]
