@@ -64,6 +64,13 @@ pub(crate) enum ThreadGoalSetMode {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SideConversationCloseChoice {
+    Cancel,
+    Summarize,
+    Leave,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct HistoryLookupResponse {
     pub(crate) offset: usize,
@@ -168,6 +175,9 @@ pub(crate) enum AppEvent {
         parent_thread_id: ThreadId,
         user_message: Option<UserMessage>,
     },
+
+    /// Handle the selected close action for an idle side conversation.
+    SideConversationCloseSelected(SideConversationCloseChoice),
 
     /// Submit an op to the specified thread, regardless of current focus.
     SubmitThreadOp {

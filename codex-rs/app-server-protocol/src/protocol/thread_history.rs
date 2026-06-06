@@ -23,6 +23,7 @@ use crate::protocol::v2::TurnStatus;
 use crate::protocol::v2::UserInput;
 use crate::protocol::v2::WebSearchAction;
 use codex_protocol::items::parse_hook_prompt_message;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
@@ -58,6 +59,8 @@ use codex_protocol::protocol::WebSearchEndEvent;
 use std::collections::HashMap;
 use tracing::warn;
 use uuid::Uuid;
+
+const SIDE_CONVERSATION_SUMMARY_HEADING: &str = "Side conversation summary";
 
 #[cfg(test)]
 use crate::protocol::v2::CommandAction;
@@ -435,6 +438,13 @@ impl ThreadHistoryBuilder {
             return;
         };
 
+        if role == "assistant" {
+            if let Some(text) = side_conversation_summary_text(content) {
+                self.handle_side_conversation_summary(text);
+            }
+            return;
+        }
+
         if role != "user" {
             return;
         }
@@ -451,6 +461,24 @@ impl ThreadHistoryBuilder {
                 .map(crate::protocol::v2::HookPromptFragment::from)
                 .collect(),
         });
+    }
+
+    fn handle_side_conversation_summary(&mut self, text: String) {
+        if !self
+            .current_turn
+            .as_ref()
+            .is_some_and(|turn| turn.opened_explicitly)
+        {
+            self.finish_current_turn();
+        }
+        self.handle_agent_message(text, None, None);
+        if !self
+            .current_turn
+            .as_ref()
+            .is_some_and(|turn| turn.opened_explicitly)
+        {
+            self.finish_current_turn();
+        }
     }
 
     fn handle_user_message(&mut self, payload: &UserMessageEvent) {
@@ -1475,6 +1503,19 @@ impl ThreadHistoryBuilder {
         }
         content
     }
+}
+
+fn side_conversation_summary_text(content: &[ContentItem]) -> Option<String> {
+    let mut text_parts = Vec::with_capacity(content.len());
+    for item in content {
+        let ContentItem::OutputText { text } = item else {
+            return None;
+        };
+        text_parts.push(text.as_str());
+    }
+    let text = text_parts.join("\n");
+    let rest = text.strip_prefix(SIDE_CONVERSATION_SUMMARY_HEADING)?;
+    (rest.is_empty() || rest.starts_with("\n\n")).then_some(text)
 }
 
 const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
@@ -3920,6 +3961,55 @@ mod tests {
         let turns = build_turns_from_rollout_items(&items);
         assert_eq!(turns.len(), 1);
         assert!(turns[0].items.is_empty());
+    }
+
+    #[test]
+    fn rebuilds_side_summary_response_item_as_agent_message() {
+        let summary = "Side conversation summary\n\nFindings from side chat.";
+        let items = vec![RolloutItem::ResponseItem(
+            codex_protocol::models::ResponseItem::Message {
+                id: Some("msg-side-summary".into()),
+                role: "assistant".into(),
+                content: vec![ContentItem::OutputText {
+                    text: summary.into(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+        )];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].status, TurnStatus::Completed);
+        assert_eq!(
+            turns[0].items,
+            vec![ThreadItem::AgentMessage {
+                id: "item-1".into(),
+                text: summary.into(),
+                phase: None,
+                memory_citation: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn ignores_plain_assistant_response_items_in_rollout_replay() {
+        let items = vec![RolloutItem::ResponseItem(
+            codex_protocol::models::ResponseItem::Message {
+                id: Some("msg-context".into()),
+                role: "assistant".into(),
+                content: vec![ContentItem::OutputText {
+                    text: "Injected assistant context".into(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+        )];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert!(turns.is_empty());
     }
 
     #[test]

@@ -3586,12 +3586,171 @@ async fn side_start_block_message_tracks_open_side_conversation() {
     assert_eq!(
         app.side_start_block_message(),
         Some(
-            "A side conversation is already open. Press Ctrl+C to return before starting another."
+            "A side conversation is already open. Press Ctrl+C to close it before starting another."
         )
     );
 
     app.side_threads.remove(&side_thread_id);
     assert_eq!(app.side_start_block_message(), None);
+}
+
+#[tokio::test]
+async fn idle_side_close_shortcut_opens_prompt() {
+    let mut app = make_test_app().await;
+    let parent_thread_id = ThreadId::new();
+    let side_thread_id = ThreadId::new();
+    app.active_thread_id = Some(side_thread_id);
+    app.side_threads
+        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
+
+    assert!(app.maybe_open_side_close_prompt().await);
+
+    assert_eq!(
+        app.chat_widget.active_view_id(),
+        Some(crate::chatwidget::SIDE_CLOSE_PROMPT_VIEW_ID)
+    );
+    assert_eq!(
+        app.chat_widget
+            .selected_index_for_active_view(crate::chatwidget::SIDE_CLOSE_PROMPT_VIEW_ID),
+        Some(0)
+    );
+    assert_eq!(app.active_side_parent_thread_id(), Some(parent_thread_id));
+}
+
+#[tokio::test]
+async fn running_side_close_shortcut_falls_through_for_interrupt() {
+    let mut app = make_test_app().await;
+    let parent_thread_id = ThreadId::new();
+    let side_thread_id = ThreadId::new();
+    app.active_thread_id = Some(side_thread_id);
+    app.side_threads
+        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
+    app.thread_event_channels.insert(
+        side_thread_id,
+        ThreadEventChannel::new_with_session(
+            THREAD_EVENT_CHANNEL_CAPACITY,
+            test_thread_session(side_thread_id, test_path_buf("/tmp/side")),
+            vec![test_turn("turn-1", TurnStatus::InProgress, Vec::new())],
+        ),
+    );
+
+    assert!(!app.maybe_open_side_close_prompt().await);
+    assert_eq!(app.chat_widget.active_view_id(), None);
+}
+
+#[tokio::test]
+async fn side_close_shortcut_preserves_composer_and_active_popup_behavior() {
+    let mut app = make_test_app().await;
+    let parent_thread_id = ThreadId::new();
+    let side_thread_id = ThreadId::new();
+    app.active_thread_id = Some(side_thread_id);
+    app.side_threads
+        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
+    app.chat_widget
+        .set_composer_text("draft".to_string(), Vec::new(), Vec::new());
+
+    assert!(!app.maybe_open_side_close_prompt().await);
+    assert_eq!(app.chat_widget.active_view_id(), None);
+
+    app.chat_widget
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    app.chat_widget.open_side_conversation_close_prompt();
+
+    assert!(!app.maybe_open_side_close_prompt().await);
+    assert_eq!(
+        app.chat_widget.active_view_id(),
+        Some(crate::chatwidget::SIDE_CLOSE_PROMPT_VIEW_ID)
+    );
+}
+
+#[tokio::test]
+async fn side_summary_user_turn_asks_for_side_only_summary() {
+    let mut app = make_test_app().await;
+    app.chat_widget.set_model("summary-model");
+
+    let op = app
+        .side_summary_user_turn()
+        .expect("summary turn should be available");
+
+    let Op::UserTurn {
+        items,
+        model,
+        final_output_json_schema,
+        collaboration_mode,
+        personality,
+        ..
+    } = op
+    else {
+        panic!("expected user turn");
+    };
+    assert_eq!(model, "summary-model");
+    assert_eq!(final_output_json_schema, None);
+    assert_eq!(collaboration_mode, None);
+    assert_eq!(personality, None);
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: side_summary::SIDE_SUMMARY_PROMPT.to_string(),
+            text_elements: Vec::new(),
+        }]
+    );
+    let [UserInput::Text { text, .. }] = items.as_slice() else {
+        panic!("expected summary text input");
+    };
+    assert!(text.contains("Side conversation boundary."));
+    assert!(text.contains("Do not call tools"));
+}
+
+#[tokio::test]
+async fn active_parent_drain_renders_side_summary_notification() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let parent_thread_id = ThreadId::new();
+    let side_thread_id = ThreadId::new();
+    app.thread_event_channels
+        .insert(parent_thread_id, ThreadEventChannel::new(/*capacity*/ 8));
+    app.activate_thread_channel(parent_thread_id).await;
+    app.chat_widget.handle_thread_session(test_thread_session(
+        parent_thread_id,
+        test_path_buf("/tmp/project"),
+    ));
+    let summary = "Findings from side chat.";
+
+    app.enqueue_thread_notification(
+        parent_thread_id,
+        ServerNotification::ItemCompleted(App::side_summary_item_completed_notification(
+            parent_thread_id,
+            side_thread_id,
+            summary,
+        )),
+    )
+    .await?;
+    app.enqueue_thread_notification(
+        parent_thread_id,
+        ServerNotification::TurnCompleted(App::side_summary_turn_completed_notification(
+            parent_thread_id,
+            side_thread_id,
+            summary,
+        )),
+    )
+    .await?;
+    assert!(app.drain_active_thread_events_now().await);
+
+    let mut source = None;
+    while let Ok(event) = app_event_rx.try_recv() {
+        if let AppEvent::ConsolidateAgentMessage {
+            source: summary_source,
+            ..
+        } = event
+        {
+            source = Some(summary_source);
+        }
+    }
+    assert_eq!(
+        source,
+        Some("Side conversation summary\n\nFindings from side chat.".to_string())
+    );
+
+    Ok(())
 }
 
 #[tokio::test]
@@ -4440,6 +4599,7 @@ async fn make_test_app() -> App {
         thread_event_listener_tasks: HashMap::new(),
         agent_navigation: AgentNavigationState::default(),
         side_threads: HashMap::new(),
+        pending_side_summary: None,
         active_thread_id: None,
         active_thread_rx: None,
         primary_thread_id: None,
@@ -4509,6 +4669,7 @@ async fn make_test_app_with_channels() -> (
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
             side_threads: HashMap::new(),
+            pending_side_summary: None,
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,

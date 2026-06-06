@@ -1894,6 +1894,10 @@ impl App {
                     .handle_start_side(tui, app_server, parent_thread_id, user_message)
                     .await;
             }
+            AppEvent::SideConversationCloseSelected(choice) => {
+                self.handle_side_conversation_close_choice(tui, app_server, choice)
+                    .await?;
+            }
             AppEvent::OpenSkillsList => {
                 self.chat_widget.open_skills_list();
             }
