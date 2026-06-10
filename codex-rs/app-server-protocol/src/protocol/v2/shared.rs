@@ -165,6 +165,8 @@ pub enum AskForApproval {
     UnlessTrusted,
     OnFailure,
     OnRequest,
+    TrustSandbox,
+    TrustSandboxTimeout,
     #[experimental("askForApproval.granular")]
     Granular {
         sandbox_approval: bool,
@@ -184,6 +186,8 @@ impl AskForApproval {
             AskForApproval::UnlessTrusted => CoreAskForApproval::UnlessTrusted,
             AskForApproval::OnFailure => CoreAskForApproval::OnFailure,
             AskForApproval::OnRequest => CoreAskForApproval::OnRequest,
+            AskForApproval::TrustSandbox => CoreAskForApproval::TrustSandbox,
+            AskForApproval::TrustSandboxTimeout => CoreAskForApproval::TrustSandboxTimeout,
             AskForApproval::Granular {
                 sandbox_approval,
                 rules,
@@ -208,6 +212,8 @@ impl From<CoreAskForApproval> for AskForApproval {
             CoreAskForApproval::UnlessTrusted => AskForApproval::UnlessTrusted,
             CoreAskForApproval::OnFailure => AskForApproval::OnFailure,
             CoreAskForApproval::OnRequest => AskForApproval::OnRequest,
+            CoreAskForApproval::TrustSandbox => AskForApproval::TrustSandbox,
+            CoreAskForApproval::TrustSandboxTimeout => AskForApproval::TrustSandboxTimeout,
             CoreAskForApproval::Granular(granular_config) => AskForApproval::Granular {
                 sandbox_approval: granular_config.sandbox_approval,
                 rules: granular_config.rules,

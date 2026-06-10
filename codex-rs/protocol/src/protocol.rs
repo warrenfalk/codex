@@ -862,6 +862,14 @@ pub enum AskForApproval {
     #[default]
     OnRequest,
 
+    /// Like `on-request`, but dangerous unmatched command-shape heuristics do
+    /// not prompt while a managed restricted sandbox is active.
+    TrustSandbox,
+
+    /// Like `trust-sandbox`, but sandbox-override command prompts may be
+    /// auto-approved after a timeout.
+    TrustSandboxTimeout,
+
     /// Fine-grained controls for individual approval flows.
     ///
     /// When a field is `true`, commands in that category are allowed. When it
@@ -873,6 +881,23 @@ pub enum AskForApproval {
     /// Never ask the user to approve commands. Failures are immediately returned
     /// to the model, and never escalated to the user for approval.
     Never,
+}
+
+impl AskForApproval {
+    pub const fn trusts_sandbox_for_dangerous_commands(self) -> bool {
+        matches!(self, Self::TrustSandbox | Self::TrustSandboxTimeout)
+    }
+
+    pub const fn auto_approves_sandbox_override_timeouts(self) -> bool {
+        matches!(self, Self::TrustSandboxTimeout)
+    }
+
+    pub const fn behaves_like_on_request(self) -> bool {
+        matches!(
+            self,
+            Self::OnRequest | Self::TrustSandbox | Self::TrustSandboxTimeout
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
@@ -4658,6 +4683,22 @@ mod tests {
                 mcp_elicitations: true,
             }
         );
+    }
+
+    #[test]
+    fn trust_sandbox_approval_policies_round_trip() {
+        for (value, expected) in [
+            ("trust-sandbox", AskForApproval::TrustSandbox),
+            ("trust-sandbox-timeout", AskForApproval::TrustSandboxTimeout),
+        ] {
+            let decoded = serde_json::from_value::<AskForApproval>(serde_json::json!(value))
+                .expect("approval policy should deserialize");
+            assert_eq!(expected, decoded);
+            assert_eq!(
+                serde_json::json!(value),
+                serde_json::to_value(expected).expect("approval policy should serialize")
+            );
+        }
     }
 
     #[test]

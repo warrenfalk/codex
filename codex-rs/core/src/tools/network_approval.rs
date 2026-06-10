@@ -616,6 +616,7 @@ impl NetworkApprovalService {
                     /*proposed_execpolicy_amendment*/ None,
                     /*additional_permissions*/ None,
                     available_decisions,
+                    /*auto_approve_after*/ None,
                 )
                 .await
         };

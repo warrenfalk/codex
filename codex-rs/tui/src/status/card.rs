@@ -689,7 +689,7 @@ fn status_permissions_label(
     if sandbox == "read-only" {
         return format!("Read Only ({approval})");
     }
-    if approval_policy == AskForApproval::OnRequest && sandbox == "workspace" {
+    if approval_policy_uses_workspace_label(approval_policy) && sandbox == "workspace" {
         return format!(
             "Workspace{} ({approval})",
             workspace_root_suffix.unwrap_or("")
@@ -702,6 +702,15 @@ fn status_permissions_label(
     }
     let sandbox = decorate_workspace_sandbox_label(sandbox, workspace_root_suffix);
     format!("Custom ({sandbox}, {approval})")
+}
+
+fn approval_policy_uses_workspace_label(approval_policy: AskForApproval) -> bool {
+    matches!(
+        approval_policy,
+        AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
+    )
 }
 
 fn decorate_workspace_sandbox_label(sandbox: &str, workspace_root_suffix: Option<&str>) -> String {

@@ -1587,6 +1587,32 @@ fn ask_for_approval_granular_round_trips_request_permissions_flag() {
 }
 
 #[test]
+fn ask_for_approval_trust_sandbox_variants_round_trip() {
+    for (value, v2_policy, core_policy) in [
+        (
+            "trust-sandbox",
+            AskForApproval::TrustSandbox,
+            CoreAskForApproval::TrustSandbox,
+        ),
+        (
+            "trust-sandbox-timeout",
+            AskForApproval::TrustSandboxTimeout,
+            CoreAskForApproval::TrustSandboxTimeout,
+        ),
+    ] {
+        let decoded = serde_json::from_value::<AskForApproval>(json!(value))
+            .expect("approval policy should deserialize");
+        assert_eq!(v2_policy, decoded);
+        assert_eq!(
+            json!(value),
+            serde_json::to_value(v2_policy).expect("approval policy should serialize")
+        );
+        assert_eq!(core_policy, v2_policy.to_core());
+        assert_eq!(v2_policy, AskForApproval::from(core_policy));
+    }
+}
+
+#[test]
 fn ask_for_approval_granular_defaults_missing_optional_flags_to_false() {
     let decoded = serde_json::from_value::<AskForApproval>(serde_json::json!({
         "granular": {

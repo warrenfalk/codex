@@ -34,6 +34,7 @@ use tracing::instrument;
 
 use crate::config::Config;
 use crate::sandboxing::SandboxPermissions;
+use crate::tools::sandboxing::ExecApprovalPromptCause;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use codex_shell_command::bash::parse_shell_lc_plain_commands;
 use codex_shell_command::bash::parse_shell_lc_single_command_prefix;
@@ -165,6 +166,54 @@ fn is_policy_match(rule_match: &RuleMatch) -> bool {
     }
 }
 
+fn prompt_cause_for_evaluation(
+    evaluation: &Evaluation,
+    sandbox_permissions: SandboxPermissions,
+    command_origin: ExecPolicyCommandOrigin,
+) -> ExecApprovalPromptCause {
+    if evaluation
+        .matched_rules
+        .iter()
+        .any(|rule_match| is_policy_match(rule_match) && rule_match.decision() == Decision::Prompt)
+    {
+        return ExecApprovalPromptCause::ExecPolicyRule;
+    }
+
+    if sandbox_permissions.requests_sandbox_override() {
+        return ExecApprovalPromptCause::SandboxOverride;
+    }
+
+    if evaluation
+        .matched_rules
+        .iter()
+        .any(|rule_match| heuristic_prompt_is_dangerous(rule_match, command_origin))
+    {
+        ExecApprovalPromptCause::FallbackDangerousCommand
+    } else {
+        ExecApprovalPromptCause::FallbackPolicy
+    }
+}
+
+fn heuristic_prompt_is_dangerous(
+    rule_match: &RuleMatch,
+    command_origin: ExecPolicyCommandOrigin,
+) -> bool {
+    let RuleMatch::HeuristicsRuleMatch { command, decision } = rule_match else {
+        return false;
+    };
+    if *decision != Decision::Prompt {
+        return false;
+    }
+
+    match command_origin {
+        ExecPolicyCommandOrigin::Generic => command_might_be_dangerous(command),
+        #[cfg(windows)]
+        ExecPolicyCommandOrigin::PowerShell => {
+            codex_shell_command::is_dangerous_command::is_dangerous_powershell_words(command)
+        }
+    }
+}
+
 /// Returns a rejection reason when `approval_policy` disallows surfacing the
 /// current prompt to the user.
 ///
@@ -179,6 +228,8 @@ pub(crate) fn prompt_is_rejected_by_policy(
         AskForApproval::Never => Some(PROMPT_CONFLICT_REASON),
         AskForApproval::OnFailure => None,
         AskForApproval::OnRequest => None,
+        AskForApproval::TrustSandbox => None,
+        AskForApproval::TrustSandboxTimeout => None,
         AskForApproval::UnlessTrusted => None,
         AskForApproval::Granular(granular_config) => {
             if prompt_is_rule {
@@ -338,6 +389,11 @@ impl ExecPolicyManager {
                     },
                     None => ExecApprovalRequirement::NeedsApproval {
                         reason: derive_prompt_reason(command, &evaluation),
+                        prompt_cause: prompt_cause_for_evaluation(
+                            &evaluation,
+                            sandbox_permissions,
+                            command_origin,
+                        ),
                         proposed_execpolicy_amendment: requested_amendment.or_else(|| {
                             if auto_amendment_allowed {
                                 try_derive_execpolicy_amendment_for_prompt_rules(
@@ -676,6 +732,15 @@ pub(crate) fn render_decision_for_unmatched_command(
         }
     };
     if command_is_dangerous || windows_managed_fs_restrictions_without_sandbox_backend {
+        if command_is_dangerous
+            && approval_policy.trusts_sandbox_for_dangerous_commands()
+            && !sandbox_permissions.requests_sandbox_override()
+            && !windows_managed_fs_restrictions_without_sandbox_backend
+            && profile_has_managed_filesystem_restrictions(permission_profile)
+        {
+            return Decision::Allow;
+        }
+
         return match approval_policy {
             AskForApproval::Never => {
                 let sandbox_is_explicitly_disabled = matches!(
@@ -691,6 +756,8 @@ pub(crate) fn render_decision_for_unmatched_command(
             }
             AskForApproval::OnFailure
             | AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
             | AskForApproval::UnlessTrusted
             | AskForApproval::Granular(_) => Decision::Prompt,
         };
@@ -707,7 +774,9 @@ pub(crate) fn render_decision_for_unmatched_command(
             // returned false, so we must prompt.
             Decision::Prompt
         }
-        AskForApproval::OnRequest => {
+        AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout => {
             match file_system_sandbox_policy.kind {
                 FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
                     // The user has indicated we should "just run" commands

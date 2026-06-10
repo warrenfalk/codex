@@ -436,6 +436,32 @@ async fn status_permissions_non_default_workspace_write_uses_workspace_label() {
 }
 
 #[tokio::test]
+async fn status_permissions_trust_sandbox_workspace_write_uses_workspace_label() {
+    for (policy, expected) in [
+        (AskForApproval::TrustSandbox, "Workspace (trust-sandbox)"),
+        (
+            AskForApproval::TrustSandboxTimeout,
+            "Workspace (trust-sandbox-timeout)",
+        ),
+    ] {
+        let temp_home = TempDir::new().expect("temp home");
+        let mut config = test_config(&temp_home).await;
+        config
+            .permissions
+            .approval_policy
+            .set(policy.to_core())
+            .expect("set approval policy");
+        set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
+        config
+            .permissions
+            .set_permission_profile(PermissionProfile::workspace_write())
+            .expect("set permission profile");
+
+        assert_eq!(permissions_text_for(&config).as_deref(), Some(expected));
+    }
+}
+
+#[tokio::test]
 async fn status_permissions_named_read_only_profile_shows_builtin_label() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;

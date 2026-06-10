@@ -271,6 +271,10 @@ pub struct ExecApprovalRequestEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub available_decisions: Option<Vec<ReviewDecision>>,
+    /// Internal auto-approval timeout for in-process approval handlers.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub auto_approve_after_ms: Option<u64>,
     pub parsed_cmd: Vec<ParsedCommand>,
 }
 

@@ -186,6 +186,8 @@ impl Approvable<ShellRequest> for ShellRuntime {
                             .cloned(),
                         req.additional_permissions.clone(),
                         available_decisions,
+                        req.exec_approval_requirement
+                            .auto_approve_after(turn.approval_policy.value()),
                     )
                     .await
             })

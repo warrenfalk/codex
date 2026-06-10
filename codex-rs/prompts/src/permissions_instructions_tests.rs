@@ -256,6 +256,42 @@ fn on_request_includes_tool_guidance_alongside_inline_permission_guidance_when_b
 }
 
 #[test]
+fn trust_sandbox_instructions_describe_sandbox_boundary_without_timeout() {
+    let text = approval_text(
+        AskForApproval::TrustSandbox,
+        ApprovalsReviewer::User,
+        &Policy::empty(),
+        /*exec_permission_approvals_enabled*/ false,
+        /*request_permissions_tool_enabled*/ false,
+    );
+
+    assert!(text.contains("`approval_policy` is `trust-sandbox`"));
+    assert!(text.contains("dangerous command shapes"));
+    assert!(text.contains("managed restricted filesystem sandbox"));
+    assert!(text.contains("sandbox_permissions: \"require_escalated\""));
+    assert!(text.contains("Explicit exec-policy prompt rules still require approval"));
+    assert!(!text.contains("300 seconds"));
+}
+
+#[test]
+fn trust_sandbox_timeout_instructions_include_timeout_and_permission_guidance() {
+    let text = approval_text(
+        AskForApproval::TrustSandboxTimeout,
+        ApprovalsReviewer::User,
+        &Policy::empty(),
+        /*exec_permission_approvals_enabled*/ true,
+        /*request_permissions_tool_enabled*/ true,
+    );
+
+    assert!(text.contains("`approval_policy` is `trust-sandbox-timeout`"));
+    assert!(text.contains("with_additional_permissions"));
+    assert!(text.contains("# request_permissions Tool"));
+    assert!(text.contains("Sandbox-override command prompts can auto-approve after 300 seconds"));
+    assert!(text.contains("does not persist session approval"));
+    assert!(text.contains("Explicit exec-policy prompt rules still require approval"));
+}
+
+#[test]
 fn auto_review_approvals_append_auto_review_specific_guidance() {
     let mut exec_policy = Policy::empty();
     exec_policy

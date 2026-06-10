@@ -43,6 +43,8 @@
             "untrusted",
             "on-failure",
             "on-request",
+            "trust-sandbox",
+            "trust-sandbox-timeout",
             "never"
           ],
           "type": "string"
