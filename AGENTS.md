@@ -1,3 +1,31 @@
+# Fork-Specific Codex Work
+
+This repository is a fork of the main Codex project. In this fork, treat every commit after the
+most recent `rust-v*` tag reachable from `HEAD` as one of our fork-specific commits/features.
+Any reference in these instructions to "our features", "our commits", or "my changes" refers to
+that commit range.
+
+When making changes here, do not optimize for upstreamability or broad shareability. This fork is
+for our own use, so diverging from upstream behavior is acceptable. The goal is to keep our
+fork-specific changes straightforward to rebase onto newer upstream versions.
+
+When designing fork-local CLI commands, app-server APIs, or UI surfaces, prefer the command or
+interface that is directly useful for this fork. Do not hide features under debug/experimental
+paths solely to preserve a public-product stability contract; use hidden or experimental surfaces
+only when they are genuinely more useful for our workflow or when the user asks for them.
+
+Every new fork-local feature must include a corresponding document in `wf_features/`. The document
+should describe the feature intent and the final behavior that must be preserved with enough detail
+to rebuild the feature from scratch on a different base. Keep these documents focused on observable
+behavior, user value, edge cases, and validation expectations; do not describe the current
+implementation, architecture, or code layout. Feature documents are not required for bug fixes or
+maintenance-only changes that do not add a feature.
+
+Bug fixes use a paired commit structure instead of feature documents. Create two adjacent commits:
+first a `[bug test] ...` commit containing the failing regression test that demonstrates the bug,
+then a `[bug fix] ...` commit containing the fix. Keep the pair test-first and adjacent in history
+so replaying or dropping the fix remains straightforward during future rebases.
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:
@@ -16,8 +44,7 @@ In the codex-rs folder where the rust code lives:
   - Use an exact `/*param_name*/` comment before opaque literal arguments such as `None`, booleans, and numeric literals when passing them by position.
   - A method's sole non-self argument is exempt when the method and parameter names match, such as `.enabled(false)` for `fn enabled(&self, enabled: bool)`.
   - Do not add these comments for string or char literals unless the comment adds real clarity; those literals are intentionally exempt from the lint.
-  - The parameter name in the comment must exactly match the callee signature.
-  - You can run `just argument-comment-lint` to run the lint check locally. This is powered by Bazel, so running it the first time can be slow if Bazel is not warmed up, though incremental invocations should take <15s. Most of the time, it is best to update the PR and let CI take responsibility for checking this (or run it asynchronously in the background after submitting the PR). Note CI checks all three platforms, which the local run does not.
+  - If you add one of these comments, the parameter name must exactly match the callee signature.
 - When possible, make `match` statements exhaustive and avoid wildcard arms.
 - Newly added traits should include doc comments that explain their role and how implementations are expected to use them.
 - Discourage both `#[async_trait]` and `#[allow(async_fn_in_trait)]` in Rust traits.
@@ -34,14 +61,10 @@ In the codex-rs folder where the rust code lives:
 - If you change `ConfigToml` or nested config types, run `just write-config-schema` to update `codex-rs/core/config.schema.json`.
 - When working with MCP tool calls, prefer using `codex-rs/codex-mcp/src/mcp_connection_manager.rs` to handle mutation of tools and tool calls. Aim to minimize the footprint of changes and leverage existing abstractions rather than plumbing code through multiple levels of function calls.
 - Do not call `reset_client_session` unnecessarily; let the incremental check logic decide whether to reuse the previous request.
-- If you change Rust dependencies (`Cargo.toml` or `Cargo.lock`), run `just bazel-lock-update` from the
-  repo root to refresh `MODULE.bazel.lock`, and include that lockfile update in the same change.
-- After dependency changes, run `just bazel-lock-check` from the repo root so lockfile drift is caught
-  locally before CI.
-- Bazel does not automatically make source-tree files available to compile-time Rust file access. If
-  you add `include_str!`, `include_bytes!`, `sqlx::migrate!`, or similar build-time file or
-  directory reads, update the crate's `BUILD.bazel` (`compile_data`, `build_script_data`, or test
-  data) or Bazel may fail even when Cargo passes.
+- Do not use Bazel maintenance commands in this fork. Do not run `just bazel-lock-update` or
+  `just bazel-lock-check` unless the user explicitly asks.
+- Do not spend time updating `BUILD.bazel`, `MODULE.bazel`, or other Bazel metadata in this fork
+  unless the user explicitly asks.
 - Do not create small helper methods that are referenced only once.
 - For tracing async work, instrument the function or method definition with
   `#[tracing::instrument(...)]` instead of attaching spans to futures with
@@ -55,20 +78,99 @@ In the codex-rs folder where the rust code lives:
   - This rule applies especially to high-touch files that already attract unrelated changes, such
     as `codex-rs/tui/src/app.rs`, `codex-rs/tui/src/bottom_pane/chat_composer.rs`,
     `codex-rs/tui/src/bottom_pane/footer.rs`, `codex-rs/tui/src/chatwidget.rs`,
-    `codex-rs/tui/src/bottom_pane/mod.rs`, and similarly central orchestration modules.
+    `codex-rs/tui/src/bottom_pane/mod.rs`, `codex-rs/tui/src/resume_picker.rs`,
+    `codex-rs/tui/src/connected_app_server.rs`, and similarly central orchestration modules.
   - When extracting code from a large module, move the related tests and module/type docs toward
     the new implementation so the invariants stay close to the code that owns them.
   - Avoid adding new standalone methods to `codex-rs/tui/src/chatwidget.rs` unless the change is
     trivial; prefer new modules/files and keep `chatwidget.rs` focused on orchestration.
 - When running Rust commands (e.g. `just fix` or `just test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
 
+## Repository overview
+
+This repository is a monorepo with:
+
+- `codex-rs`: primary Rust workspace for the CLI, TUI, and core libraries.
+- `codex-cli`: TypeScript npm wrapper.
+- `sdk`: TypeScript SDK for building agents.
+- `shell-tool-mcp`: MCP server for shell tool integration.
+
+The root `justfile` targets `codex-rs` via `working-directory := "codex-rs"` for Rust-focused recipes.
+
+## Additional useful commands
+
+Beyond crate-specific `cargo` commands, these are commonly useful:
+
+- Run interactive Codex: `just codex "your prompt"`
+- Run non-interactive mode: `just exec "your prompt"`
+- Faster test runner wrapper: `just test`
+- Workspace lint pass: `just clippy`
+- Run MCP server locally: `just mcp-server-run`
+- Tail Codex logs: `just log`
+- Do not use Bazel workflows in this fork.
+- Nix workflows: `nix build`, `nix develop`
+- Root formatting for non-Rust files: `npm run format`, `npm run format:fix`
+
+## Runtime paths and tooling
+
+- User config: `~/.codex/config.toml`
+- TUI log file: `~/.codex/log/codex-tui.log` (controlled by `RUST_LOG`)
+- Local state and SQLite data: `~/.codex/`
+- TypeScript workspace toolchain: `pnpm@10.28.2` minimum and Node.js 22+
+
+## Rebases
+
+Rebasing our in-flight changes onto the latest upstream is frequent in this repo. Treat rebase
+conflict resolution as a first-class task, not a mechanical cleanup step.
+
+- Preserve the intent of both sides: our commit and the incoming upstream change.
+- Before resolving a conflict, read the surrounding code and inspect both stage variants (`:2`/`:3`)
+  so the merge decision is based on behavior, not just marker placement.
+- Prefer merges that minimize future conflicts:
+  - optimize for easy future rebases, not for patches that would be suitable to send upstream,
+  - preserve newer shared abstractions and call patterns from upstream when they subsume our older
+    local code,
+  - avoid unnecessary churn in high-conflict files,
+  - keep file-local conventions aligned with the latest upstream style when behavior is equivalent.
+- If a conflict spans source files plus generated artifacts, resolve the source intent first, then
+  regenerate or reconcile generated files from that resolved source.
+- When a conflict reveals that a fix really belongs to multiple historical commits, split the
+  follow-up cleanly instead of forcing an inaccurate single fixup target.
+- After finishing a rebase and before declaring it done, verify builds in this order:
+  1. `cargo build` for the Rust workspace (use `nix develop -c cargo build` if `cargo` is not on `PATH`).
+  2. If that succeeds, run `nix build` from the repo root.
+- If `nix build` fails, capture the exact failure and treat it as part of the rebase follow-up; do
+  not assume a successful Cargo build is sufficient.
+- Any fixes required to make `cargo build` or `nix build` pass after a rebase should be committed
+  as separate `fixup!` commits against the appropriate commits from our rebased work, not folded
+  into an arbitrary final conflict-resolution commit.
+- After creating those `fixup!` commits, do not run another rebase/autosquash locally just to apply
+  them. Leave the fixup commits in history and report them clearly; the user will decide when to
+  autosquash them later.
+- Only fix up our own commits:
+  - define "our commits" as commits in the range `<most-recent-rust-v-tag>..HEAD`,
+  - identify that tag from the current history as the most recent reachable `rust-v*` tag,
+  - inspect candidate targets with `git log --oneline <most-recent-rust-v-tag>..HEAD`.
+- Choose the appropriate fixup target by asking which commit introduced the behavior, API usage, or
+  test expectation that now needs correction:
+  - use `git blame` on the affected lines,
+  - use `git log -S <symbol-or-field>` or `git log -- <path>` to find the introducing commit,
+  - prefer the most specific commit in our rebased range that introduced the broken behavior,
+  - if runtime code and tests were introduced by different commits, split follow-up fixups so each
+    targets the commit that actually introduced that part,
+  - do not target upstream commits that are outside `<base>..HEAD`, even if they originally
+    introduced the concept before our branch rebased onto them.
+
 Run `just fmt` (in the `codex-rs` directory) automatically after you have finished making code changes anywhere in this repository; do not ask for approval to run it. Additionally, run the tests:
 
 1. Do not run `cargo test` directly. Use `just test` so test execution follows the repo defaults.
 2. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `just test -p codex-tui`.
 3. Once those pass, if any changes were made in common, core, or protocol, run the complete test suite with `just test`. Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. project-specific or individual tests can be run without asking the user, but do ask the user before running the complete test suite.
+- If you change `flake.nix` or `codex-rs/default.nix`, run `nix build` from the repo root before finalizing so Nix environment regressions are caught locally.
 
 Before finalizing a large change to `codex-rs`, run `just fix -p <project>` (in `codex-rs` directory) to fix any linter issues in the code. Prefer scoping with `-p` to avoid slow workspace‑wide Clippy builds; only run `just fix` without `-p` if you changed shared crates. Do not re-run tests after running `fix` or `fmt`.
+
+Do not run `just argument-comment-lint` in this fork unless the user explicitly asks.
 
 ## The `codex-core` crate
 
@@ -202,6 +304,19 @@ If you don’t have the tool:
 
 - `cargo install --locked cargo-insta`
 
+- Never commit `assertion_line:` churn in snapshot files.
+  - For a newly added snapshot file, remove the `assertion_line:` header before staging it.
+  - For an existing snapshot file that does not already contain `assertion_line:`, do not add that header.
+  - For an existing snapshot file that already contains `assertion_line:`, do not change or remove that line unless the user explicitly asks for snapshot-header cleanup.
+  - If the only diff in a snapshot file is `assertion_line:`, discard that diff instead of accepting it.
+
+- On branches where `codex-rs/Cargo.toml` still uses the placeholder
+  `0.0.0`, the Nix package build handles this by patching `Cargo.toml` in
+  `codex-rs/default.nix` before building.
+- Keep version-sensitive snapshots stable. When a TUI snapshot includes the
+  CLI version, normalize it to the test placeholder instead of baking in a
+  release tag or expecting the shell to override Cargo's compile-time value.
+
 ### Benchmarks
 
 cargo benchmarks can be run with `just bench`, use the divan crate to write new ones.
@@ -213,12 +328,12 @@ Use `just bench-smoke` to dry-run the benchmark for a single iteration to ensure
 - Tests should use pretty_assertions::assert_eq for clearer diffs. Import this at the top of the test module if it isn't already.
 - Prefer deep equals comparisons whenever possible. Perform `assert_eq!()` on entire objects, rather than individual fields.
 - Avoid mutating process environment in tests; prefer passing environment-derived flags or dependencies from above.
+- When changing Linux sandbox or seccomp behavior, add or update end-to-end coverage in `codex-rs/exec/tests/suite/sandbox.rs` so the policy change is exercised under the real sandbox harness.
 
-### Spawning workspace binaries in tests (Cargo vs Bazel)
+### Spawning workspace binaries in tests
 
 - Prefer `codex_utils_cargo_bin::cargo_bin("...")` over `assert_cmd::Command::cargo_bin(...)` or `escargot` when tests need to spawn first-party binaries.
-  - Under Bazel, binaries and resources may live under runfiles; use `codex_utils_cargo_bin::cargo_bin` to resolve absolute paths that remain stable after `chdir`.
-- When locating fixture files or test resources under Bazel, avoid `env!("CARGO_MANIFEST_DIR")`. Prefer `codex_utils_cargo_bin::find_resource!` so paths resolve correctly under both Cargo and Bazel runfiles.
+- When locating fixture files or test resources, prefer `codex_utils_cargo_bin::find_resource!` over `env!("CARGO_MANIFEST_DIR")` so tests keep using the repo helpers rather than ad hoc path logic.
 
 ### Integration tests (core)
 
