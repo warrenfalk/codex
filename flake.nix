@@ -59,26 +59,40 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-          rust = pkgs.rust-bin.stable.latest.default.override {
-            extensions = [ "rust-src" "rust-analyzer" ];
+          # Keep the local Bazel wrapper around for possible future use, but do
+          # not pull it into the default dev shell for this fork.
+          # bazel = pkgs.callPackage ./bazel.nix {
+          #   inherit nixpkgs;
+          #   version = "9.0.0";
+          # };
+          rust = pkgs.rust-bin.stable.latest.minimal.override {
+            extensions = [ "clippy" "rust-src" "rust-analyzer" "rustfmt" ];
           };
         in
         {
           default = pkgs.mkShell {
             buildInputs = [
               rust
+              # Bazel is intentionally not included in the default dev shell for
+              # this fork.
+              # bazel
+              pkgs.just
+              pkgs.dotslash
               pkgs.pkg-config
               pkgs.openssl
               pkgs.cmake
               pkgs.llvmPackages.clang
               pkgs.llvmPackages.libclang.lib
-            ];
+              pkgs.python3
+              pkgs.uv
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.libcap ];
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             # Use clang for BoringSSL compilation (avoids GCC 15 warnings-as-errors)
             shellHook = ''
               export CC=clang
               export CXX=clang++
+              export UV_CACHE_DIR="''${UV_CACHE_DIR:-$PWD/.cache/uv}"
             '';
           };
         }

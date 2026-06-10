@@ -1,7 +1,10 @@
 {
   cmake,
+  curl,
+  git,
   llvmPackages,
   openssl,
+  python3,
   libcap ? null,
   rustPlatform,
   pkg-config,
@@ -11,9 +14,18 @@
   ...
 }:
 rustPlatform.buildRustPackage (_: {
-  env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" (
-    [ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]
-  );
+  env = {
+    PKG_CONFIG_PATH =
+      lib.makeSearchPathOutput "dev" "lib/pkgconfig"
+        ([ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]);
+
+    LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+
+    # rama-boring-sys honors target-specific CC/CXX vars (matches cc crate behavior).
+    CC_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang";
+    CXX_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang++";
+  };
+
   pname = "codex-rs";
   inherit version;
   cargoLock.lockFile = ./Cargo.lock;
@@ -29,10 +41,13 @@ rustPlatform.buildRustPackage (_: {
   '';
   nativeBuildInputs = [
     cmake
+    curl
+    git
     llvmPackages.clang
     llvmPackages.libclang.lib
     openssl
     pkg-config
+    python3
   ] ++ lib.optionals stdenv.isLinux [
     libcap
   ];
