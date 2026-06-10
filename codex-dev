@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+HERE="${BASH_SOURCE[0]%/*}"
+if [ "$HERE" = "${BASH_SOURCE[0]}" ]; then
+  HERE="."
+fi
+HERE="$(cd -- "$HERE" && pwd)"
+
+exec nix develop "${HERE}" --command cargo run --manifest-path "${HERE}/codex-rs/Cargo.toml" -p codex-cli -- "$@"
