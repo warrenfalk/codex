@@ -195,6 +195,7 @@ async fn unmatched_dangerous_powershell_inner_commands_require_approval() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(inner_command)),
         },
     )

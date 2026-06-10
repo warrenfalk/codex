@@ -741,6 +741,8 @@ fn hook_permission_mode(turn_context: &TurnContext) -> String {
         AskForApproval::UnlessTrusted
         | AskForApproval::OnFailure
         | AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
         | AskForApproval::Granular(_) => "default",
     }
     .to_string()

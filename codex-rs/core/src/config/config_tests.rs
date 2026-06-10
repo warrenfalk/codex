@@ -8239,6 +8239,18 @@ async fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     Ok(())
 }
 
+#[test]
+fn config_toml_accepts_trust_sandbox_approval_policies() {
+    for (value, expected) in [
+        ("trust-sandbox", AskForApproval::TrustSandbox),
+        ("trust-sandbox-timeout", AskForApproval::TrustSandboxTimeout),
+    ] {
+        let cfg: ConfigToml = toml::from_str(&format!("approval_policy = \"{value}\""))
+            .expect("approval policy should deserialize");
+        assert_eq!(Some(expected), cfg.approval_policy);
+    }
+}
+
 fn create_test_fixture() -> std::io::Result<PrecedenceTestFixture> {
     let toml = r#"
 model = "o3"

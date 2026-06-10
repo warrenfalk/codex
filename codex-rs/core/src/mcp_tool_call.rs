@@ -655,6 +655,8 @@ async fn maybe_request_codex_apps_auth_elicitation(
         }
         AskForApproval::OnFailure
         | AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
         | AskForApproval::UnlessTrusted
         | AskForApproval::Granular(_) => {}
     }

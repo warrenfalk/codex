@@ -267,6 +267,20 @@
           "type": "string"
         },
         {
+          "description": "Like `on-request`, but dangerous unmatched command-shape heuristics do not prompt while a managed restricted sandbox is active.",
+          "enum": [
+            "trust-sandbox"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Like `trust-sandbox`, but sandbox-override command prompts may be auto-approved after a timeout.",
+          "enum": [
+            "trust-sandbox-timeout"
+          ],
+          "type": "string"
+        },
+        {
           "additionalProperties": false,
           "description": "Fine-grained controls for individual approval flows.\n\nWhen a field is `true`, commands in that category are allowed. When it is `false`, those requests are automatically rejected instead of shown to the user.",
           "properties": {

@@ -474,6 +474,7 @@ async fn handle_exec_approval(
         proposed_execpolicy_amendment,
         additional_permissions,
         available_decisions,
+        auto_approve_after_ms,
         ..
     } = event;
     let decision = if routes_approval_to_guardian(parent_ctx) {
@@ -520,6 +521,7 @@ async fn handle_exec_approval(
                 proposed_execpolicy_amendment,
                 additional_permissions,
                 available_decisions,
+                auto_approve_after_ms.map(Duration::from_millis),
             ),
             parent_session,
             &approval_id_for_op,
