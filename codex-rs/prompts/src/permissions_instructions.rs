@@ -24,6 +24,10 @@ const APPROVAL_POLICY_ON_REQUEST_RULE: &str =
     include_str!("../templates/permissions/approval_policy/on_request.md");
 const APPROVAL_POLICY_ON_REQUEST_RULE_REQUEST_PERMISSION: &str =
     include_str!("../templates/permissions/approval_policy/on_request_rule_request_permission.md");
+const APPROVAL_POLICY_TRUST_SANDBOX: &str =
+    include_str!("../templates/permissions/approval_policy/trust_sandbox.md");
+const APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT: &str =
+    include_str!("../templates/permissions/approval_policy/trust_sandbox_timeout.md");
 const AUTO_REVIEW_APPROVAL_SUFFIX: &str = "`approvals_reviewer` is `auto_review`: Sandbox escalations with require_escalated will be reviewed for compliance with the policy. If a rejection happens, you should proceed only with a materially safer alternative, or inform the user of the risk and send a final message to ask for approval.";
 
 const SANDBOX_MODE_DANGER_FULL_ACCESS: &str =
@@ -205,13 +209,16 @@ fn approval_text(
             text.to_string()
         }
     };
-    let on_request_instructions = || {
+    let on_request_instructions = |extra_section: Option<&str>| {
         let on_request_rule = if exec_permission_approvals_enabled {
             APPROVAL_POLICY_ON_REQUEST_RULE_REQUEST_PERMISSION.to_string()
         } else {
             APPROVAL_POLICY_ON_REQUEST_RULE.to_string()
         };
         let mut sections = vec![on_request_rule];
+        if let Some(extra_section) = extra_section {
+            sections.push(extra_section.to_string());
+        }
         if request_permissions_tool_enabled {
             sections.push(request_permissions_tool_prompt_section().to_string());
         }
@@ -228,7 +235,13 @@ fn approval_text(
             with_request_permissions_tool(APPROVAL_POLICY_UNLESS_TRUSTED)
         }
         AskForApproval::OnFailure => with_request_permissions_tool(APPROVAL_POLICY_ON_FAILURE),
-        AskForApproval::OnRequest => on_request_instructions(),
+        AskForApproval::OnRequest => on_request_instructions(/*extra_section*/ None),
+        AskForApproval::TrustSandbox => {
+            on_request_instructions(Some(APPROVAL_POLICY_TRUST_SANDBOX))
+        }
+        AskForApproval::TrustSandboxTimeout => {
+            on_request_instructions(Some(APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT))
+        }
         AskForApproval::Granular(granular_config) => granular_instructions(
             granular_config,
             exec_policy,

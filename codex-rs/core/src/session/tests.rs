@@ -59,6 +59,9 @@ use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use tracing::Span;
 
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+
 use crate::rollout::recorder::RolloutRecorder;
 use crate::state::ActiveTurn;
 use crate::state::TaskKind;
@@ -10033,4 +10036,59 @@ async fn session_start_hooks_require_project_trust_without_config_toml() -> std:
     }
 
     Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_approval_timeout_auto_approves_after_duration() {
+    let (_tx, rx) = tokio::sync::oneshot::channel();
+    let cleaned_up = Arc::new(AtomicBool::new(false));
+    let cleaned_up_for_timeout = cleaned_up.clone();
+
+    let task = tokio::spawn(async move {
+        Session::await_approval_response_with_timeout(
+            rx,
+            Some(std::time::Duration::from_secs(300)),
+            move || {
+                let cleaned_up_for_timeout = cleaned_up_for_timeout;
+                async move {
+                    cleaned_up_for_timeout.store(true, Ordering::SeqCst);
+                }
+            },
+        )
+        .await
+    });
+
+    tokio::time::advance(std::time::Duration::from_secs(299)).await;
+    assert!(!task.is_finished());
+
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    assert_eq!(ReviewDecision::Approved, task.await.expect("task result"));
+    assert!(cleaned_up.load(Ordering::SeqCst));
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_approval_manual_response_wins_before_timeout() {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let cleaned_up = Arc::new(AtomicBool::new(false));
+    let cleaned_up_for_timeout = cleaned_up.clone();
+
+    let task = tokio::spawn(async move {
+        Session::await_approval_response_with_timeout(
+            rx,
+            Some(std::time::Duration::from_secs(300)),
+            move || {
+                let cleaned_up_for_timeout = cleaned_up_for_timeout;
+                async move {
+                    cleaned_up_for_timeout.store(true, Ordering::SeqCst);
+                }
+            },
+        )
+        .await
+    });
+
+    tx.send(ReviewDecision::Denied)
+        .expect("receiver should be waiting");
+
+    assert_eq!(ReviewDecision::Denied, task.await.expect("task result"));
+    assert!(!cleaned_up.load(Ordering::SeqCst));
 }

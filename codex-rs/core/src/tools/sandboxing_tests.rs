@@ -59,6 +59,7 @@ fn restricted_sandbox_requires_exec_approval_on_request() {
         ),
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: None,
         }
     );
@@ -102,6 +103,7 @@ fn default_exec_approval_requirement_keeps_prompt_when_granular_allows_sandbox_a
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: None,
         }
     );

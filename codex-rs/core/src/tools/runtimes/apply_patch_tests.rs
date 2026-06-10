@@ -1,4 +1,5 @@
 use super::*;
+use crate::tools::sandboxing::ExecApprovalPromptCause;
 use crate::tools::sandboxing::SandboxAttempt;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::AdditionalPermissionProfile;
@@ -67,6 +68,7 @@ async fn guardian_review_request_includes_patch_context() {
         )]),
         exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FileChange,
             proposed_execpolicy_amendment: None,
         },
         additional_permissions: None,
@@ -101,6 +103,7 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
         changes: HashMap::new(),
         exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FileChange,
             proposed_execpolicy_amendment: None,
         },
         additional_permissions: None,

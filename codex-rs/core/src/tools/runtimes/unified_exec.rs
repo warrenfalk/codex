@@ -193,6 +193,8 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
                             .cloned(),
                         req.additional_permissions.clone(),
                         available_decisions,
+                        req.exec_approval_requirement
+                            .auto_approve_after(turn.approval_policy.value()),
                     )
                     .await
             })
@@ -480,6 +482,7 @@ mod tests {
             SandboxPermissions::RequireEscalated,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: crate::tools::sandboxing::ExecApprovalPromptCause::SandboxOverride,
                 proposed_execpolicy_amendment: None,
             },
         );
@@ -505,6 +508,7 @@ mod tests {
             SandboxPermissions::WithAdditionalPermissions,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: crate::tools::sandboxing::ExecApprovalPromptCause::SandboxOverride,
                 proposed_execpolicy_amendment: None,
             },
         );

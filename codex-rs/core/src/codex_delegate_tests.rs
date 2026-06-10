@@ -333,6 +333,7 @@ async fn handle_exec_approval_uses_call_id_for_guardian_review_and_approval_id_f
                         ReviewDecision::Approved,
                         ReviewDecision::Abort,
                     ]),
+                    auto_approve_after_ms: None,
                     parsed_cmd: Vec::new(),
                 },
                 &cancel_token,

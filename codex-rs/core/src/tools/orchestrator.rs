@@ -318,16 +318,15 @@ impl ToolOrchestrator {
                 // surface a concise sandbox denial that preserves the
                 // original output.
                 if !tool.wants_no_sandbox_approval(approval_policy) {
-                    let allow_on_request_network_prompt =
-                        matches!(approval_policy, AskForApproval::OnRequest)
-                            && network_approval_context.is_some()
-                            && matches!(
-                                default_exec_approval_requirement(
-                                    approval_policy,
-                                    &file_system_sandbox_policy
-                                ),
-                                ExecApprovalRequirement::NeedsApproval { .. }
-                            );
+                    let allow_on_request_network_prompt = approval_policy.behaves_like_on_request()
+                        && network_approval_context.is_some()
+                        && matches!(
+                            default_exec_approval_requirement(
+                                approval_policy,
+                                &file_system_sandbox_policy
+                            ),
+                            ExecApprovalRequirement::NeedsApproval { .. }
+                        );
                     if !allow_on_request_network_prompt {
                         otel.sandbox_outcome(
                             &otel_tn,

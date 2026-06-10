@@ -34,7 +34,10 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+pub(crate) const TRUST_SANDBOX_TIMEOUT_AUTO_APPROVE_AFTER: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Default, Debug)]
 pub(crate) struct ApprovalStore {
@@ -170,12 +173,22 @@ pub(crate) enum ExecApprovalRequirement {
     /// Approval required for this tool call.
     NeedsApproval {
         reason: Option<String>,
+        prompt_cause: ExecApprovalPromptCause,
         /// Proposed execpolicy amendment to skip future approvals for similar commands
         /// See core/src/exec_policy.rs for more details on how proposed_execpolicy_amendment is determined.
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
     },
     /// Execution forbidden for this tool call.
     Forbidden { reason: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExecApprovalPromptCause {
+    ExecPolicyRule,
+    SandboxOverride,
+    FallbackDangerousCommand,
+    FallbackPolicy,
+    FileChange,
 }
 
 impl ExecApprovalRequirement {
@@ -192,6 +205,22 @@ impl ExecApprovalRequirement {
             _ => None,
         }
     }
+
+    pub(crate) fn auto_approve_after(&self, approval_policy: AskForApproval) -> Option<Duration> {
+        if approval_policy.auto_approves_sandbox_override_timeouts()
+            && matches!(
+                self,
+                Self::NeedsApproval {
+                    prompt_cause: ExecApprovalPromptCause::SandboxOverride,
+                    ..
+                }
+            )
+        {
+            Some(TRUST_SANDBOX_TIMEOUT_AUTO_APPROVE_AFTER)
+        } else {
+            None
+        }
+    }
 }
 
 /// - Never, OnFailure: do not ask
@@ -205,7 +234,10 @@ pub(crate) fn default_exec_approval_requirement(
 ) -> ExecApprovalRequirement {
     let needs_approval = match policy {
         AskForApproval::Never | AskForApproval::OnFailure => false,
-        AskForApproval::OnRequest | AskForApproval::Granular(_) => {
+        AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
+        | AskForApproval::Granular(_) => {
             matches!(
                 file_system_sandbox_policy.kind,
                 FileSystemSandboxKind::Restricted
@@ -227,6 +259,7 @@ pub(crate) fn default_exec_approval_requirement(
     } else if needs_approval {
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: None,
         }
     } else {
@@ -357,7 +390,9 @@ pub(crate) trait Approvable<Req> {
             AskForApproval::OnFailure => true,
             AskForApproval::UnlessTrusted => true,
             AskForApproval::Never => false,
-            AskForApproval::OnRequest => false,
+            AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout => false,
             AskForApproval::Granular(granular_config) => granular_config.sandbox_approval,
         }
     }

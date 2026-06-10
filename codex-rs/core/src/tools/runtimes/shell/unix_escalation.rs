@@ -493,6 +493,7 @@ impl CoreShellActionProvider {
                         /*proposed_execpolicy_amendment*/ None,
                         additional_permissions,
                         Some(vec![ReviewDecision::Approved, ReviewDecision::Abort]),
+                        /*auto_approve_after*/ None,
                     )
                     .await;
                 PromptDecision {

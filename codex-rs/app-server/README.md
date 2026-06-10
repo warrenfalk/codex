@@ -666,6 +666,8 @@ You can optionally specify config overrides on the new turn. If specified, these
 - `"user"` — default. Review approval requests directly in the client.
 - `"auto_review"` — route approval requests to a carefully prompted subagent, which gathers relevant context and applies a risk-based decision framework before approving or denying the request. The legacy value `"guardian_subagent"` is still accepted for compatibility.
 
+`approvalPolicy` also accepts `"trust-sandbox"` and `"trust-sandbox-timeout"`. Both trust managed restricted sandbox enforcement for dangerous command-shape fallback heuristics while still prompting for sandbox overrides and explicit exec-policy prompt rules. `"trust-sandbox-timeout"` additionally auto-approves sandbox-override command prompts after 300 seconds without persisting session approval or policy amendments.
+
 ```json
 { "method": "turn/start", "id": 30, "params": {
     "threadId": "thr_123",
