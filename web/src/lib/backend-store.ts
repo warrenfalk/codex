@@ -69,6 +69,7 @@ type FileChangePatchUpdatedParams = Extract<
 >["params"];
 
 export interface BackendTransport {
+  archiveThread(threadId: string): Promise<void>;
   connect(): Promise<InitializeResponse>;
   disconnect(): void;
   interruptTurn(threadId: string, turnId: string): Promise<void>;
@@ -716,6 +717,11 @@ export class BackendStateStore {
     await this.client.renameThread(threadId, name);
   }
 
+  async archiveThread(threadId: string): Promise<void> {
+    await this.ensureConnected();
+    await this.client.archiveThread(threadId);
+  }
+
   async interruptTurn(threadId: string, turnId: string): Promise<void> {
     await this.ensureConnected();
     await this.client.interruptTurn(threadId, turnId);
@@ -1216,6 +1222,10 @@ export function sendPrompt(threadId: string, text: string): Promise<void> {
 
 export function renameThread(threadId: string, name: string): Promise<void> {
   return backendStore.renameThread(threadId, name);
+}
+
+export function archiveThread(threadId: string): Promise<void> {
+  return backendStore.archiveThread(threadId);
 }
 
 export function interruptTurn(threadId: string, turnId: string): Promise<void> {

@@ -8,6 +8,7 @@ import type {
   RequestId,
   ServerNotification,
   Thread,
+  ThreadArchiveResponse,
   ThreadListResponse,
   ThreadResumeResponse,
   ThreadSetNameResponse,
@@ -226,6 +227,12 @@ export class CodexClient {
     await this.rpc.request<ThreadSetNameResponse>("thread/name/set", {
       threadId,
       name,
+    });
+  }
+
+  async archiveThread(threadId: string): Promise<void> {
+    await this.rpc.request<ThreadArchiveResponse>("thread/archive", {
+      threadId,
     });
   }
 

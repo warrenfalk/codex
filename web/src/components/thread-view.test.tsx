@@ -179,6 +179,8 @@ function renderThreadView(
     initializeSummary: "codex 0.0.0 on linux",
     interruptDisabled: true,
     loading: false,
+    archiving: false,
+    onArchiveThread: vi.fn().mockResolvedValue(undefined),
     onBack: vi.fn(),
     onInterrupt: vi.fn(),
     onRenameThread: vi.fn().mockResolvedValue(undefined),
@@ -459,7 +461,8 @@ describe("ThreadView", () => {
     const onRenameThread = vi.fn().mockResolvedValue(undefined);
     renderThreadView({ onRenameThread });
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename thread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
 
     const titleInput = screen.getByRole("textbox", { name: "Thread title" });
     expect(titleInput).toHaveValue("Thread name");
@@ -474,6 +477,18 @@ describe("ThreadView", () => {
     expect(
       screen.getByRole("heading", { name: "Thread name" }),
     ).toBeInTheDocument();
+  });
+
+  it("archives the thread from the actions menu without confirmation", async () => {
+    const onArchiveThread = vi.fn().mockResolvedValue(undefined);
+    renderThreadView({ onArchiveThread });
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(onArchiveThread).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("jumps to the previous user turn from user messages", async () => {

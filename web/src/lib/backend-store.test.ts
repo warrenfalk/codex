@@ -67,6 +67,7 @@ class FakeTransport implements BackendTransport {
     request: ThreadTurnsPageRequest;
     threadId: string;
   }> = [];
+  archiveThreadCalls: string[] = [];
   resumeThreadGate: Promise<void> | null = null;
   resumeCalls = new Map<string, number>();
   renameThreadCalls: Array<{ name: string; threadId: string }> = [];
@@ -99,6 +100,10 @@ class FakeTransport implements BackendTransport {
   }
 
   disconnect(): void {}
+
+  async archiveThread(threadId: string): Promise<void> {
+    this.archiveThreadCalls.push(threadId);
+  }
 
   async interruptTurn(): Promise<void> {}
 
@@ -747,5 +752,14 @@ describe("BackendStateStore", () => {
         thread: expect.objectContaining({ name: "New thread" }),
       }),
     );
+  });
+
+  it("archives threads through the transport", async () => {
+    const transport = new FakeTransport([makeThread("thr_1")]);
+    const store = new BackendStateStore(transport);
+
+    await store.archiveThread("thr_1");
+
+    expect(transport.archiveThreadCalls).toEqual(["thr_1"]);
   });
 });

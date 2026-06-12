@@ -9,6 +9,7 @@ import {
 } from "react-router";
 
 import {
+  archiveThread,
   getThreadListSnapshot,
   getThreadSnapshot,
   interruptTurn,
@@ -52,6 +53,7 @@ function AppRoute() {
   const [threadState, setThreadState] = useState<ThreadDetailsSnapshot | null>(
     null,
   );
+  const [archivingThread, setArchivingThread] = useState(false);
   const [sendingPrompt, setSendingPrompt] = useState(false);
   const [renamingThread, setRenamingThread] = useState(false);
   const [respondingRequestIds, setRespondingRequestIds] = useState<
@@ -184,6 +186,20 @@ function AppRoute() {
     }
   };
 
+  const handleArchiveThread = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    setArchivingThread(true);
+    try {
+      await archiveThread(selectedThreadId);
+      navigate("/", { replace: true });
+    } finally {
+      setArchivingThread(false);
+    }
+  };
+
   const handleRespondToRequest = (
     request: AnyServerRequest,
     response: unknown,
@@ -244,6 +260,8 @@ function AppRoute() {
           initializeSummary={listState.initializeSummary}
           interruptDisabled={!active}
           loading={threadState?.loading ?? true}
+          archiving={archivingThread}
+          onArchiveThread={handleArchiveThread}
           onBack={handleBackToThreads}
           onInterrupt={() => void handleInterrupt()}
           onRenameThread={handleRenameThread}

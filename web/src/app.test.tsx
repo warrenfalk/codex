@@ -15,6 +15,7 @@ import type { ServerRequest, Thread, Turn } from "@/types/protocol";
 import { App } from "./app";
 
 const backendStore = vi.hoisted(() => ({
+  archiveThread: vi.fn(),
   getThreadListSnapshot: vi.fn(),
   getThreadSnapshot: vi.fn(),
   interruptTurn: vi.fn(),
@@ -139,6 +140,7 @@ describe("App routing", () => {
       threadId: thread.id,
       warnings: [],
     });
+    backendStore.archiveThread.mockResolvedValue(undefined);
     backendStore.interruptTurn.mockResolvedValue(undefined);
     backendStore.renameThread.mockResolvedValue(undefined);
     backendStore.refreshThreadList.mockResolvedValue(undefined);
@@ -192,6 +194,22 @@ describe("App routing", () => {
     expect(
       screen.getByRole("heading", { name: "Threads" }),
     ).toBeInTheDocument();
+  });
+
+  it("archives the selected thread and returns to the thread list", async () => {
+    renderApp(["/threads/thread-1"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      expect(backendStore.archiveThread).toHaveBeenCalledWith("thread-1");
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Threads" }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("disables approval buttons after sending a response", async () => {
