@@ -1,4 +1,10 @@
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   BottomAnchoredList,
   type BottomAnchoredListHandle,
@@ -27,12 +33,14 @@ type Props = {
   respondingRequestIds: ReadonlySet<string>;
   runtimeText: Record<string, string>;
   warnings: string[];
+  onArchiveThread: () => Promise<void>;
   onBack: () => void;
   onInterrupt: () => void;
   onRenameThread: (name: string) => Promise<void>;
   onRespondToRequest: (request: AnyServerRequest, response: unknown) => void;
   onSendPrompt: (text: string) => Promise<void>;
   sending: boolean;
+  archiving: boolean;
   renaming: boolean;
   interruptDisabled: boolean;
   loading: boolean;
@@ -129,6 +137,93 @@ function ButtonIcon({ children }: { children: ReactNode }) {
   );
 }
 
+function ThreadActionsMenu({
+  archiving,
+  renaming,
+  onArchive,
+  onRename,
+}: {
+  archiving: boolean;
+  renaming: boolean;
+  onArchive: () => void;
+  onRename: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const handleRename = () => {
+    setIsOpen(false);
+    onRename();
+  };
+
+  const handleArchive = () => {
+    setIsOpen(false);
+    onArchive();
+  };
+
+  return (
+    <div className="thread-actions-menu" ref={menuRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+        aria-label="Thread actions"
+        className="icon-button thread-actions-trigger"
+        title="Thread actions"
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <ButtonIcon>
+          <circle cx="12" cy="5" fill="currentColor" r="1.8" stroke="none" />
+          <circle cx="12" cy="12" fill="currentColor" r="1.8" stroke="none" />
+          <circle cx="12" cy="19" fill="currentColor" r="1.8" stroke="none" />
+        </ButtonIcon>
+      </button>
+      {isOpen && (
+        <div className="thread-actions-popover">
+          <button
+            disabled={renaming || archiving}
+            type="button"
+            onClick={handleRename}
+          >
+            Rename
+          </button>
+          <button disabled={archiving} type="button" onClick={handleArchive}>
+            {archiving ? "Archiving..." : "Archive"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ThreadView({
   connectionError,
   connectionState,
@@ -138,12 +233,14 @@ export function ThreadView({
   respondingRequestIds,
   runtimeText,
   warnings,
+  onArchiveThread,
   onBack,
   onInterrupt,
   onRenameThread,
   onRespondToRequest,
   onSendPrompt,
   sending,
+  archiving,
   renaming,
   interruptDisabled,
   loading,
@@ -319,6 +416,17 @@ export function ThreadView({
     }
   };
 
+  const archiveThread = async () => {
+    setRenameError(null);
+    try {
+      await onArchiveThread();
+    } catch (error) {
+      setRenameError(
+        error instanceof Error ? error.message : "Failed to archive thread",
+      );
+    }
+  };
+
   if (!thread) {
     return (
       <section className="thread-shell">
@@ -398,18 +506,12 @@ export function ThreadView({
         ) : (
           <>
             <h1>{threadTitle(thread)}</h1>
-            <button
-              aria-label="Rename thread"
-              className="icon-button"
-              title="Rename thread"
-              type="button"
-              onClick={startThreadRename}
-            >
-              <ButtonIcon>
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </ButtonIcon>
-            </button>
+            <ThreadActionsMenu
+              archiving={archiving}
+              renaming={renaming}
+              onArchive={() => void archiveThread()}
+              onRename={startThreadRename}
+            />
           </>
         )}
       </div>

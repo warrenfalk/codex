@@ -36,6 +36,7 @@ export type {
   ReasoningTextDeltaNotification,
   ServerRequestResolvedNotification,
   Thread,
+  ThreadArchiveResponse,
   ThreadArchivedNotification,
   ThreadClosedNotification,
   ThreadItem,
