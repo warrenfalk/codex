@@ -13,6 +13,7 @@ function buildThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: "thread-1",
     forkedFromId: null,
+    parentThreadId: null,
     preview: "Original prompt",
     ephemeral: false,
     modelProvider: "openai",

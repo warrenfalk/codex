@@ -10,6 +10,7 @@ describe("ThreadItemView", () => {
     const item: ThreadItem = {
       type: "userMessage",
       id: "user-jump-1",
+      clientId: null,
       content: [
         {
           type: "text",
@@ -38,6 +39,7 @@ describe("ThreadItemView", () => {
     const item: ThreadItem = {
       type: "userMessage",
       id: "user-1",
+      clientId: null,
       content: [
         {
           type: "text",

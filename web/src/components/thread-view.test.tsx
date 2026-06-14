@@ -105,6 +105,7 @@ function buildThread(turns: Turn[] = []): Thread {
     id: "thread-1",
     sessionId: "thread-1",
     forkedFromId: null,
+    parentThreadId: null,
     preview: "Investigate prompt controls",
     ephemeral: false,
     modelProvider: "openai",
@@ -152,6 +153,7 @@ function buildUserTurn(id: string, text: string): Turn {
       {
         type: "userMessage",
         id: `${id}-user`,
+        clientId: null,
         content: [
           {
             type: "text",

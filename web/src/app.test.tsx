@@ -68,6 +68,7 @@ function makeThread(id: string): Thread {
     id,
     sessionId: id,
     forkedFromId: null,
+    parentThreadId: null,
     preview: "Continue the routing work",
     ephemeral: false,
     modelProvider: "openai",
