@@ -16,7 +16,7 @@ import type { JsonRpcRequestMessage } from "../src/lib/jsonrpc";
 import type { ServerNotification, Thread } from "../src/types/protocol";
 
 import { attachRelay } from "./relay.js";
-import type { PushNotifyOptions } from "./push-service.js";
+import type { PushNotifier, PushNotifyOptions } from "./push-service.js";
 
 type JsonRpcMessage = {
   error?: { code: number; message: string };
@@ -76,7 +76,11 @@ async function waitFor<T>(read: () => T | null): Promise<T> {
   }
 }
 
-function buildThread(id: string, name = id): Thread {
+function buildThread(
+  id: string,
+  name = id,
+  overrides: Partial<Thread> = {},
+): Thread {
   return {
     id,
     agentNickname: null,
@@ -97,6 +101,7 @@ function buildThread(id: string, name = id): Thread {
     threadSource: null,
     turns: [],
     updatedAt: 1,
+    ...overrides,
   };
 }
 
@@ -177,6 +182,84 @@ describe("attachRelay", () => {
         .map((dir) => fs.rm(dir, { force: true, recursive: true })),
     );
   });
+
+  async function startRelayWithThreads(
+    threads: Thread[],
+    pushNotifier?: PushNotifier,
+  ): Promise<WebSocket> {
+    const backendServer = http.createServer();
+    servers.push(backendServer);
+    const backendWss = new WebSocketServer({ server: backendServer });
+    webSocketServers.push(backendWss);
+    let backendSocket: WebSocket | null = null;
+
+    backendWss.on("connection", async (socket) => {
+      backendSocket = socket;
+      sockets.push(socket);
+      installDefaultBackendResponses(socket);
+      const backendCollector = createCollector(socket);
+
+      const initializeRequest = await backendCollector.waitFor(
+        (message) => message.method === "initialize",
+      );
+      sendJson(socket, {
+        id: initializeRequest.id,
+        result: {
+          codexHome: "/tmp/codex",
+          platformFamily: "unix",
+          platformOs: "linux",
+          userAgent: "codex-test",
+        },
+      });
+
+      await backendCollector.waitFor(
+        (message) => message.method === "initialized",
+      );
+      await backendCollector.waitFor(
+        (message) => message.method === "event/firehose",
+      );
+
+      const listRequest = await backendCollector.waitFor(
+        (message) => message.method === "thread/list",
+      );
+      sendJson(socket, {
+        id: listRequest.id,
+        result: {
+          data: threads,
+          nextCursor: null,
+        },
+      });
+    });
+
+    const backendPort = await listen(backendServer);
+
+    const relayApp = express();
+    const relayServer = http.createServer(relayApp);
+    servers.push(relayServer);
+    await attachRelay(relayServer, `ws://127.0.0.1:${backendPort}`, {
+      pushNotifier,
+    });
+    await listen(relayServer);
+
+    return await waitFor(() => backendSocket);
+  }
+
+  function createPushNotifierCollector() {
+    const notifiedRequests: JsonRpcRequestMessage[] = [];
+    const notifiedNotifications: ServerNotification[] = [];
+    const pushNotifier = {
+      notifyServerNotification: vi.fn(
+        async (notification: ServerNotification) => {
+          notifiedNotifications.push(notification);
+        },
+      ),
+      notifyServerRequest: vi.fn(async (request: JsonRpcRequestMessage) => {
+        notifiedRequests.push(request);
+      }),
+    };
+
+    return { notifiedNotifications, notifiedRequests, pushNotifier };
+  }
 
   it("serves a cached thread list and broadcasts proxy snapshots", async () => {
     const backendServer = http.createServer();
@@ -978,5 +1061,161 @@ describe("attachRelay", () => {
         completedTurnAgentMessage: null,
       },
     });
+  });
+
+  it("does not notify push service for hidden subagent or unknown server requests", async () => {
+    const { notifiedRequests, pushNotifier } = createPushNotifierCollector();
+    const backendSocket = await startRelayWithThreads(
+      [
+        buildThread("thread-1", "Thread 1"),
+        buildThread("subagent-thread", "Subagent Thread", {
+          source: { subAgent: "review" },
+        }),
+      ],
+      pushNotifier,
+    );
+
+    backendSocket.send(
+      JSON.stringify({
+        id: "subagent-request",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          approvalId: null,
+          command: "echo hidden",
+          cwd: "/workspace",
+          itemId: "item-1",
+          parsedCmd: [],
+          reason: null,
+          threadId: "subagent-thread",
+          turnId: "turn-1",
+        },
+      }),
+    );
+    backendSocket.send(
+      JSON.stringify({
+        id: "unknown-request",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          approvalId: null,
+          command: "echo unknown",
+          cwd: "/workspace",
+          itemId: "item-1",
+          parsedCmd: [],
+          reason: null,
+          threadId: "unknown-thread",
+          turnId: "turn-1",
+        },
+      }),
+    );
+    backendSocket.send(
+      JSON.stringify({
+        id: "visible-request",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          approvalId: null,
+          command: "echo visible",
+          cwd: "/workspace",
+          itemId: "item-1",
+          parsedCmd: [],
+          reason: null,
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      }),
+    );
+
+    expect(
+      await waitFor(
+        () =>
+          notifiedRequests.find(
+            (request) => request.id === "visible-request",
+          ) ?? null,
+      ),
+    ).toMatchObject({
+      id: "visible-request",
+      params: {
+        threadId: "thread-1",
+      },
+    });
+    expect(pushNotifier.notifyServerRequest).toHaveBeenCalledTimes(1);
+    expect(notifiedRequests.map((request) => request.id)).toEqual([
+      "visible-request",
+    ]);
+  });
+
+  it("does not notify push service for hidden subagent or unknown turn completions", async () => {
+    const { notifiedNotifications, pushNotifier } =
+      createPushNotifierCollector();
+    const backendSocket = await startRelayWithThreads(
+      [
+        buildThread("thread-1", "Thread 1"),
+        buildThread("subagent-thread", "Subagent Thread", {
+          threadSource: "subagent",
+        }),
+      ],
+      pushNotifier,
+    );
+
+    const completedTurn = (id: string) => ({
+      completedAt: 2,
+      durationMs: 1,
+      error: null,
+      id,
+      items: [],
+      startedAt: 1,
+      status: "completed",
+    });
+
+    backendSocket.send(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "subagent-thread",
+          turn: completedTurn("subagent-turn"),
+        },
+      }),
+    );
+    backendSocket.send(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "unknown-thread",
+          turn: completedTurn("unknown-turn"),
+        },
+      }),
+    );
+    backendSocket.send(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: completedTurn("visible-turn"),
+        },
+      }),
+    );
+
+    expect(
+      await waitFor(
+        () =>
+          notifiedNotifications.find(
+            (notification) =>
+              notification.method === "turn/completed" &&
+              notification.params.turn.id === "visible-turn",
+          ) ?? null,
+      ),
+    ).toMatchObject({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+      },
+    });
+    expect(pushNotifier.notifyServerNotification).toHaveBeenCalledTimes(1);
+    expect(
+      notifiedNotifications.map((notification) =>
+        notification.method === "turn/completed"
+          ? notification.params.turn.id
+          : notification.method,
+      ),
+    ).toEqual(["visible-turn"]);
   });
 });

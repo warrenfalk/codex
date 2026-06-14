@@ -555,6 +555,10 @@ export class ThreadCache {
     return messages.at(-1)?.text.trim() ?? null;
   }
 
+  getThread(threadId: string): Thread | null {
+    return this.threadsById.get(threadId) ?? null;
+  }
+
   applyNotification(notification: ServerNotification): boolean {
     let changed = false;
 
