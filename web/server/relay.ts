@@ -23,6 +23,11 @@ import {
 
 import type { PushNotifier, PushNotifyOptions } from "./push-service.js";
 import { ThreadCache } from "./thread-cache";
+import {
+  cachedThreadMayNotify,
+  threadIdFromServerNotification,
+  threadIdFromServerRequest,
+} from "./thread-visibility.js";
 
 type JsonRpcRequestMessage = {
   id: RequestId;
@@ -716,14 +721,16 @@ class RelayController {
       this.pendingServerRequestIds.add(requestKey);
       this.pendingServerRequests.set(requestKey, message);
       this.broadcast(message);
-      void this.pushNotifier
-        ?.notifyServerRequest(message, this.buildPushNotifyOptions())
-        .catch((error: unknown) => {
-          console.warn(
-            "Failed to send server-request push notification.",
-            error,
-          );
-        });
+      if (this.mayNotifyForThreadId(threadIdFromServerRequest(message))) {
+        void this.pushNotifier
+          ?.notifyServerRequest(message, this.buildPushNotifyOptions())
+          .catch((error: unknown) => {
+            console.warn(
+              "Failed to send server-request push notification.",
+              error,
+            );
+          });
+      }
       return;
     }
 
@@ -814,10 +821,22 @@ class RelayController {
       };
     }
 
-    await this.pushNotifier?.notifyServerNotification(
-      notification,
-      pushOptions,
-    );
+    if (
+      this.mayNotifyForThreadId(threadIdFromServerNotification(notification))
+    ) {
+      await this.pushNotifier?.notifyServerNotification(
+        notification,
+        pushOptions,
+      );
+    }
+  }
+
+  private mayNotifyForThreadId(threadId: string | null): boolean {
+    if (!threadId) {
+      return true;
+    }
+
+    return cachedThreadMayNotify(this.cache.getThread(threadId));
   }
 
   private async refreshThread(threadId: string): Promise<boolean> {
