@@ -86,6 +86,18 @@ export type UnknownServerRequest = {
 export type ExperimentalThreadResumeParams =
   import("../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams").ThreadResumeParams & {
     excludeTurns?: boolean;
+    initialTurnsPage?: {
+      itemsView?:
+        | import("../../../codex-rs/app-server-protocol/schema/typescript/v2/TurnItemsView").TurnItemsView
+        | null;
+      limit?: number | null;
+      sortDirection?: "asc" | "desc" | null;
+    } | null;
+  };
+
+export type ExperimentalThreadResumeResponse =
+  import("../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeResponse").ThreadResumeResponse & {
+    initialTurnsPage?: ThreadTurnsListResponse | null;
   };
 
 export type ExperimentalThreadTurnsListParams = {

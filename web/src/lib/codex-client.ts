@@ -2,6 +2,7 @@ import type {
   AnyServerRequest,
   ClientInfo,
   ExperimentalThreadResumeParams,
+  ExperimentalThreadResumeResponse,
   ExperimentalThreadTurnsListParams,
   InitializeCapabilities,
   InitializeResponse,
@@ -10,7 +11,6 @@ import type {
   Thread,
   ThreadArchiveResponse,
   ThreadListResponse,
-  ThreadResumeResponse,
   ThreadSetNameResponse,
   ThreadTurnsListResponse,
   Turn,
@@ -41,12 +41,18 @@ type ThreadTurnsSortDirection = "asc" | "desc";
 
 export type ThreadTurnsPageRequest = {
   cursor: string | null;
+  limit?: number | null;
   sortDirection: ThreadTurnsSortDirection;
 };
 
 export type ThreadTurnsPage = {
   nextCursor: string | null;
   turns: Turn[];
+};
+
+export type ThreadResumeResult = {
+  initialTurnsPage: ThreadTurnsPage | null;
+  thread: Thread;
 };
 
 const CLIENT_INFO: ClientInfo = {
@@ -75,6 +81,19 @@ function isMethodNotFoundError(
     "code" in error &&
     error.code === -32601
   );
+}
+
+function normalizeThreadTurnsPage(
+  response: ThreadTurnsListResponse,
+  sortDirection: ThreadTurnsSortDirection,
+): ThreadTurnsPage {
+  return {
+    nextCursor: response.nextCursor,
+    turns:
+      sortDirection === "desc"
+        ? response.data.slice().reverse()
+        : response.data,
+  };
 }
 
 export class CodexClient {
@@ -165,13 +184,13 @@ export class CodexClient {
 
   async listThreadTurnsPage(
     threadId: string,
-    { cursor, sortDirection }: ThreadTurnsPageRequest,
+    { cursor, limit = 100, sortDirection }: ThreadTurnsPageRequest,
   ): Promise<ThreadTurnsPage> {
     try {
       const params: ExperimentalThreadTurnsListParams = {
         cursor,
         itemsView: "full",
-        limit: 100,
+        limit,
         sortDirection,
         threadId,
       };
@@ -180,13 +199,7 @@ export class CodexClient {
           "thread/turns/list",
           params,
         );
-      return {
-        nextCursor: response.nextCursor,
-        turns:
-          sortDirection === "desc"
-            ? response.data.slice().reverse()
-            : response.data,
-      };
+      return normalizeThreadTurnsPage(response, sortDirection);
     } catch (error) {
       if (isMethodNotFoundError(error)) {
         return {
@@ -198,16 +211,26 @@ export class CodexClient {
     }
   }
 
-  async resumeThread(threadId: string): Promise<Thread> {
+  async resumeThread(threadId: string): Promise<ThreadResumeResult> {
     const params: ExperimentalThreadResumeParams = {
       excludeTurns: true,
+      initialTurnsPage: {
+        itemsView: "full",
+        limit: 1,
+        sortDirection: "desc",
+      },
       threadId,
     };
-    const response = await this.rpc.request<ThreadResumeResponse>(
+    const response = await this.rpc.request<ExperimentalThreadResumeResponse>(
       "thread/resume",
       params,
     );
-    return response.thread;
+    return {
+      initialTurnsPage: response.initialTurnsPage
+        ? normalizeThreadTurnsPage(response.initialTurnsPage, "desc")
+        : null,
+      thread: response.thread,
+    };
   }
 
   async sendPrompt(threadId: string, text: string): Promise<void> {
