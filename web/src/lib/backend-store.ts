@@ -22,6 +22,7 @@ import type {
 import {
   CodexClient,
   type BackendMessage,
+  type ThreadResumeResult,
   type ThreadTurnsPage,
   type ThreadTurnsPageRequest,
 } from "./codex-client";
@@ -84,7 +85,7 @@ export interface BackendTransport {
   ): Promise<ThreadTurnsPage>;
   respondToServerRequest(id: RequestId, response: unknown): void;
   renameThread(threadId: string, name: string): Promise<void>;
-  resumeThread(threadId: string): Promise<Thread>;
+  resumeThread(threadId: string): Promise<ThreadResumeResult>;
   sendPrompt(threadId: string, text: string): Promise<void>;
   setForegroundThreadId(threadId: string | null): void;
   setPushSubscriptionEndpoint(endpoint: string | null): void;
@@ -990,36 +991,31 @@ export class BackendStateStore {
 
       try {
         await this.ensureConnected();
+        const resumeResult = await this.client.resumeThread(threadId);
+        const liveThread = resumeResult.thread;
+        if (resumeResult.initialTurnsPage) {
+          persistedTurns = resumeResult.initialTurnsPage.turns;
+          nextTurnsCursor = resumeResult.initialTurnsPage.nextCursor;
+        }
+
         try {
-          const initialTurnsPage = await this.client.listThreadTurnsPage(
-            threadId,
-            {
-              cursor: null,
-              sortDirection: "desc",
-            },
-          );
-          persistedTurns = initialTurnsPage.turns;
-          nextTurnsCursor = initialTurnsPage.nextCursor;
+          if (!resumeResult.initialTurnsPage) {
+            const initialTurnsPage = await this.client.listThreadTurnsPage(
+              threadId,
+              {
+                cursor: null,
+                limit: 1,
+                sortDirection: "desc",
+              },
+            );
+            persistedTurns = initialTurnsPage.turns;
+            nextTurnsCursor = initialTurnsPage.nextCursor;
+          }
         } catch {
           persistedTurns = [];
           nextTurnsCursor = null;
         }
 
-        const listedThread = this.threads.find(
-          (thread) => thread.id === threadId,
-        );
-        if (listedThread && persistedTurns.length > 0) {
-          const current = this.threadEntries.get(threadId);
-          if (current) {
-            this.threadDetails.set(threadId, {
-              ...listedThread,
-              turns: persistedTurns,
-            });
-            this.updateThreadEntry(threadId);
-          }
-        }
-
-        const liveThread = await this.client.resumeThread(threadId);
         let thread =
           persistedTurns.length > 0
             ? {

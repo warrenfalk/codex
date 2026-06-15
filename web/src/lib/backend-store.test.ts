@@ -5,7 +5,11 @@ import type { InitializeResponse, Thread, Turn } from "@/types/protocol";
 
 import { BackendStateStore, type BackendTransport } from "./backend-store";
 import type { BackendMessage } from "./codex-client";
-import type { ThreadTurnsPage, ThreadTurnsPageRequest } from "./codex-client";
+import type {
+  ThreadResumeResult,
+  ThreadTurnsPage,
+  ThreadTurnsPageRequest,
+} from "./codex-client";
 import {
   PROXY_THREAD_LIST_UPDATED_METHOD,
   type ProxyThreadActivity,
@@ -69,6 +73,7 @@ class FakeTransport implements BackendTransport {
     threadId: string;
   }> = [];
   archiveThreadCalls: string[] = [];
+  listThreadTurnsPageGate: Promise<void> | null = null;
   resumeThreadGate: Promise<void> | null = null;
   resumeCalls = new Map<string, number>();
   renameThreadCalls: Array<{ name: string; threadId: string }> = [];
@@ -85,6 +90,10 @@ class FakeTransport implements BackendTransport {
       ProxyThreadActivity
     > = {},
     private readonly detailedThreads = new Map<string, Thread>(),
+    private readonly initialTurnPagesByThread = new Map<
+      string,
+      ThreadTurnsPage
+    >(),
     private readonly turnPagesByThread = new Map<string, ThreadTurnsPage[]>(),
   ) {}
 
@@ -126,6 +135,7 @@ class FakeTransport implements BackendTransport {
     request: ThreadTurnsPageRequest,
   ): Promise<ThreadTurnsPage> {
     this.listTurnsPageCalls.push({ request, threadId });
+    await this.listThreadTurnsPageGate;
     const pages = this.turnPagesByThread.get(threadId);
     const page = pages?.shift();
     return {
@@ -140,11 +150,14 @@ class FakeTransport implements BackendTransport {
     this.renameThreadCalls.push({ name, threadId });
   }
 
-  async resumeThread(threadId: string): Promise<Thread> {
+  async resumeThread(threadId: string): Promise<ThreadResumeResult> {
     this.resumeCalls.set(threadId, (this.resumeCalls.get(threadId) ?? 0) + 1);
     await this.resumeThreadGate;
     return {
-      ...(this.detailedThreads.get(threadId) ?? makeThread(threadId)),
+      initialTurnsPage: this.initialTurnPagesByThread.get(threadId) ?? null,
+      thread: {
+        ...(this.detailedThreads.get(threadId) ?? makeThread(threadId)),
+      },
     };
   }
 
@@ -387,6 +400,59 @@ describe("BackendStateStore", () => {
       new Map([
         [
           "thr_1",
+          {
+            nextCursor: null,
+            turns: persistedTurns,
+          },
+        ],
+      ]),
+    );
+    const store = new BackendStateStore(transport);
+    const first = vi.fn();
+    const second = vi.fn();
+
+    const unsubscribeFirst = store.subscribeThread("thr_1", first);
+    const unsubscribeSecond = store.subscribeThread("thr_1", second);
+    await waitFor(() => {
+      expect(transport.connectCalls).toBe(1);
+      expect(transport.resumeCalls.get("thr_1")).toBe(1);
+      expect(transport.listTurnsPageCalls).toEqual([]);
+      expect(first).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({
+            id: "thr_1",
+            turns: [expect.objectContaining({ id: "turn_1" })],
+          }),
+        }),
+      );
+      expect(second).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({
+            id: "thr_1",
+            turns: [expect.objectContaining({ id: "turn_1" })],
+          }),
+        }),
+      );
+    });
+
+    unsubscribeFirst();
+    unsubscribeSecond();
+  });
+
+  it("falls back to one explicit newest-turn page when resume omits it", async () => {
+    const detailedThread: Thread = makeThread("thr_1", "Thread 1");
+    const persistedTurns = [makeTurn("turn_1")];
+    const transport = new FakeTransport(
+      [makeThread("thr_1", "Thread 1")],
+      {},
+      {},
+      new Map([["thr_1", detailedThread]]),
+      new Map(),
+      new Map([
+        [
+          "thr_1",
           [
             {
               nextCursor: null,
@@ -407,7 +473,7 @@ describe("BackendStateStore", () => {
       expect(transport.resumeCalls.get("thr_1")).toBe(1);
       expect(transport.listTurnsPageCalls).toEqual([
         {
-          request: { cursor: null, sortDirection: "desc" },
+          request: { cursor: null, limit: 1, sortDirection: "desc" },
           threadId: "thr_1",
         },
       ]);
@@ -508,8 +574,8 @@ describe("BackendStateStore", () => {
   });
 
   it("renders the newest turn page before loading older history", async () => {
-    let releaseResume: () => void = () => {
-      throw new Error("resume gate was not initialized");
+    let releaseOlderHistory: () => void = () => {
+      throw new Error("older-history gate was not initialized");
     };
     const listedThread = makeThread("thr_1", "Thread 1");
     const transport = new FakeTransport(
@@ -528,21 +594,26 @@ describe("BackendStateStore", () => {
       new Map([
         [
           "thr_1",
+          {
+            nextCursor: "older",
+            turns: [makeTurn("turn_3")],
+          },
+        ],
+      ]),
+      new Map([
+        [
+          "thr_1",
           [
             {
-              nextCursor: "older",
-              turns: [makeTurn("turn_2"), makeTurn("turn_3")],
-            },
-            {
               nextCursor: null,
-              turns: [makeTurn("turn_1")],
+              turns: [makeTurn("turn_1"), makeTurn("turn_2")],
             },
           ],
         ],
       ]),
     );
-    transport.resumeThreadGate = new Promise((resolve) => {
-      releaseResume = resolve;
+    transport.listThreadTurnsPageGate = new Promise((resolve) => {
+      releaseOlderHistory = resolve;
     });
     const store = new BackendStateStore(transport);
     const subscriber = vi.fn();
@@ -553,16 +624,13 @@ describe("BackendStateStore", () => {
       expect(subscriber).toHaveBeenLastCalledWith(
         expect.objectContaining({
           thread: expect.objectContaining({
-            turns: [
-              expect.objectContaining({ id: "turn_2" }),
-              expect.objectContaining({ id: "turn_3" }),
-            ],
+            turns: [expect.objectContaining({ id: "turn_3" })],
           }),
         }),
       );
     });
     expect(transport.resumeCalls.get("thr_1")).toBe(1);
-    releaseResume();
+    releaseOlderHistory();
 
     await waitFor(() => {
       expect(subscriber).toHaveBeenLastCalledWith(
@@ -579,10 +647,6 @@ describe("BackendStateStore", () => {
       );
     });
     expect(transport.listTurnsPageCalls).toEqual([
-      {
-        request: { cursor: null, sortDirection: "desc" },
-        threadId: "thr_1",
-      },
       {
         request: { cursor: "older", sortDirection: "desc" },
         threadId: "thr_1",
