@@ -215,7 +215,6 @@ export function ThreadList({
     <section className="list-shell">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Live session list</p>
           <h1>Threads</h1>
         </div>
         <div className="list-actions">
