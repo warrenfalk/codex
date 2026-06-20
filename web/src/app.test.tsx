@@ -28,7 +28,22 @@ const backendStore = vi.hoisted(() => ({
   subscribeThreadList: vi.fn(),
 }));
 
+const sourceFiles = vi.hoisted(() => ({
+  readSourceFile: vi.fn(),
+  SourceFileReadError: class SourceFileReadError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+      readonly details: unknown,
+    ) {
+      super(message);
+      this.name = "SourceFileReadError";
+    }
+  },
+}));
+
 vi.mock("@/lib/backend-store", () => backendStore);
+vi.mock("@/lib/source-files", () => sourceFiles);
 
 vi.mock("react-bottom-anchored-list", async () => {
   const React = await import("react");
@@ -150,6 +165,16 @@ describe("App routing", () => {
     backendStore.sendPrompt.mockResolvedValue(undefined);
     backendStore.subscribeThread.mockReturnValue(() => undefined);
     backendStore.subscribeThreadList.mockReturnValue(() => undefined);
+    sourceFiles.readSourceFile.mockResolvedValue({
+      content: "export function App() {}\n",
+      displayPath: "src/app.tsx",
+      fileKind: "source",
+      language: "tsx",
+      line: 1,
+      path: "/workspace/src/app.tsx",
+      root: "/workspace",
+      sizeBytes: 25,
+    });
   });
 
   it("pushes a thread route when selecting a thread and pops it on in-app back", () => {
@@ -275,6 +300,31 @@ describe("App routing", () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe("/threads/thread-1");
     });
+    expect(
+      screen.getByRole("heading", { name: "Routing thread" }),
+    ).toBeInTheDocument();
+  });
+
+  it("loads a source file route and falls back to the thread on back", async () => {
+    renderApp(["/files?threadId=thread-1&path=src%2Fapp.tsx&line=1"]);
+
+    await waitFor(() => {
+      expect(sourceFiles.readSourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: "src/app.tsx",
+          threadId: "thread-1",
+        }),
+      );
+    });
+    expect(
+      await screen.findByRole("heading", { name: "src/app.tsx" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("source · tsx · 25 B · line 1"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
     expect(
       screen.getByRole("heading", { name: "Routing thread" }),
     ).toBeInTheDocument();

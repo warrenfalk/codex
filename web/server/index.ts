@@ -17,6 +17,7 @@ import {
 import { resolveRelayConfig, type RelayConfig } from "./config.js";
 import { createPushRouter, PushNotificationService } from "./push-service.js";
 import { attachRelay, type RelayHandle } from "./relay.js";
+import { createSourceFileRouter } from "./source-files.js";
 
 export type RunningWebServer = {
   config: RelayConfig;
@@ -30,6 +31,7 @@ function createApp(
   staticDir: string,
   pushService: PushNotificationService,
   controlRouter: express.Router,
+  sourceFileRouter: express.Router,
 ) {
   const app = express();
 
@@ -41,6 +43,7 @@ function createApp(
 
   app.use("/api/push", express.json({ limit: "64kb" }));
   app.use("/api/push", createPushRouter(pushService));
+  app.use(sourceFileRouter);
 
   if (fs.existsSync(staticDir)) {
     app.use(express.static(staticDir));
@@ -133,6 +136,9 @@ export async function startServer(
     config.staticDir,
     pushService,
     createControlRouter({ onShutdown: shutdown, token }),
+    createSourceFileRouter({
+      getThread: (threadId) => relay?.getThread(threadId) ?? null,
+    }),
   );
   server = http.createServer(app);
 

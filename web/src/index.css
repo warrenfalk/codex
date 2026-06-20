@@ -248,6 +248,32 @@ a {
   overflow-wrap: anywhere;
 }
 
+.source-shell {
+  overflow: hidden;
+}
+
+.source-file-meta {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.76rem;
+  margin: 0 0 0.75rem 2.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-file-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.source-line-highlight {
+  background: rgba(110, 231, 255, 0.14);
+  outline: 1px solid rgba(110, 231, 255, 0.28);
+}
+
 .icon-button {
   align-items: center;
   border-radius: 10px;

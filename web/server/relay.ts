@@ -387,6 +387,10 @@ class RelayController {
     server.on("upgrade", this.upgradeHandler);
   }
 
+  getThread(threadId: string): Thread | null {
+    return this.cache.getThread(threadId);
+  }
+
   detach(server: HttpServer): void {
     server.off("upgrade", this.upgradeHandler);
   }
@@ -1018,6 +1022,7 @@ export type RelayOptions = {
 
 export type RelayHandle = {
   close(): Promise<void>;
+  getThread(threadId: string): Thread | null;
 };
 
 export async function attachRelay(
@@ -1032,6 +1037,9 @@ export async function attachRelay(
     async close(): Promise<void> {
       relay.detach(server);
       await relay.close();
+    },
+    getThread(threadId: string): Thread | null {
+      return relay.getThread(threadId);
     },
   };
 }

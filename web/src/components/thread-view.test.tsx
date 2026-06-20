@@ -203,6 +203,7 @@ function renderThreadView(
     onArchiveThread: vi.fn().mockResolvedValue(undefined),
     onBack: vi.fn(),
     onInterrupt: vi.fn(),
+    onOpenSourceFile: vi.fn(),
     onRenameThread: vi.fn().mockResolvedValue(undefined),
     onRespondToRequest: vi.fn(),
     onSendPrompt: vi.fn().mockResolvedValue(undefined),

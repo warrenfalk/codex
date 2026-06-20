@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
-import { Streamdown, type StreamdownProps } from "streamdown";
 
 import type { ThreadItem } from "@/types/protocol";
+
+import { MarkdownBlock, type SourceFileLinkOptions } from "./markdown-block";
 
 type Props = {
   anchorId?: string;
   item: ThreadItem;
   onJumpToPreviousUserTurn?: () => void;
+  sourceFileLinks?: SourceFileLinkOptions;
   runtimeText?: string;
 };
 
@@ -15,22 +17,6 @@ type FileChange = FileChangeItem["changes"][number];
 
 function JsonBlock({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
-}
-
-const markdownLinkSafety: NonNullable<StreamdownProps["linkSafety"]> = {
-  enabled: false,
-};
-
-function MarkdownBlock({ text }: { text: string }) {
-  return (
-    <Streamdown
-      className="message-markdown"
-      dir="auto"
-      linkSafety={markdownLinkSafety}
-    >
-      {text}
-    </Streamdown>
-  );
 }
 
 function patchKindLabel(kind: FileChange["kind"]["type"]) {
@@ -93,6 +79,7 @@ export function ThreadItemView({
   anchorId,
   item,
   onJumpToPreviousUserTurn,
+  sourceFileLinks,
   runtimeText,
 }: Props) {
   switch (item.type) {
@@ -125,7 +112,10 @@ export function ThreadItemView({
             {item.content.map((entry, index) => (
               <div key={`${item.id}-${index}`}>
                 {entry.type === "text" ? (
-                  <MarkdownBlock text={entry.text} />
+                  <MarkdownBlock
+                    sourceFileLinks={sourceFileLinks}
+                    text={entry.text}
+                  />
                 ) : (
                   <p>{JSON.stringify(entry)}</p>
                 )}
@@ -138,7 +128,10 @@ export function ThreadItemView({
       return (
         <article className="message-card agent-card">
           <header>Codex</header>
-          <MarkdownBlock text={item.text || "Waiting for output..."} />
+          <MarkdownBlock
+            sourceFileLinks={sourceFileLinks}
+            text={item.text || "Waiting for output..."}
+          />
         </article>
       );
     case "reasoning":

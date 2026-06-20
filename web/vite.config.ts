@@ -33,6 +33,9 @@ export default defineConfig({
       "/healthz": {
         target: `http://127.0.0.1:${relayPort}`,
       },
+      "/api/files": {
+        target: `http://127.0.0.1:${relayPort}`,
+      },
     },
   },
   preview: {
