@@ -195,6 +195,12 @@ a {
   width: 100%;
 }
 
+.thread-actions-popover button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(110, 231, 255, 0.54);
+  color: var(--accent);
+}
+
 .thread-header {
   align-items: center;
   display: grid;

@@ -8,7 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AnyServerRequest, Thread, Turn } from "@/types/protocol";
+import type {
+  AnyServerRequest,
+  Thread,
+  ThreadItem,
+  Turn,
+} from "@/types/protocol";
 
 import { ThreadView } from "./thread-view";
 
@@ -146,6 +151,19 @@ function buildTurn(id = "turn-1"): Turn {
   };
 }
 
+function buildTurnWithItems(id: string, items: ThreadItem[]): Turn {
+  return {
+    id,
+    items,
+    itemsView: "full",
+    status: "completed",
+    error: null,
+    startedAt: null,
+    completedAt: null,
+    durationMs: null,
+  };
+}
+
 function buildUserTurn(id: string, text: string): Turn {
   return {
     id,
@@ -215,6 +233,14 @@ function changePrompt(
 }
 
 describe("ThreadView", () => {
+  it("shows the thread cwd in the composer status", () => {
+    renderThreadView();
+
+    expect(screen.getByText("[connected]")).toBeInTheDocument();
+    expect(screen.getByText("/workspace")).toBeInTheDocument();
+    expect(screen.queryByText("codex 0.0.0 on linux")).toBeNull();
+  });
+
   it("hides the composer during approval prompts and preserves the draft", () => {
     const pendingRequest: AnyServerRequest = {
       method: "item/commandExecution/requestApproval",
@@ -491,6 +517,100 @@ describe("ThreadView", () => {
     await waitFor(() => {
       expect(onArchiveThread).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("toggles condensed mode from the actions menu", () => {
+    renderThreadView({
+      thread: buildThread([
+        buildTurnWithItems("turn-1", [
+          {
+            type: "userMessage",
+            id: "user-1",
+            clientId: null,
+            content: [
+              {
+                type: "text",
+                text: "Initial prompt",
+                text_elements: [],
+              },
+            ],
+          },
+          {
+            type: "reasoning",
+            id: "reasoning-old",
+            summary: ["Old reasoning"],
+            content: [],
+          },
+          {
+            type: "commandExecution",
+            id: "exec-old",
+            command: "old command",
+            cwd: "/workspace",
+            processId: null,
+            source: "agent",
+            status: "completed",
+            commandActions: [],
+            aggregatedOutput: null,
+            exitCode: 0,
+            durationMs: null,
+          },
+          {
+            type: "agentMessage",
+            id: "agent-1",
+            text: "Finished earlier work.",
+            phase: null,
+            memoryCitation: null,
+          },
+          {
+            type: "reasoning",
+            id: "reasoning-current",
+            summary: ["Current reasoning"],
+            content: [],
+          },
+          {
+            type: "commandExecution",
+            id: "exec-current",
+            command: "current command",
+            cwd: "/workspace",
+            processId: null,
+            source: "agent",
+            status: "completed",
+            commandActions: [],
+            aggregatedOutput: null,
+            exitCode: 0,
+            durationMs: null,
+          },
+        ]),
+      ]),
+    });
+
+    expect(screen.getByText("Initial prompt")).toBeInTheDocument();
+    expect(screen.getByText("Finished earlier work.")).toBeInTheDocument();
+    expect(screen.queryByText("Old reasoning")).toBeNull();
+    expect(screen.queryByText("old command")).toBeNull();
+    expect(screen.getByText("Current reasoning")).toBeInTheDocument();
+    expect(screen.getAllByText("current command")).not.toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+    const condensedButton = screen.getByRole("button", {
+      name: "Condensed",
+    });
+
+    expect(condensedButton).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(condensedButton);
+
+    expect(condensedButton).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Old reasoning")).toBeInTheDocument();
+    expect(screen.getAllByText("old command")).not.toHaveLength(0);
+    expect(screen.getByText("Current reasoning")).toBeInTheDocument();
+    expect(screen.getAllByText("current command")).not.toHaveLength(0);
+
+    fireEvent.click(condensedButton);
+
+    expect(condensedButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Old reasoning")).toBeNull();
+    expect(screen.queryByText("old command")).toBeNull();
   });
 
   it("jumps to the previous user turn from user messages", async () => {
