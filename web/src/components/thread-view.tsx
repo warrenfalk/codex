@@ -123,6 +123,65 @@ function threadTitle(thread: Thread): string {
   return thread.name ?? (thread.preview || "Thread");
 }
 
+function isCondensableThreadItem(item: ThreadItem): boolean {
+  switch (item.type) {
+    case "userMessage":
+    case "agentMessage":
+      return false;
+    case "hookPrompt":
+    case "plan":
+    case "reasoning":
+    case "commandExecution":
+    case "fileChange":
+    case "mcpToolCall":
+    case "dynamicToolCall":
+    case "collabAgentToolCall":
+    case "webSearch":
+    case "imageView":
+    case "imageGeneration":
+    case "enteredReviewMode":
+    case "exitedReviewMode":
+    case "contextCompaction":
+      return true;
+  }
+
+  const exhaustive: never = item;
+  return exhaustive;
+}
+
+function turnsForCondensedMode(turns: Turn[], condensedMode: boolean): Turn[] {
+  if (!condensedMode) {
+    return turns;
+  }
+
+  let itemIndex = 0;
+  let lastAgentMessageIndex = -1;
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      if (item.type === "agentMessage") {
+        lastAgentMessageIndex = itemIndex;
+      }
+      itemIndex += 1;
+    }
+  }
+
+  if (lastAgentMessageIndex === -1) {
+    return turns;
+  }
+
+  itemIndex = 0;
+  return turns.flatMap((turn) => {
+    const items = turn.items.filter((item) => {
+      const isVisible =
+        !isCondensableThreadItem(item) || itemIndex > lastAgentMessageIndex;
+      itemIndex += 1;
+      return isVisible;
+    });
+
+    return items.length > 0 ? [{ ...turn, items }] : [];
+  });
+}
+
 function ButtonIcon({ children }: { children: ReactNode }) {
   return (
     <svg
@@ -139,13 +198,17 @@ function ButtonIcon({ children }: { children: ReactNode }) {
 
 function ThreadActionsMenu({
   archiving,
+  condensedMode,
   renaming,
   onArchive,
+  onToggleCondensedMode,
   onRename,
 }: {
   archiving: boolean;
+  condensedMode: boolean;
   renaming: boolean;
   onArchive: () => void;
+  onToggleCondensedMode: () => void;
   onRename: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -209,6 +272,13 @@ function ThreadActionsMenu({
       {isOpen && (
         <div className="thread-actions-popover">
           <button
+            aria-pressed={condensedMode}
+            type="button"
+            onClick={onToggleCondensedMode}
+          >
+            Condensed
+          </button>
+          <button
             disabled={renaming || archiving}
             type="button"
             onClick={handleRename}
@@ -253,6 +323,7 @@ export function ThreadView({
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [editingThreadTitle, setEditingThreadTitle] = useState(false);
+  const [condensedMode, setCondensedMode] = useState(true);
   const [isThreadAnchoredToEnd, setIsThreadAnchoredToEnd] = useState(true);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -270,8 +341,16 @@ export function ThreadView({
       promptSelection.end,
     );
   const statusDetail =
-    initializeSummary ?? connectionError ?? "version unknown";
+    connectionState === "connected"
+      ? (thread?.cwd ?? "cwd unknown")
+      : (connectionError ??
+        thread?.cwd ??
+        initializeSummary ??
+        "connection unavailable");
   const hasPendingRequests = pendingRequests.length > 0;
+  const visibleTurns = thread
+    ? turnsForCondensedMode(thread.turns, condensedMode)
+    : [];
   const previousUserMessageLocationsByItemId = thread
     ? (() => {
         const previousLocationsByItemId = new Map<
@@ -279,7 +358,7 @@ export function ThreadView({
           UserMessageLocation
         >();
         let previousLocation: UserMessageLocation | null = null;
-        for (const [turnIndex, turn] of thread.turns.entries()) {
+        for (const [turnIndex, turn] of visibleTurns.entries()) {
           for (const item of turn.items) {
             if (item.type !== "userMessage") {
               continue;
@@ -508,8 +587,10 @@ export function ThreadView({
             <h1>{threadTitle(thread)}</h1>
             <ThreadActionsMenu
               archiving={archiving}
+              condensedMode={condensedMode}
               renaming={renaming}
               onArchive={() => void archiveThread()}
+              onToggleCondensedMode={() => setCondensedMode((mode) => !mode)}
               onRename={startThreadRename}
             />
           </>
@@ -534,7 +615,7 @@ export function ThreadView({
           contentClassName="turn-list-content"
           getItemKey={getTurnKey}
           itemClassName="turn-list-item"
-          items={thread.turns}
+          items={visibleTurns}
           onPositionChange={handleThreadPositionChange}
           renderItem={(turn) => (
             <section key={turn.id} className="turn-card">
@@ -566,7 +647,7 @@ export function ThreadView({
             </section>
           )}
         />
-        {thread.turns.length > 0 && !isThreadAnchoredToEnd && (
+        {visibleTurns.length > 0 && !isThreadAnchoredToEnd && (
           <button
             aria-label="Scroll thread to bottom"
             className="scroll-to-bottom-button"
