@@ -80,6 +80,40 @@ describe("ThreadItemView", () => {
     ).toHaveAttribute("data-streamdown", "inline-code");
   });
 
+  it("pushes local source links through the source file callback", () => {
+    const item: ThreadItem = {
+      type: "agentMessage",
+      id: "agent-source-link-1",
+      text: "Open [the component](src/components/thread-item-view.tsx:42).",
+      phase: null,
+      memoryCitation: null,
+    };
+    const onNavigate = vi.fn();
+
+    render(
+      <ThreadItemView
+        item={item}
+        sourceFileLinks={{
+          onNavigate,
+          root: "/workspace",
+          threadId: "thread-1",
+        }}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "the component" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/files?path=src%2Fcomponents%2Fthread-item-view.tsx&threadId=thread-1&line=42",
+    );
+
+    fireEvent.click(link);
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      "/files?path=src%2Fcomponents%2Fthread-item-view.tsx&threadId=thread-1&line=42",
+    );
+  });
+
   it("renders fenced code blocks with separate line elements", () => {
     const item: ThreadItem = {
       type: "agentMessage",

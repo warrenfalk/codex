@@ -6,6 +6,7 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router";
 
 import {
@@ -29,14 +30,48 @@ import type { AnyServerRequest } from "@/types/protocol";
 
 import { ThreadList } from "./components/thread-list";
 import { ThreadView } from "./components/thread-view";
+import { SourceFileView } from "./components/source-file-view";
 
 const NOTIFICATION_CLICK_MESSAGE_TYPE = "codex-notification-click";
 
 export function App() {
+  return <AppRoutes />;
+}
+
+function AppRoutes() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) {
+      return;
+    }
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const path = notificationClickPath(event.data);
+      if (!path) {
+        return;
+      }
+
+      navigate(path);
+    };
+
+    navigator.serviceWorker.addEventListener(
+      "message",
+      handleServiceWorkerMessage,
+    );
+    return () => {
+      navigator.serviceWorker.removeEventListener(
+        "message",
+        handleServiceWorkerMessage,
+      );
+    };
+  }, [navigate]);
+
   return (
     <Routes>
       <Route path="/" element={<AppRoute />} />
       <Route path="/threads/:threadId" element={<AppRoute />} />
+      <Route path="/files" element={<SourceFileRoute />} />
       <Route path="*" element={<Navigate replace to="/" />} />
     </Routes>
   );
@@ -87,32 +122,6 @@ function AppRoute() {
     };
   }, [selectedThreadId]);
 
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) {
-      return;
-    }
-
-    const handleServiceWorkerMessage = (event: MessageEvent) => {
-      const path = notificationClickPath(event.data);
-      if (!path) {
-        return;
-      }
-
-      navigate(path);
-    };
-
-    navigator.serviceWorker.addEventListener(
-      "message",
-      handleServiceWorkerMessage,
-    );
-    return () => {
-      navigator.serviceWorker.removeEventListener(
-        "message",
-        handleServiceWorkerMessage,
-      );
-    };
-  }, [navigate]);
-
   const thread = threadState?.thread ?? null;
   const pendingRequests = threadState?.pendingRequests ?? [];
   const active = useMemo(() => activeTurn(thread), [thread]);
@@ -140,6 +149,10 @@ function AppRoute() {
     navigate(`/threads/${encodeURIComponent(threadId)}`, {
       state: { fromThreadList: true },
     });
+  };
+
+  const handleOpenSourceFile = (route: string) => {
+    navigate(route, { state: { fromSourceLink: true } });
   };
 
   const handleBackToThreads = () => {
@@ -264,6 +277,7 @@ function AppRoute() {
           onArchiveThread={handleArchiveThread}
           onBack={handleBackToThreads}
           onInterrupt={() => void handleInterrupt()}
+          onOpenSourceFile={handleOpenSourceFile}
           onRenameThread={handleRenameThread}
           onRespondToRequest={handleRespondToRequest}
           onSendPrompt={handleSendPrompt}
@@ -276,6 +290,57 @@ function AppRoute() {
           warnings={threadWarnings}
         />
       )}
+    </main>
+  );
+}
+
+function SourceFileRoute() {
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const threadId = searchParams.get("threadId");
+  const path = searchParams.get("path");
+
+  useEffect(() => {
+    const reportForegroundThread = () => {
+      void setForegroundThreadId(
+        document.visibilityState === "visible" ? threadId : null,
+      );
+    };
+
+    reportForegroundThread();
+    document.addEventListener("visibilitychange", reportForegroundThread);
+    return () => {
+      document.removeEventListener("visibilitychange", reportForegroundThread);
+      void setForegroundThreadId(null);
+    };
+  }, [threadId]);
+
+  const handleBack = () => {
+    const state = location.state as { fromSourceLink?: unknown } | null;
+    if (state?.fromSourceLink === true) {
+      navigate(-1);
+      return;
+    }
+
+    if (threadId) {
+      navigate(`/threads/${encodeURIComponent(threadId)}`, { replace: true });
+      return;
+    }
+
+    navigate("/", { replace: true });
+  };
+
+  return (
+    <main className="app-shell app-shell-thread">
+      <SourceFileView
+        onBack={handleBack}
+        onOpenSourceFile={(route) =>
+          navigate(route, { state: { fromSourceLink: true } })
+        }
+        path={path}
+        threadId={threadId}
+      />
     </main>
   );
 }

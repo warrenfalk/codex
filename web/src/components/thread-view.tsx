@@ -36,6 +36,7 @@ type Props = {
   onArchiveThread: () => Promise<void>;
   onBack: () => void;
   onInterrupt: () => void;
+  onOpenSourceFile: (route: string) => void;
   onRenameThread: (name: string) => Promise<void>;
   onRespondToRequest: (request: AnyServerRequest, response: unknown) => void;
   onSendPrompt: (text: string) => Promise<void>;
@@ -306,6 +307,7 @@ export function ThreadView({
   onArchiveThread,
   onBack,
   onInterrupt,
+  onOpenSourceFile,
   onRenameThread,
   onRespondToRequest,
   onSendPrompt,
@@ -640,6 +642,11 @@ export function ThreadView({
                             )
                         : undefined
                     }
+                    sourceFileLinks={{
+                      onNavigate: onOpenSourceFile,
+                      root: thread.cwd,
+                      threadId: thread.id,
+                    }}
                     runtimeText={runtimeText[item.id]}
                   />
                 ))}
