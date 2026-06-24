@@ -21,7 +21,7 @@ async fn approval_key_includes_environment_id() {
         timeout_ms: None,
         cancellation_token: CancellationToken::new(),
         env: HashMap::new(),
-        explicit_env_overrides: HashMap::new(),
+        snapshot_env_overrides: HashMap::new(),
         network: None,
         sandbox_permissions: SandboxPermissions::UseDefault,
         additional_permissions: None,

@@ -136,9 +136,9 @@ impl RuntimePathPrepends {
 
     fn shell_exports_after_snapshot(
         &self,
-        explicit_env_overrides: &HashMap<String, String>,
+        snapshot_env_overrides: &HashMap<String, String>,
     ) -> String {
-        if explicit_env_overrides.contains_key("PATH") {
+        if snapshot_env_overrides.contains_key("PATH") {
             return String::new();
         }
 
@@ -237,12 +237,12 @@ pub(crate) fn disable_powershell_profile_for_elevated_windows_sandbox(
 /// be run by Bash/Zsh/sh. On non-matching commands, or when command cwd does
 /// not match the snapshot cwd, this is a no-op.
 ///
-/// `explicit_env_overrides` and `env` are intentionally separate inputs.
-/// `explicit_env_overrides` contains policy-driven shell env overrides that
-/// should win after the snapshot is sourced, while `env` is the full live exec
+/// `snapshot_env_overrides` and `env` are intentionally separate inputs.
+/// `snapshot_env_overrides` contains live exec environment keys that should win
+/// after the snapshot is sourced, while `env` is the full live exec
 /// environment. We need access to both so snapshot restore logic can preserve
-/// runtime-only vars like `CODEX_THREAD_ID` without pretending they came from
-/// the explicit override policy.
+/// runtime-only vars like `CODEX_THREAD_ID` without treating the full live env
+/// as a set of post-snapshot overrides.
 ///
 /// `runtime_path_prepends` contains Codex-owned PATH entries already applied to
 /// the live `env`; snapshot wrapping replays them after restoring the snapshot
@@ -251,7 +251,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     command: &[String],
     session_shell: &Shell,
     shell_snapshot: Option<&AbsolutePathBuf>,
-    explicit_env_overrides: &HashMap<String, String>,
+    snapshot_env_overrides: &HashMap<String, String>,
     env: &HashMap<String, String>,
     runtime_path_prepends: &RuntimePathPrepends,
 ) -> Vec<String> {
@@ -285,14 +285,14 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
-    let mut override_env = explicit_env_overrides.clone();
+    let mut override_env = snapshot_env_overrides.clone();
     if let Some(thread_id) = env.get(CODEX_THREAD_ID_ENV_VAR) {
         override_env.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.clone());
     }
     let (override_captures, override_exports) = build_override_exports(&override_env);
     let (proxy_captures, proxy_exports) = build_proxy_env_exports();
     let runtime_path_prepend_exports =
-        runtime_path_prepends.shell_exports_after_snapshot(explicit_env_overrides);
+        runtime_path_prepends.shell_exports_after_snapshot(snapshot_env_overrides);
     let override_captures = join_shell_blocks([override_captures, proxy_captures]);
     let override_exports = join_shell_blocks([
         override_exports,
@@ -312,8 +312,8 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
 }
 
-fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (String, String) {
-    let mut keys = explicit_env_overrides
+fn build_override_exports(snapshot_env_overrides: &HashMap<String, String>) -> (String, String) {
+    let mut keys = snapshot_env_overrides
         .keys()
         .map(String::as_str)
         .filter(|key| is_valid_shell_variable_name(key))

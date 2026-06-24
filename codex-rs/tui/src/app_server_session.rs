@@ -1007,6 +1007,7 @@ impl AppServerSession {
                 params: ThreadShellCommandParams {
                     thread_id: thread_id.to_string(),
                     command,
+                    project_env: None,
                 },
             })
             .await

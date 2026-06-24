@@ -61,7 +61,10 @@ async fn user_shell_cmd_ls_and_cat_in_temp_dir() {
     // 1) shell command should list the file
     let list_cmd = "ls".to_string();
     codex
-        .submit(Op::RunUserShellCommand { command: list_cmd })
+        .submit(Op::RunUserShellCommand {
+            command: list_cmd,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
+        })
         .await
         .unwrap();
     let msg = wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecCommandEnd(_))).await;
@@ -80,7 +83,10 @@ async fn user_shell_cmd_ls_and_cat_in_temp_dir() {
     // 2) shell command should print the file contents verbatim
     let cat_cmd = format!("cat {file_name}");
     codex
-        .submit(Op::RunUserShellCommand { command: cat_cmd })
+        .submit(Op::RunUserShellCommand {
+            command: cat_cmd,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
+        })
         .await
         .unwrap();
     let msg = wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecCommandEnd(_))).await;
@@ -120,6 +126,7 @@ async fn user_shell_command_without_local_environment_emits_error() -> anyhow::R
     test.codex
         .submit(Op::RunUserShellCommand {
             command: "echo shell".to_string(),
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -148,7 +155,10 @@ async fn user_shell_cmd_can_be_interrupted() {
     // Start a long-running command and then interrupt it.
     let sleep_cmd = "sleep 5".to_string();
     codex
-        .submit(Op::RunUserShellCommand { command: sleep_cmd })
+        .submit(Op::RunUserShellCommand {
+            command: sleep_cmd,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
+        })
         .await
         .unwrap();
 
@@ -252,6 +262,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
         .codex
         .submit(Op::RunUserShellCommand {
             command: user_shell_command,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -317,6 +328,7 @@ async fn user_shell_command_history_is_persisted_and_shared_with_model() -> anyh
     test.codex
         .submit(Op::RunUserShellCommand {
             command: command.clone(),
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -402,7 +414,10 @@ async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Re
         r#"sh -c "printf '%s' \"${CODEX_SANDBOX_NETWORK_DISABLED:-not-set}\"""#.to_string();
 
     test.codex
-        .submit(Op::RunUserShellCommand { command })
+        .submit(Op::RunUserShellCommand {
+            command,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
+        })
         .await?;
 
     let ExecCommandEndEvent {
@@ -445,6 +460,7 @@ async fn user_shell_command_output_is_truncated_in_history() -> anyhow::Result<(
     test.codex
         .submit(Op::RunUserShellCommand {
             command: command.clone(),
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 

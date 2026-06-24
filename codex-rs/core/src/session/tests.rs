@@ -1162,6 +1162,7 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
         Arc::clone(&session),
         turn_context,
         command,
+        codex_protocol::protocol::ProjectEnvMode::Auto,
         CancellationToken::new(),
         UserShellCommandMode::StandaloneTurn,
     )
@@ -5066,6 +5067,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
+        project_env_manager: codex_project_env::ProjectEnvManager::disabled_for_tests(),
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
@@ -7223,6 +7225,7 @@ where
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
+        project_env_manager: codex_project_env::ProjectEnvManager::disabled_for_tests(),
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
@@ -8711,8 +8714,13 @@ async fn run_user_shell_command_does_not_set_reference_context_item() {
         state.set_reference_context_item(/*item*/ None);
     }
 
-    handlers::run_user_shell_command(&session, "sub-id".to_string(), "echo shell".to_string())
-        .await;
+    handlers::run_user_shell_command(
+        &session,
+        "sub-id".to_string(),
+        "echo shell".to_string(),
+        codex_protocol::protocol::ProjectEnvMode::Auto,
+    )
+    .await;
 
     let deadline = StdDuration::from_secs(15);
     let start = std::time::Instant::now();

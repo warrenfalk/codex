@@ -1463,6 +1463,7 @@ impl Session {
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
+        let environments_changed = updates.environments.is_some();
         let (previous_config, new_config, permission_profile_changed) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
@@ -1481,7 +1482,7 @@ impl Session {
             let updated_permission_profile = updated.permission_profile();
             let permission_profile_changed =
                 previous_permission_profile != updated_permission_profile;
-            if updates.environments.is_some() {
+            if environments_changed {
                 self.services
                     .turn_environments
                     .update_selections(updated.environment_selections());
@@ -1494,8 +1495,42 @@ impl Session {
             self.refresh_managed_network_proxy_for_current_permission_profile()
                 .await;
         }
+        if environments_changed {
+            self.prewarm_project_env_for_primary_local_cwd().await;
+        }
 
         Ok(())
+    }
+
+    pub(crate) async fn prewarm_project_env_for_primary_local_cwd(&self) {
+        let turn_environments = self.services.turn_environments.snapshot().await;
+        let Some(primary) = turn_environments.primary() else {
+            return;
+        };
+        if primary.environment.is_remote() {
+            return;
+        }
+        if let Ok(cwd) = primary.cwd().to_abs_path() {
+            self.services.project_env_manager.prewarm(cwd);
+        }
+    }
+
+    pub(crate) async fn project_env_status(&self) -> codex_project_env::ProjectEnvStatus {
+        let turn_environments = self.services.turn_environments.snapshot().await;
+        let cwd = turn_environments
+            .primary()
+            .filter(|environment| !environment.environment.is_remote())
+            .and_then(|environment| environment.cwd().to_abs_path().ok());
+        self.services
+            .project_env_manager
+            .status_for_cwd(cwd.as_ref())
+            .await
+    }
+
+    pub(crate) fn subscribe_project_env_status(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<codex_project_env::ProjectEnvStatus> {
+        self.services.project_env_manager.subscribe_status()
     }
 
     pub(crate) async fn preview_settings(

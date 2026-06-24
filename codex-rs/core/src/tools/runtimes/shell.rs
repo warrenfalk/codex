@@ -61,7 +61,7 @@ pub struct ShellRequest {
     pub timeout_ms: Option<u64>,
     pub cancellation_token: CancellationToken,
     pub env: HashMap<String, String>,
-    pub explicit_env_overrides: HashMap<String, String>,
+    pub snapshot_env_overrides: HashMap<String, String>,
     pub network: Option<NetworkProxy>,
     pub sandbox_permissions: SandboxPermissions,
     pub additional_permissions: Option<AdditionalPermissionProfile>,
@@ -263,7 +263,7 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
         let managed_network =
             managed_network_for_sandbox_permissions(req.network.as_ref(), sandbox_permissions);
         let env = exec_env_for_sandbox_permissions(&req.env, sandbox_permissions);
-        let explicit_env_overrides = req.explicit_env_overrides.clone();
+        let snapshot_env_overrides = req.snapshot_env_overrides.clone();
         #[cfg(unix)]
         let (env, runtime_path_prepends) = {
             let mut env = env;
@@ -285,7 +285,7 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
             &req.command,
             shell,
             shell_snapshot_location.as_ref(),
-            &explicit_env_overrides,
+            &snapshot_env_overrides,
             &env,
             &runtime_path_prepends,
         );

@@ -112,6 +112,7 @@ impl ExecCommandHandler {
             turn,
             tracker,
             call_id,
+            cancellation_token,
             payload,
             ..
         } = invocation;
@@ -245,6 +246,7 @@ impl ExecCommandHandler {
             additional_permissions,
             justification,
             prefix_rule,
+            project_env,
             ..
         } = args;
 
@@ -358,6 +360,8 @@ impl ExecCommandHandler {
                         .permissions_preapproved,
                     justification,
                     prefix_rule,
+                    project_env,
+                    cancellation_token: cancellation_token.child_token(),
                 },
                 &context,
             )

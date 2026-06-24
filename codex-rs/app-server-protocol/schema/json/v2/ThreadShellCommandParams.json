@@ -1,9 +1,29 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ProjectEnvMode": {
+      "enum": [
+        "auto",
+        "bypass"
+      ],
+      "type": "string"
+    }
+  },
   "properties": {
     "command": {
       "description": "Shell command string evaluated by the thread's configured shell. Unlike `command/exec`, this intentionally preserves shell syntax such as pipes, redirects, and quoting. This runs unsandboxed with full access rather than inheriting the thread sandbox policy.",
       "type": "string"
+    },
+    "projectEnv": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ProjectEnvMode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Project environment loading mode for this command. Omitted defaults to `auto`."
     },
     "threadId": {
       "type": "string"

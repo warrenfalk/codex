@@ -68,6 +68,12 @@ fn exec_command_tool_matches_expected_spec() {
                 )),
         ),
         (
+            "project_env".to_string(),
+            JsonSchema::string(Some(
+                "Project environment loading mode: auto (default) or bypass.".to_string(),
+            )),
+        ),
+        (
             "login".to_string(),
             JsonSchema::boolean(Some(
                     "True runs the shell with -l/-i semantics; false disables them. Defaults to true.".to_string(),
@@ -242,6 +248,12 @@ Examples of valid command strings:
             "timeout_ms".to_string(),
             JsonSchema::number(Some(
                 "Maximum command runtime. Defaults to 10000 ms.".to_string(),
+            )),
+        ),
+        (
+            "project_env".to_string(),
+            JsonSchema::string(Some(
+                "Project environment loading mode: auto (default) or bypass.".to_string(),
             )),
         ),
         (

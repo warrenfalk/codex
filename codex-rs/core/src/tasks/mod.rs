@@ -833,16 +833,38 @@ impl Session {
             .unified_exec_manager
             .terminate_all_processes()
             .await;
+        self.services.project_env_manager.cancel_all().await;
     }
 
     pub(crate) async fn list_background_terminals(&self) -> Vec<BackgroundTerminalInfo> {
-        self.services.unified_exec_manager.list_processes().await
+        let mut terminals = self.services.unified_exec_manager.list_processes().await;
+        terminals.extend(
+            self.services
+                .project_env_manager
+                .list_builds()
+                .await
+                .into_iter()
+                .map(|build| BackgroundTerminalInfo {
+                    item_id: build.item_id,
+                    process_id: build.process_id,
+                    command: build.command,
+                    cwd: build.cwd.into(),
+                }),
+        );
+        terminals
     }
 
     pub(crate) async fn terminate_background_terminal(&self, process_id: i32) -> bool {
         self.services
             .unified_exec_manager
             .terminate_process(process_id)
+            .await
+    }
+
+    pub(crate) async fn cancel_project_env_build(&self, process_id: &str) -> bool {
+        self.services
+            .project_env_manager
+            .cancel_build(process_id)
             .await
     }
 
