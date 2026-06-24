@@ -297,7 +297,12 @@ pub async fn inter_agent_communication(
     }
 }
 
-pub async fn run_user_shell_command(sess: &Arc<Session>, sub_id: String, command: String) {
+pub async fn run_user_shell_command(
+    sess: &Arc<Session>,
+    sub_id: String,
+    command: String,
+    project_env: codex_protocol::protocol::ProjectEnvMode,
+) {
     if let Some((turn_context, cancellation_token)) =
         sess.active_turn_context_and_cancellation_token().await
     {
@@ -307,6 +312,7 @@ pub async fn run_user_shell_command(sess: &Arc<Session>, sub_id: String, command
                 session,
                 turn_context,
                 command,
+                project_env,
                 cancellation_token,
                 UserShellCommandMode::ActiveTurnAuxiliary,
             )
@@ -319,7 +325,7 @@ pub async fn run_user_shell_command(sess: &Arc<Session>, sub_id: String, command
     sess.spawn_task(
         Arc::clone(&turn_context),
         Vec::new(),
-        UserShellCommandTask::new(command),
+        UserShellCommandTask::new_with_project_env(command, project_env),
     )
     .await;
 }
@@ -898,8 +904,11 @@ pub(super) async fn submission_loop(
                     set_thread_memory_mode(&sess, sub.id.clone(), mode).await;
                     false
                 }
-                Op::RunUserShellCommand { command } => {
-                    run_user_shell_command(&sess, sub.id.clone(), command).await;
+                Op::RunUserShellCommand {
+                    command,
+                    project_env,
+                } => {
+                    run_user_shell_command(&sess, sub.id.clone(), command, project_env).await;
                     false
                 }
                 Op::ResolveElicitation {

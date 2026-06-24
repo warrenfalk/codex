@@ -2142,6 +2142,13 @@
       ],
       "type": "object"
     },
+    "ProjectEnvMode": {
+      "enum": [
+        "auto",
+        "bypass"
+      ],
+      "type": "string"
+    },
     "RealtimeConversationVersion": {
       "enum": [
         "v1",
@@ -3933,6 +3940,17 @@
       ],
       "type": "object"
     },
+    "ThreadProjectEnvReadParams": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadReadParams": {
       "properties": {
         "includeTurns": {
@@ -4199,6 +4217,17 @@
         "command": {
           "description": "Shell command string evaluated by the thread's configured shell. Unlike `command/exec`, this intentionally preserves shell syntax such as pipes, redirects, and quoting. This runs unsandboxed with full access rather than inheriting the thread sandbox policy.",
           "type": "string"
+        },
+        "projectEnv": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProjectEnvMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Project environment loading mode for this command. Omitted defaults to `auto`."
         },
         "threadId": {
           "type": "string"
@@ -5140,6 +5169,30 @@
         "params"
       ],
       "title": "Thread/shellCommandRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/projectEnv/read"
+          ],
+          "title": "Thread/projectEnv/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadProjectEnvReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/projectEnv/readRequest",
       "type": "object"
     },
     {

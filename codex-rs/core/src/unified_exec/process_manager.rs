@@ -54,6 +54,7 @@ use crate::unified_exec::process::OutputHandles;
 use crate::unified_exec::process::SpawnLifecycleHandle;
 use crate::unified_exec::process::UnifiedExecProcess;
 use codex_network_proxy::NetworkProxy;
+use codex_project_env::apply_overlay as apply_project_env_overlay;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::SandboxErr;
@@ -61,6 +62,7 @@ use codex_protocol::protocol::ExecCommandSource;
 use codex_sandboxing::SandboxCommand;
 use codex_tools::ToolName;
 use codex_utils_output_truncation::approx_token_count;
+use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 
 const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
@@ -1102,6 +1104,54 @@ impl UnifiedExecProcessManager {
             CODEX_THREAD_ID_ENV_VAR.to_string(),
             context.session.thread_id.to_string(),
         );
+        let mut snapshot_env_overrides = HashMap::new();
+        let project_env_cwd = if !request.turn_environment.environment.is_remote()
+            && request.cwd.infer_path_convention() == Some(PathConvention::native())
+        {
+            Some(
+                request
+                    .cwd
+                    .to_abs_path()
+                    .map_err(|err| UnifiedExecError::process_failed(err.to_string()))?,
+            )
+        } else {
+            None
+        };
+        if let Some(project_env_cwd) = project_env_cwd.as_ref()
+            && let Some(overlay) = context
+                .session
+                .services
+                .project_env_manager
+                .environment_for_command(
+                    project_env_cwd,
+                    request.project_env,
+                    request.cancellation_token.child_token(),
+                )
+                .await
+                .map_err(|err| UnifiedExecError::process_failed(err.model_message()))?
+        {
+            snapshot_env_overrides.extend(overlay.env.clone());
+            apply_project_env_overlay(
+                &mut env,
+                overlay.as_ref(),
+                &context
+                    .turn
+                    .config
+                    .permissions
+                    .shell_environment_policy
+                    .r#set,
+                Some(context.session.thread_id.to_string()),
+            );
+        }
+        snapshot_env_overrides.extend(
+            context
+                .turn
+                .config
+                .permissions
+                .shell_environment_policy
+                .r#set
+                .clone(),
+        );
         let env = apply_unified_exec_env(env);
         let exec_server_env_config = ExecServerEnvConfig {
             policy: exec_env_policy_from_shell_policy(
@@ -1138,13 +1188,7 @@ impl UnifiedExecProcessManager {
             turn_environment: request.turn_environment.clone(),
             env,
             exec_server_env_config: Some(exec_server_env_config),
-            explicit_env_overrides: context
-                .turn
-                .config
-                .permissions
-                .shell_environment_policy
-                .r#set
-                .clone(),
+            snapshot_env_overrides,
             network: request.network.clone(),
             tty: request.tty,
             sandbox_permissions: request.sandbox_permissions,

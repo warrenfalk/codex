@@ -945,6 +945,7 @@ fn thread_shell_command_params_round_trip() {
     let params = ThreadShellCommandParams {
         thread_id: "thr_123".to_string(),
         command: "printf 'hello world\\n'".to_string(),
+        project_env: None,
     };
 
     let value = serde_json::to_value(&params).expect("serialize thread/shellCommand params");
@@ -953,6 +954,7 @@ fn thread_shell_command_params_round_trip() {
         json!({
             "threadId": "thr_123",
             "command": "printf 'hello world\\n'",
+            "projectEnv": null,
         })
     );
 

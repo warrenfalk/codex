@@ -203,6 +203,7 @@ impl ShellCommandHandler {
             shell_type,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
+            project_env: params.project_env.unwrap_or_default(),
             session,
             turn,
             tracker,

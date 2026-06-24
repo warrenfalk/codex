@@ -19,6 +19,7 @@ use crate::permissions::FileSystemSandboxKind;
 use crate::permissions::FileSystemSandboxPolicy;
 use crate::permissions::FileSystemSpecialPath;
 use crate::permissions::NetworkSandboxPolicy;
+use crate::protocol::ProjectEnvMode;
 use crate::protocol::SandboxPolicy;
 use crate::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -1774,6 +1775,9 @@ pub struct SearchToolCallParams {
 pub struct ShellCommandToolCallParams {
     pub command: String,
     pub workdir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project_env: Option<ProjectEnvMode>,
 
     /// Whether to run the shell with login shell semantics
     #[serde(skip_serializing_if = "Option::is_none")]

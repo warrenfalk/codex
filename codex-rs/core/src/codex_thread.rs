@@ -5,6 +5,7 @@ use crate::session::SessionSettingsUpdate;
 use crate::session::SteerInputError;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
+use codex_project_env::ProjectEnvStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -51,6 +52,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::sync::broadcast;
 use tokio::sync::watch;
 
 use codex_rollout::state_db::StateDbHandle;
@@ -423,10 +425,25 @@ impl CodexThread {
         self.codex.session.list_background_terminals().await
     }
 
+    pub async fn project_env_status(&self) -> ProjectEnvStatus {
+        self.codex.session.project_env_status().await
+    }
+
+    pub fn subscribe_project_env_status(&self) -> broadcast::Receiver<ProjectEnvStatus> {
+        self.codex.session.subscribe_project_env_status()
+    }
+
     pub async fn terminate_background_terminal(&self, process_id: i32) -> bool {
         self.codex
             .session
             .terminate_background_terminal(process_id)
+            .await
+    }
+
+    pub async fn cancel_project_env_build(&self, process_id: &str) -> bool {
+        self.codex
+            .session
+            .cancel_project_env_build(process_id)
             .await
     }
 

@@ -254,7 +254,7 @@ async fn queued_bang_shell_dispatches_after_active_turn() {
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
     match op_rx.try_recv() {
-        Ok(Op::RunUserShellCommand { command }) => assert_eq!(command, "echo hi"),
+        Ok(Op::RunUserShellCommand { command, .. }) => assert_eq!(command, "echo hi"),
         other => panic!("expected queued shell command op, got {other:?}"),
     }
     assert_eq!(next_add_to_history_event(&mut rx), "!echo hi");
@@ -310,7 +310,7 @@ async fn queued_bang_shell_waits_for_user_shell_completion_before_next_input() {
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
     match op_rx.try_recv() {
-        Ok(Op::RunUserShellCommand { command }) => assert_eq!(command, "echo hi"),
+        Ok(Op::RunUserShellCommand { command, .. }) => assert_eq!(command, "echo hi"),
         other => panic!("expected queued shell command op, got {other:?}"),
     }
     assert_eq!(next_add_to_history_event(&mut rx), "!echo hi");

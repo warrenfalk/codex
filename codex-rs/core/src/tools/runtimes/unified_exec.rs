@@ -70,7 +70,7 @@ pub struct UnifiedExecRequest {
     pub turn_environment: TurnEnvironment,
     pub env: HashMap<String, String>,
     pub exec_server_env_config: Option<ExecServerEnvConfig>,
-    pub explicit_env_overrides: HashMap<String, String>,
+    pub snapshot_env_overrides: HashMap<String, String>,
     pub network: Option<NetworkProxy>,
     pub tty: bool,
     pub sandbox_permissions: SandboxPermissions,
@@ -337,7 +337,8 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
                     ))))
                 })?;
         }
-        let explicit_env_overrides = req.explicit_env_overrides.clone();
+        let environment_is_remote = req.turn_environment.environment.is_remote();
+        let snapshot_env_overrides = req.snapshot_env_overrides.clone();
         #[cfg(unix)]
         let runtime_path_prepends = {
             let mut runtime_path_prepends = RuntimePathPrepends::default();
@@ -365,7 +366,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
                 base_command,
                 shell,
                 shell_snapshot_location.as_ref(),
-                &explicit_env_overrides,
+                &snapshot_env_overrides,
                 &env,
                 &runtime_path_prepends,
             )
@@ -562,7 +563,7 @@ mod tests {
             turn_environment: test_turn_environment(sandbox_cwd.clone().into()),
             env: HashMap::new(),
             exec_server_env_config: None,
-            explicit_env_overrides: HashMap::new(),
+            snapshot_env_overrides: HashMap::new(),
             network: None,
             tty: false,
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -666,7 +667,7 @@ mod tests {
             turn_environment: test_turn_environment(cwd.into()),
             env: HashMap::new(),
             exec_server_env_config: None,
-            explicit_env_overrides: HashMap::new(),
+            snapshot_env_overrides: HashMap::new(),
             network: None,
             tty: false,
             sandbox_permissions,

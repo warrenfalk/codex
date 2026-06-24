@@ -1,6 +1,8 @@
 use codex_features::Feature;
+use codex_project_env::apply_overlay as apply_project_env_overlay;
 use codex_protocol::models::ShellCommandToolCallParams;
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -25,6 +27,7 @@ use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use crate::tools::sandboxing::ToolCtx;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ExecCommandSource;
+use codex_protocol::protocol::ProjectEnvMode;
 use codex_tools::ToolName;
 use codex_utils_path_uri::PathUri;
 
@@ -51,6 +54,7 @@ struct RunExecLikeArgs {
     shell_type: Option<ShellType>,
     additional_permissions: Option<AdditionalPermissionProfile>,
     prefix_rule: Option<Vec<String>>,
+    project_env: ProjectEnvMode,
     session: Arc<crate::session::session::Session>,
     turn: Arc<TurnContext>,
     tracker: crate::tools::context::SharedTurnDiffTracker,
@@ -67,6 +71,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         shell_type,
         additional_permissions,
         prefix_rule,
+        project_env,
         session,
         turn,
         tracker,
@@ -81,12 +86,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
     };
     let fs = turn_environment.environment.get_filesystem();
 
-    let explicit_env_overrides = turn
-        .config
-        .permissions
-        .shell_environment_policy
-        .r#set
-        .clone();
+    let mut snapshot_env_overrides = HashMap::new();
     let exec_permission_approvals_enabled =
         session.features().enabled(Feature::ExecPermissionApprovals);
     let requested_additional_permissions = additional_permissions.clone();
@@ -157,6 +157,35 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         return Ok(output);
     }
 
+    let mut exec_env = exec_params.env.clone();
+    if !turn_environment.environment.is_remote()
+        && let Some(overlay) = session
+            .services
+            .project_env_manager
+            .environment_for_command(
+                &exec_params.cwd,
+                project_env,
+                cancellation_token.child_token(),
+            )
+            .await
+            .map_err(|err| FunctionCallError::RespondToModel(err.model_message()))?
+    {
+        snapshot_env_overrides.extend(overlay.env.clone());
+        apply_project_env_overlay(
+            &mut exec_env,
+            overlay.as_ref(),
+            &turn.config.permissions.shell_environment_policy.r#set,
+            Some(session.thread_id.to_string()),
+        );
+    }
+    snapshot_env_overrides.extend(
+        turn.config
+            .permissions
+            .shell_environment_policy
+            .r#set
+            .clone(),
+    );
+
     let source = ExecCommandSource::Agent;
     let emitter = ToolEmitter::shell(exec_params.command.clone(), exec_params.cwd.clone(), source);
     let event_ctx = ToolEventCtx::new(
@@ -192,8 +221,8 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         cwd: exec_params.cwd.clone(),
         timeout_ms: exec_params.expiration.timeout_ms(),
         cancellation_token,
-        env: exec_params.env.clone(),
-        explicit_env_overrides,
+        env: exec_env,
+        snapshot_env_overrides,
         network: exec_params.network.clone(),
         sandbox_permissions: effective_additional_permissions.sandbox_permissions,
         additional_permissions: normalized_additional_permissions,

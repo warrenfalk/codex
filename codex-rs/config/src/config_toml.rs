@@ -185,6 +185,9 @@ pub struct ConfigToml {
     #[serde(default)]
     pub shell_environment_policy: ShellEnvironmentPolicyToml,
 
+    /// Disable automatic direnv/nix-direnv project environment loading.
+    pub disable_project_env: Option<bool>,
+
     /// Whether the model may request a login shell for shell-based tools.
     /// Default to `true`
     ///

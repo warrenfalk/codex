@@ -1703,6 +1703,30 @@
             },
             "method": {
               "enum": [
+                "thread/projectEnv/read"
+              ],
+              "title": "Thread/projectEnv/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadProjectEnvReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/projectEnv/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/approveGuardianDeniedAction"
               ],
               "title": "Thread/approveGuardianDeniedActionRequestMethod",
@@ -12034,6 +12058,13 @@
       ],
       "type": "object"
     },
+    "ProjectEnvMode": {
+      "enum": [
+        "auto",
+        "bypass"
+      ],
+      "type": "string"
+    },
     "RateLimitReachedType": {
       "enum": [
         "rate_limit_reached",
@@ -13865,6 +13896,26 @@
             "params"
           ],
           "title": "Thread/status/changedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/projectEnv/statusChanged"
+              ],
+              "title": "Thread/projectEnv/statusChangedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadProjectEnvStatusChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/projectEnv/statusChangedNotification",
           "type": "object"
         },
         {
@@ -17832,6 +17883,107 @@
       "title": "ThreadNameUpdatedNotification",
       "type": "object"
     },
+    "ThreadProjectEnvReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadProjectEnvReadParams",
+      "type": "object"
+    },
+    "ThreadProjectEnvReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "projectEnv": {
+          "$ref": "#/definitions/ThreadProjectEnvStatus"
+        }
+      },
+      "required": [
+        "projectEnv"
+      ],
+      "title": "ThreadProjectEnvReadResponse",
+      "type": "object"
+    },
+    "ThreadProjectEnvState": {
+      "enum": [
+        "disabled",
+        "none",
+        "building",
+        "ready",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "ThreadProjectEnvStatus": {
+      "properties": {
+        "cwd": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "envrcPath": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadProjectEnvState"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "watchedInputCount": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "threadId",
+        "updatedAt",
+        "watchedInputCount"
+      ],
+      "type": "object"
+    },
+    "ThreadProjectEnvStatusChangedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "projectEnv": {
+          "$ref": "#/definitions/ThreadProjectEnvStatus"
+        }
+      },
+      "required": [
+        "projectEnv"
+      ],
+      "title": "ThreadProjectEnvStatusChangedNotification",
+      "type": "object"
+    },
     "ThreadReadParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -18487,6 +18639,17 @@
         "command": {
           "description": "Shell command string evaluated by the thread's configured shell. Unlike `command/exec`, this intentionally preserves shell syntax such as pipes, redirects, and quoting. This runs unsandboxed with full access rather than inheriting the thread sandbox policy.",
           "type": "string"
+        },
+        "projectEnv": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProjectEnvMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Project environment loading mode for this command. Omitted defaults to `auto`."
         },
         "threadId": {
           "type": "string"

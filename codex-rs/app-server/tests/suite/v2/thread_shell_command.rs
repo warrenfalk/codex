@@ -78,6 +78,7 @@ async fn thread_shell_command_history_responses_exclude_persisted_command_execut
         .send_thread_shell_command_request(ThreadShellCommandParams {
             thread_id: thread.id.clone(),
             command: shell_command,
+            project_env: None,
         })
         .await?;
     let shell_resp: JSONRPCResponse = timeout(
@@ -213,6 +214,7 @@ async fn thread_shell_command_returns_error_when_local_environment_is_disabled()
         .send_thread_shell_command_request(ThreadShellCommandParams {
             thread_id: thread.id,
             command: "pwd".to_string(),
+            project_env: None,
         })
         .await?;
     let error = mcp
@@ -311,6 +313,7 @@ async fn thread_shell_command_uses_existing_active_turn() -> Result<()> {
         .send_thread_shell_command_request(ThreadShellCommandParams {
             thread_id: thread.id.clone(),
             command: shell_command,
+            project_env: None,
         })
         .await?;
     let shell_resp: JSONRPCResponse = timeout(

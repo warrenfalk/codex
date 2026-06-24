@@ -8,6 +8,8 @@ use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillError;
 use crate::state::ActiveTurn;
 use codex_extension_api::ExtensionDataInit;
+use codex_project_env::ProjectEnvConfig;
+use codex_project_env::ProjectEnvManager;
 use codex_protocol::SessionId;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
@@ -1027,6 +1029,9 @@ impl Session {
                 unified_exec_manager: UnifiedExecProcessManager::new(
                     config.background_terminal_max_timeout,
                 ),
+                project_env_manager: ProjectEnvManager::new(ProjectEnvConfig::from_current_process(
+                    config.disable_project_env,
+                )),
                 shell_zsh_path: config.zsh_path.clone(),
                 main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
                 analytics_events_client,
@@ -1147,6 +1152,7 @@ impl Session {
             for event in events {
                 sess.send_event_raw(event).await;
             }
+            sess.prewarm_project_env_for_primary_local_cwd().await;
 
             let host_owned_codex_apps_enabled = config
                 .features
