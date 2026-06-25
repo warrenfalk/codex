@@ -22,6 +22,7 @@ expression: commands
 /fork - fork the current chat
 /app - continue this session in Codex Desktop
 /init - create an AGENTS.md file with instructions for Codex
+/init-update - create or update an AGENTS.md file based on the current repo
 /compact - summarize conversation to prevent hitting the context limit
 /agent - switch the active agent thread
 /side - start a side conversation in an ephemeral fork

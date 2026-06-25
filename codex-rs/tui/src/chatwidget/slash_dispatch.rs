@@ -227,6 +227,11 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
+            SlashCommand::InitUpdate => {
+                const INIT_UPDATE_PROMPT: &str =
+                    include_str!("../../prompt_for_init_update_command.md");
+                self.submit_user_message(INIT_UPDATE_PROMPT.to_string().into());
+            }
             SlashCommand::Compact => {
                 self.clear_token_usage();
                 if !self.bottom_pane.is_task_running() {
@@ -1048,6 +1053,7 @@ impl ChatWidget {
             | SlashCommand::Resume
             | SlashCommand::Fork
             | SlashCommand::Init
+            | SlashCommand::InitUpdate
             | SlashCommand::Compact
             | SlashCommand::Review
             | SlashCommand::Model
