@@ -638,6 +638,27 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 }
 
 #[tokio::test]
+async fn slash_init_update_queues_update_prompt_without_loaded_instruction_sources() {
+    const INIT_UPDATE_PROMPT: &str = include_str!("../../../prompt_for_init_update_command.md");
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.instruction_source_paths = vec![chat.config.cwd.join("project-instructions.md")];
+
+    submit_composer_text(&mut chat, "/init-update");
+
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    assert_eq!(
+        chat.input_queue
+            .queued_user_messages
+            .front()
+            .map(|message| message.text.as_str()),
+        Some(INIT_UPDATE_PROMPT)
+    );
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_no_submit_op(&mut op_rx);
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/init-update");
+}
+
+#[tokio::test]
 async fn bare_slash_command_is_available_from_local_recall_after_dispatch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
