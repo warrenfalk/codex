@@ -641,7 +641,9 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 async fn slash_init_update_queues_update_prompt_without_loaded_instruction_sources() {
     const INIT_UPDATE_PROMPT: &str = include_str!("../../../prompt_for_init_update_command.md");
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.instruction_source_paths = vec![chat.config.cwd.join("project-instructions.md")];
+    chat.instruction_source_paths = vec![codex_utils_path_uri::PathUri::from_abs_path(
+        &chat.config.cwd.join("project-instructions.md"),
+    )];
 
     submit_composer_text(&mut chat, "/init-update");
 
