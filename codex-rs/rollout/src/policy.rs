@@ -77,6 +77,7 @@ pub fn should_persist_response_item_for_memories(item: &ResponseItem) -> bool {
 pub fn should_persist_event_msg(ev: &EventMsg) -> bool {
     match ev {
         EventMsg::UserMessage(_)
+        | EventMsg::NoteToSelf(_)
         | EventMsg::AgentMessage(_)
         | EventMsg::AgentReasoning(_)
         | EventMsg::AgentReasoningRawContent(_)

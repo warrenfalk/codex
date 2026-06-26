@@ -1048,6 +1048,16 @@ impl MessageProcessor {
                 }
                 .instrument(span),
             ),
+            ClientRequest::ThreadNoteCreate { params, .. } => QueuedInitializedRequest::new(
+                rpc_gate,
+                async move {
+                    let result = processor.thread_processor.thread_note_create(params).await;
+                    processor
+                        .send_initialized_request_result(connection_request_id, result)
+                        .await;
+                }
+                .instrument(span),
+            ),
             ClientRequest::ThreadTurnsList { params, .. } => QueuedInitializedRequest::new(
                 rpc_gate,
                 async move {
@@ -1425,6 +1435,9 @@ impl MessageProcessor {
             }
             ClientRequest::ThreadRead { params, .. } => {
                 self.thread_processor.thread_read(params).await
+            }
+            ClientRequest::ThreadNoteCreate { params, .. } => {
+                self.thread_processor.thread_note_create(params).await
             }
             ClientRequest::ThreadTurnsList { params, .. } => {
                 self.thread_processor.thread_turns_list(params).await

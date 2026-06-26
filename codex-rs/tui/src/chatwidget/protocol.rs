@@ -238,6 +238,23 @@ impl ChatWidget {
         // this TUI already rendered locally. Once that turn ends, another
         // client can submit the same text and it still needs its own user cell.
         self.last_rendered_user_message_display = None;
+        if matches!(notification.turn.status, TurnStatus::Completed)
+            && !notification.turn.items.is_empty()
+            && notification
+                .turn
+                .items
+                .iter()
+                .all(|item| matches!(item, ThreadItem::NoteToSelf { .. }))
+        {
+            let turn_id = notification.turn.id;
+            let render_source =
+                replay_kind.map_or(ThreadItemRenderSource::Live, ThreadItemRenderSource::Replay);
+            for item in notification.turn.items {
+                self.handle_thread_item(item, turn_id.clone(), render_source);
+            }
+            self.request_redraw();
+            return;
+        }
         match notification.turn.status {
             TurnStatus::Completed => {
                 self.last_non_retry_error = None;

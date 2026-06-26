@@ -421,6 +421,8 @@ export type { ThreadMetadataGitInfoUpdateParams } from "./ThreadMetadataGitInfoU
 export type { ThreadMetadataUpdateParams } from "./ThreadMetadataUpdateParams";
 export type { ThreadMetadataUpdateResponse } from "./ThreadMetadataUpdateResponse";
 export type { ThreadNameUpdatedNotification } from "./ThreadNameUpdatedNotification";
+export type { ThreadNoteCreateParams } from "./ThreadNoteCreateParams";
+export type { ThreadNoteCreateResponse } from "./ThreadNoteCreateResponse";
 export type { ThreadProjectEnvReadParams } from "./ThreadProjectEnvReadParams";
 export type { ThreadProjectEnvReadResponse } from "./ThreadProjectEnvReadResponse";
 export type { ThreadProjectEnvState } from "./ThreadProjectEnvState";

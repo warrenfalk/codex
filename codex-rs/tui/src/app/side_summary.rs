@@ -313,6 +313,7 @@ impl App {
                 (!text.is_empty()).then(|| text.to_string())
             }
             ThreadItem::UserMessage { .. }
+            | ThreadItem::NoteToSelf { .. }
             | ThreadItem::HookPrompt { .. }
             | ThreadItem::Reasoning { .. }
             | ThreadItem::CommandExecution { .. }

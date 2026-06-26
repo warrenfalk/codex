@@ -165,6 +165,7 @@ mod tests {
     use codex_protocol::openai_models::ReasoningEffort;
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::NoteToSelfEvent;
     use codex_protocol::protocol::RolloutItem;
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionMeta;
@@ -258,6 +259,20 @@ mod tests {
             local_images: vec![],
             text_elements: vec![],
             ..Default::default()
+        }));
+
+        apply_rollout_item(&mut metadata, &item, "test-provider");
+
+        assert_eq!(metadata.first_user_message, None);
+        assert_eq!(metadata.preview, None);
+        assert_eq!(metadata.title, "");
+    }
+
+    #[test]
+    fn event_msg_note_to_self_does_not_set_title_preview_or_first_user_message() {
+        let mut metadata = metadata_for_test();
+        let item = RolloutItem::EventMsg(EventMsg::NoteToSelf(NoteToSelfEvent {
+            note: "private reminder".to_string(),
         }));
 
         apply_rollout_item(&mut metadata, &item, "test-provider");

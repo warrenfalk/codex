@@ -397,6 +397,12 @@ impl App {
                 self.chat_widget.prepare_local_op_submission(&op);
                 self.submit_active_thread_op(app_server, op).await?;
             }
+            AppEvent::CreateNoteToSelf { thread_id, note } => {
+                if let Err(err) = app_server.thread_note_create(thread_id, note).await {
+                    self.chat_widget
+                        .add_error_message(format!("Failed to create note to self: {err}"));
+                }
+            }
             AppEvent::RestoreCancelledTurn(prompt) => {
                 self.apply_cancelled_turn_edit(prompt);
             }

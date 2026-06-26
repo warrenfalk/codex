@@ -35,6 +35,7 @@ const SIDE_STARTING_CONTEXT_LABEL: &str = "Side starting...";
 const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to close the side conversation first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
+const NTS_USAGE: &str = "Usage: /nts <note>";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
@@ -272,6 +273,9 @@ impl ChatWidget {
                         Some(GOAL_USAGE_HINT.to_string()),
                     );
                 }
+            }
+            SlashCommand::Nts => {
+                self.add_error_message(NTS_USAGE.to_string());
             }
             SlashCommand::Side | SlashCommand::Btw => {
                 self.request_empty_side_conversation(cmd);
@@ -653,6 +657,21 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Nts if !trimmed.is_empty() => {
+                let Some(thread_id) = self.thread_id else {
+                    self.add_error_message(
+                        "'/nts' is unavailable before the session starts.".to_string(),
+                    );
+                    if source == SlashCommandDispatchSource::Live {
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                    return;
+                };
+                self.app_event_tx.send(AppEvent::CreateNoteToSelf {
+                    thread_id,
+                    note: trimmed.to_string(),
+                });
+            }
             SlashCommand::Usage => {
                 if self.ensure_usage_command_available() {
                     match tokens::TokenActivityView::parse(trimmed) {
@@ -1044,6 +1063,7 @@ impl ChatWidget {
             | SlashCommand::Diff
             | SlashCommand::App
             | SlashCommand::Rename
+            | SlashCommand::Nts
             | SlashCommand::TestApproval => QueueDrain::Continue,
             SlashCommand::Feedback
             | SlashCommand::New

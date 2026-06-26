@@ -3940,6 +3940,21 @@
       ],
       "type": "object"
     },
+    "ThreadNoteCreateParams": {
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "note",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadProjectEnvReadParams": {
       "properties": {
         "threadId": {
@@ -5313,6 +5328,30 @@
         "params"
       ],
       "title": "Thread/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/note/create"
+          ],
+          "title": "Thread/note/createRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadNoteCreateParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/note/createRequest",
       "type": "object"
     },
     {

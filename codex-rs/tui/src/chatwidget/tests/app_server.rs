@@ -367,6 +367,39 @@ async fn live_app_server_turn_completed_clears_working_status_after_answer_item(
 }
 
 #[tokio::test]
+async fn note_to_self_completed_turn_renders_note_without_task_lifecycle() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        ServerNotification::TurnCompleted(TurnCompletedNotification {
+            thread_id: thread_id.to_string(),
+            turn: AppServerTurn {
+                id: "note-turn".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: vec![AppServerThreadItem::NoteToSelf {
+                    id: "note-1".to_string(),
+                    note: "remember this".to_string(),
+                }],
+                status: AppServerTurnStatus::Completed,
+                error: None,
+                started_at: None,
+                completed_at: Some(0),
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1);
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("note_to_self_completed_turn", rendered);
+    assert!(!chat.bottom_pane.is_task_running());
+}
+
+#[tokio::test]
 async fn live_app_server_turn_started_sets_feedback_turn_id() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

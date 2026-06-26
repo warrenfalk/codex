@@ -357,6 +357,7 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::PlanUpdate(_)
                     | EventMsg::TurnAborted(_)
                     | EventMsg::UserMessage(_)
+                    | EventMsg::NoteToSelf(_)
                     | EventMsg::ShutdownComplete
                     | EventMsg::ImageGenerationBegin(_)
                     | EventMsg::ImageGenerationEnd(_)

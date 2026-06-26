@@ -112,7 +112,7 @@ pub(crate) fn thread_to_transcript_cells(
             }
             other => {
                 if let Some(cell) = fallback_transcript_cell(other) {
-                    cells.push(Arc::new(cell));
+                    cells.push(cell);
                 }
             }
         }
@@ -125,8 +125,13 @@ pub(crate) fn thread_to_transcript_cells(
     cells
 }
 
-fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
+fn fallback_transcript_cell(item: &ThreadItem) -> Option<Arc<dyn HistoryCell>> {
     let lines = match item {
+        ThreadItem::NoteToSelf { note, .. } => {
+            return Some(Arc::new(crate::history_cell::new_note_to_self(
+                note.clone(),
+            )));
+        }
         ThreadItem::HookPrompt { fragments, .. } => fragments
             .iter()
             .map(|fragment| {
@@ -234,5 +239,5 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::Reasoning { .. }
         | ThreadItem::Sleep { .. } => return None,
     };
-    (!lines.is_empty()).then(|| PlainHistoryCell::new(lines))
+    (!lines.is_empty()).then(|| Arc::new(PlainHistoryCell::new(lines)) as Arc<dyn HistoryCell>)
 }
