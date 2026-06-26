@@ -155,6 +155,7 @@ Example with notification opt-out:
 - `thread/goal/clear` — clear the current persisted goal for a materialized thread; returns whether a goal was removed and emits `thread/goal/cleared` when state changes.
 - `thread/goal/updated` — notification emitted whenever a thread goal changes; includes the full current goal.
 - `thread/goal/cleared` — notification emitted whenever a thread goal is removed.
+- `thread/note/create` — append a visible note-to-self item to a thread without starting or steering an agent turn. The server trims the note, rejects empty notes, persists the note in thread history, and returns `{turnId, item}` where `item.type` is `noteToSelf`.
 - `thread/settings/updated` — experimental notification emitted to subscribed clients when a loaded thread’s effective next-turn settings change; includes `threadId` and the full `threadSettings`.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).
 - `event/firehose` — subscribe the current initialized connection as a passive observer of outbound app-server events; returns `{}`. The connection receives observed broadcast notifications, thread-scoped notifications, targeted notifications, and server-initiated requests without becoming a thread subscriber.
@@ -495,6 +496,23 @@ Use `thread/read` to fetch a stored thread by id without resuming it. Pass `incl
     "thread": { "id": "thr_123", "status": { "type": "notLoaded" }, "turns": [ ... ] }
 } }
 ```
+
+### Example: Create a note to self
+
+Use `thread/note/create` to append a visible note to a thread without adding user input to model context or starting generation. The server trims only outer whitespace and rejects empty notes with JSON-RPC `-32602`.
+
+```json
+{ "method": "thread/note/create", "id": 24, "params": {
+    "threadId": "thr_123",
+    "note": "Check logs before retrying."
+} }
+{ "id": 24, "result": {
+    "turnId": "turn_note_1",
+    "item": { "type": "noteToSelf", "id": "item_note_1", "note": "Check logs before retrying." }
+} }
+```
+
+When a turn is already active, the server appends the `noteToSelf` item to that active turn and emits `item/completed`. When the thread is idle, the server creates a completed display-only turn containing the note and emits `turn/completed`. Notes are returned by `thread/read` and transcript-style history, but they do not affect first-message/title metadata, memory extraction, compaction inputs, or future model-visible context.
 
 ### Example: List thread turns (experimental)
 
@@ -1400,6 +1418,7 @@ Today both notifications carry an empty `items` array even when item events were
 - `sleep` — `{id, durationMs}` emitted while the agent waits for a duration or new input.
 - `enteredReviewMode` — `{id, review}` sent when the reviewer starts; `review` is a short user-facing label such as `"current changes"` or the requested target description.
 - `exitedReviewMode` — `{id, review}` emitted when the reviewer finishes; `review` is the full plain-text review (usually, overall notes plus bullet point findings).
+- `noteToSelf` — `{id, note}` containing a user-visible note appended through `thread/note/create` or the TUI `/nts` command. Notes are visible history only; they are not user messages and are not sent to the model.
 - `contextCompaction` — `{id}` emitted when codex compacts the conversation history. This can happen automatically.
 - `compacted` - `{threadId, turnId}` when codex compacts the conversation history. This can happen automatically. **Deprecated:** Use `contextCompaction` instead.
 

@@ -109,6 +109,31 @@ fn next_add_to_history_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEv
     }
 }
 
+fn next_create_note_to_self_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> (ThreadId, String) {
+    loop {
+        match rx.try_recv() {
+            Ok(AppEvent::CreateNoteToSelf { thread_id, note }) => return (thread_id, note),
+            Ok(_) => continue,
+            Err(TryRecvError::Empty) => {
+                panic!("expected CreateNoteToSelf event but queue was empty")
+            }
+            Err(TryRecvError::Disconnected) => {
+                panic!("expected CreateNoteToSelf event but channel closed")
+            }
+        }
+    }
+}
+
+fn rendered_inserted_history(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> String {
+    drain_insert_history(rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[tokio::test]
 async fn service_tier_commands_lowercase_catalog_names() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
@@ -621,6 +646,70 @@ async fn ctrl_d_with_modal_open_does_not_quit() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
 
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn nts_slash_command_emits_note_event_without_submitting_turn() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    submit_composer_text(&mut chat, "/nts remember this");
+
+    let (actual_thread_id, note) = next_create_note_to_self_event(&mut rx);
+    assert_eq!(actual_thread_id, thread_id);
+    assert_eq!(note, "remember this");
+    assert_no_submit_op(&mut op_rx);
+    assert_eq!(
+        recall_latest_after_clearing(&mut chat),
+        "/nts remember this"
+    );
+}
+
+#[tokio::test]
+async fn nts_slash_command_reports_usage_for_empty_note() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    submit_composer_text(&mut chat, "/nts");
+
+    let rendered = rendered_inserted_history(&mut rx);
+    assert!(
+        rendered.contains("Usage: /nts <note>"),
+        "expected usage message, got {rendered:?}"
+    );
+    assert_no_submit_op(&mut op_rx);
+}
+
+#[tokio::test]
+async fn nts_slash_command_is_unavailable_before_session_starts() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/nts remember this");
+
+    let rendered = rendered_inserted_history(&mut rx);
+    assert!(
+        rendered.contains("'/nts' is unavailable before the session starts."),
+        "expected unavailable message, got {rendered:?}"
+    );
+    assert_no_submit_op(&mut op_rx);
+}
+
+#[tokio::test]
+async fn active_turn_nts_slash_command_emits_note_event_without_queued_turn() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    handle_turn_started(&mut chat, "turn-1");
+
+    submit_composer_text(&mut chat, "/nts during turn");
+
+    let (actual_thread_id, note) = next_create_note_to_self_event(&mut rx);
+    assert_eq!(actual_thread_id, thread_id);
+    assert_eq!(note, "during turn");
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert_no_submit_op(&mut op_rx);
 }
 
 #[tokio::test]

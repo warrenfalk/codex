@@ -674,6 +674,15 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
+    pub(crate) async fn thread_note_create(
+        &self,
+        params: ThreadNoteCreateParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_note_create_response_inner(params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_turns_list(
         &self,
         params: ThreadTurnsListParams,
@@ -2198,6 +2207,94 @@ impl ThreadRequestProcessor {
             .await
             .map_err(thread_read_view_error)?;
         Ok(ThreadReadResponse { thread })
+    }
+
+    async fn thread_note_create_response_inner(
+        &self,
+        params: ThreadNoteCreateParams,
+    ) -> Result<ThreadNoteCreateResponse, JSONRPCErrorError> {
+        let ThreadNoteCreateParams { thread_id, note } = params;
+        let note = note.trim().to_string();
+        if note.is_empty() {
+            return Err(invalid_params("note must not be empty"));
+        }
+
+        let (thread_uuid, thread) = self.load_thread(&thread_id).await?;
+        let active_turn_id = {
+            let thread_state = self.thread_state_manager.thread_state(thread_uuid).await;
+            let state = thread_state.lock().await;
+            state.active_turn_id_if_explicit()
+        };
+        let event = EventMsg::NoteToSelf(NoteToSelfEvent { note });
+        thread
+            .append_rollout_items(&[RolloutItem::EventMsg(event.clone())])
+            .await
+            .map_err(|err| internal_error(format!("failed to create note to self: {err}")))?;
+        if let Some(active_turn_id) = active_turn_id.as_deref() {
+            let thread_state = self.thread_state_manager.thread_state(thread_uuid).await;
+            let mut state = thread_state.lock().await;
+            if state.active_turn_id_if_explicit().as_deref() == Some(active_turn_id) {
+                state.track_current_turn_event(active_turn_id, &event);
+            }
+        }
+
+        let history = thread
+            .load_history(/*include_archived*/ true)
+            .await
+            .map_err(|err| internal_error(format!("failed to load thread history: {err}")))?;
+        let turns = build_api_turns_from_rollout_items(&history.items);
+        let (turn, item) = turns
+            .iter()
+            .rev()
+            .find_map(|turn| {
+                turn.items
+                    .iter()
+                    .rev()
+                    .find(|item| matches!(item, ThreadItem::NoteToSelf { .. }))
+                    .cloned()
+                    .map(|item| (turn.clone(), item))
+            })
+            .ok_or_else(|| {
+                internal_error(format!(
+                    "failed to reconstruct note to self for thread {thread_uuid}"
+                ))
+            })?;
+
+        let subscribed_connection_ids = self
+            .thread_state_manager
+            .subscribed_connection_ids(thread_uuid)
+            .await;
+        let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+            self.outgoing.clone(),
+            subscribed_connection_ids,
+            thread_uuid,
+        );
+        if matches!(turn.status, TurnStatus::InProgress)
+            || active_turn_id.as_deref() == Some(turn.id.as_str())
+        {
+            let completed = ItemCompletedNotification {
+                thread_id: thread_uuid.to_string(),
+                turn_id: turn.id.clone(),
+                completed_at_ms: chrono::Utc::now().timestamp_millis(),
+                item: item.clone(),
+            };
+            thread_outgoing
+                .send_server_notification(ServerNotification::ItemCompleted(completed))
+                .await;
+        } else {
+            let completed = TurnCompletedNotification {
+                thread_id: thread_uuid.to_string(),
+                turn: turn.clone(),
+            };
+            thread_outgoing
+                .send_server_notification(ServerNotification::TurnCompleted(completed))
+                .await;
+        }
+
+        Ok(ThreadNoteCreateResponse {
+            turn_id: turn.id,
+            item,
+        })
     }
 
     /// Builds the API view for `thread/read` from persisted metadata plus optional live state.

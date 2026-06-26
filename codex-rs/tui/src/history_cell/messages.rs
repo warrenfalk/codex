@@ -12,6 +12,11 @@ pub(crate) struct UserHistoryCell {
     pub remote_image_urls: Vec<String>,
 }
 
+#[derive(Debug)]
+pub(crate) struct NoteToSelfHistoryCell {
+    note: String,
+}
+
 /// Build logical lines for a user message with styled text elements.
 ///
 /// This preserves explicit newlines while interleaving element spans and skips
@@ -190,6 +195,40 @@ impl HistoryCell for UserHistoryCell {
                     .map(|(idx, _url)| Line::from(local_image_label_text(idx.saturating_add(1)))),
             );
         }
+        lines
+    }
+}
+
+impl HistoryCell for NoteToSelfHistoryCell {
+    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let wrap_width = width
+            .saturating_sub(
+                LIVE_PREFIX_COLS + 1, /* keep a one-column right margin for wrapping */
+            )
+            .max(1);
+        let style = user_message_style();
+        let mut lines: Vec<Line<'static>> = vec![Line::from("").style(style)];
+        lines.push(Line::from(vec!["  ".into(), "Note to self".magenta().bold()]).style(style));
+
+        let note_without_trailing_newlines = self.note.trim_end_matches(['\r', '\n']);
+        let wrapped_note = adaptive_wrap_lines(
+            note_without_trailing_newlines
+                .split('\n')
+                .map(|line| Line::from(line).style(style)),
+            RtOptions::new(usize::from(wrap_width))
+                .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit),
+        );
+        let wrapped_note = trim_trailing_blank_lines(wrapped_note);
+        lines.extend(prefix_lines(wrapped_note, "  ".into(), "  ".into()));
+        lines.push(Line::from("").style(style));
+        lines
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from("Note to self")];
+        lines.extend(raw_lines_from_source(
+            self.note.trim_end_matches(['\r', '\n']),
+        ));
         lines
     }
 }
@@ -488,6 +527,11 @@ pub(crate) fn new_user_prompt(
         remote_image_urls,
     }
 }
+
+pub(crate) fn new_note_to_self(note: String) -> NoteToSelfHistoryCell {
+    NoteToSelfHistoryCell { note }
+}
+
 /// Create the reasoning history cell emitted at the end of a reasoning block.
 ///
 /// The helper snapshots `cwd` into the returned cell so local file links render the same way they

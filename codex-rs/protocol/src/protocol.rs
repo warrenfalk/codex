@@ -1319,6 +1319,9 @@ pub enum EventMsg {
     /// User/system input message (what was sent to the model)
     UserMessage(UserMessageEvent),
 
+    /// User-visible note recorded in the thread without entering model-visible history.
+    NoteToSelf(NoteToSelfEvent),
+
     /// Reasoning event from agent.
     AgentReasoning(AgentReasoningEvent),
 
@@ -2328,6 +2331,11 @@ pub struct UserMessageEvent {
     /// UI-defined spans within `message` used to render or persist special elements.
     #[serde(default)]
     pub text_elements: Vec<crate::user_input::TextElement>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct NoteToSelfEvent {
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

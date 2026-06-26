@@ -43,6 +43,7 @@ use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::McpToolCallBeginEvent;
 use codex_protocol::protocol::McpToolCallEndEvent;
+use codex_protocol::protocol::NoteToSelfEvent;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::ReviewOutputEvent;
@@ -315,6 +316,7 @@ impl ThreadHistoryBuilder {
     pub fn handle_event(&mut self, event: &EventMsg) {
         match event {
             EventMsg::UserMessage(payload) => self.handle_user_message(payload),
+            EventMsg::NoteToSelf(payload) => self.handle_note_to_self(payload),
             EventMsg::AgentMessage(payload) => self.handle_agent_message(
                 payload.message.clone(),
                 payload.phase.clone(),
@@ -470,6 +472,28 @@ impl ThreadHistoryBuilder {
             client_id: payload.client_id.clone(),
             content,
         });
+    }
+
+    fn handle_note_to_self(&mut self, payload: &NoteToSelfEvent) {
+        if !self
+            .current_turn
+            .as_ref()
+            .is_some_and(|turn| turn.opened_explicitly)
+        {
+            self.finish_current_turn();
+        }
+        let id = self.next_item_id();
+        self.push_item_in_current_turn(ThreadItem::NoteToSelf {
+            id,
+            note: payload.note.clone(),
+        });
+        if !self
+            .current_turn
+            .as_ref()
+            .is_some_and(|turn| turn.opened_explicitly)
+        {
+            self.finish_current_turn();
+        }
     }
 
     fn handle_agent_message(
@@ -1612,6 +1636,7 @@ mod tests {
     use codex_protocol::protocol::ItemStartedEvent;
     use codex_protocol::protocol::McpInvocation;
     use codex_protocol::protocol::McpToolCallEndEvent;
+    use codex_protocol::protocol::NoteToSelfEvent;
     use codex_protocol::protocol::PatchApplyBeginEvent;
     use codex_protocol::protocol::ThreadRolledBackEvent;
     use codex_protocol::protocol::TurnAbortReason;
@@ -1775,6 +1800,81 @@ mod tests {
                     },
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn note_to_self_creates_completed_display_turn_when_idle() {
+        let items = vec![RolloutItem::EventMsg(EventMsg::NoteToSelf(
+            NoteToSelfEvent {
+                note: "remember this".into(),
+            },
+        ))];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(
+            turns,
+            vec![Turn {
+                id: "rollout-0".into(),
+                items: vec![ThreadItem::NoteToSelf {
+                    id: "item-1".into(),
+                    note: "remember this".into(),
+                }],
+                items_view: TurnItemsView::Full,
+                error: None,
+                status: TurnStatus::Completed,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn note_to_self_appends_to_explicit_active_turn() {
+        let items = vec![
+            RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-a".into(),
+                trace_id: None,
+                started_at: Some(10),
+                model_context_window: None,
+                collaboration_mode_kind: ModeKind::Default,
+            })),
+            RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+                client_id: None,
+                message: "Start".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+                ..Default::default()
+            })),
+            RolloutItem::EventMsg(EventMsg::NoteToSelf(NoteToSelfEvent {
+                note: "during turn".into(),
+            })),
+        ];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].id, "turn-a");
+        assert_eq!(turns[0].status, TurnStatus::InProgress);
+        assert_eq!(
+            turns[0].items,
+            vec![
+                ThreadItem::UserMessage {
+                    id: "item-1".into(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "Start".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::NoteToSelf {
+                    id: "item-2".into(),
+                    note: "during turn".into(),
+                },
+            ]
         );
     }
 
@@ -2277,6 +2377,79 @@ mod tests {
                     memory_citation: None,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn thread_rollback_ignores_note_only_turns_as_boundaries() {
+        let user = |message: &str| {
+            EventMsg::UserMessage(UserMessageEvent {
+                client_id: None,
+                message: message.into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+                ..Default::default()
+            })
+        };
+        let agent = |message: &str| {
+            EventMsg::AgentMessage(AgentMessageEvent {
+                message: message.into(),
+                phase: None,
+                memory_citation: None,
+            })
+        };
+        let note = |note: &str| EventMsg::NoteToSelf(NoteToSelfEvent { note: note.into() });
+        let events = vec![
+            note("outside"),
+            user("First"),
+            agent("A1"),
+            note("between"),
+            user("Second"),
+            agent("A2"),
+            note("inside removed region"),
+            EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns: 1 }),
+        ];
+
+        let items = events
+            .into_iter()
+            .map(RolloutItem::EventMsg)
+            .collect::<Vec<_>>();
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 3);
+        assert_eq!(
+            turns[0].items,
+            vec![ThreadItem::NoteToSelf {
+                id: "item-1".into(),
+                note: "outside".into(),
+            }]
+        );
+        assert_eq!(
+            turns[1].items,
+            vec![
+                ThreadItem::UserMessage {
+                    id: "item-2".into(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "First".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::AgentMessage {
+                    id: "item-3".into(),
+                    text: "A1".into(),
+                    phase: None,
+                    memory_citation: None,
+                },
+            ]
+        );
+        assert_eq!(
+            turns[2].items,
+            vec![ThreadItem::NoteToSelf {
+                id: "item-4".into(),
+                note: "between".into(),
+            }]
         );
     }
 

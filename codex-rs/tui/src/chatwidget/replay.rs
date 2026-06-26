@@ -75,6 +75,9 @@ impl ChatWidget {
             ThreadItem::UserMessage { content, .. } => {
                 self.on_committed_user_message(&content, from_replay);
             }
+            ThreadItem::NoteToSelf { note, .. } => {
+                self.add_to_history(history_cell::new_note_to_self(note));
+            }
             ThreadItem::AgentMessage {
                 id,
                 text,

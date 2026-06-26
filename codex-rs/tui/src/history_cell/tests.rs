@@ -2012,6 +2012,32 @@ fn user_history_cell_wraps_and_prefixes_each_line_snapshot() {
 }
 
 #[test]
+fn note_to_self_history_cell_uses_user_message_treatment() {
+    let cell = new_note_to_self("remember this".to_string());
+
+    let lines = cell.display_lines(/*width*/ 80);
+    let rendered = render_lines(&lines);
+
+    assert_eq!(rendered, vec!["", "  Note to self", "  remember this", ""]);
+    assert_eq!(
+        lines.iter().map(|line| line.style).collect::<Vec<_>>(),
+        vec![user_message_style(); 4]
+    );
+    assert_eq!(lines[1].spans[1].content.as_ref(), "Note to self");
+    assert_eq!(lines[1].spans[1].style.fg, Some(Color::Magenta));
+    assert!(
+        lines[1].spans[1]
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD)
+    );
+    assert_eq!(
+        render_lines(&cell.raw_lines()),
+        vec!["Note to self", "remember this"]
+    );
+}
+
+#[test]
 fn user_history_cell_renders_remote_image_urls() {
     let cell = UserHistoryCell {
         message: "describe these".to_string(),

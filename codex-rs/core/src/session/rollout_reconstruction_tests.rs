@@ -8,6 +8,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
+use codex_protocol::protocol::NoteToSelfEvent;
 use codex_protocol::protocol::ResumedHistory;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
@@ -77,6 +78,30 @@ async fn record_initial_history_reconstructs_typed_inter_agent_message() {
     assert_eq!(
         session.state.lock().await.clone_history().raw_items(),
         &[communication.to_model_input_item()]
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_ignores_note_to_self_events() {
+    let (session, turn_context) = make_session_and_context().await;
+    let rollout_items = vec![
+        RolloutItem::ResponseItem(user_message("visible model input")),
+        RolloutItem::EventMsg(EventMsg::NoteToSelf(NoteToSelfEvent {
+            note: "private reminder".to_string(),
+        })),
+        RolloutItem::ResponseItem(assistant_message("assistant reply")),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    assert_eq!(
+        reconstructed.history,
+        vec![
+            user_message("visible model input"),
+            assistant_message("assistant reply"),
+        ]
     );
 }
 

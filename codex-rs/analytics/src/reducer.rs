@@ -389,6 +389,7 @@ impl TurnToolCounts {
             ThreadItem::ImageGeneration { .. } => self.image_generation += 1,
             ThreadItem::UserMessage { .. }
             | ThreadItem::HookPrompt { .. }
+            | ThreadItem::NoteToSelf { .. }
             | ThreadItem::AgentMessage { .. }
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }
@@ -1691,6 +1692,7 @@ fn tracked_tool_item_id(item: &ThreadItem) -> Option<&str> {
         | ThreadItem::ImageGeneration { id, .. } => Some(id),
         ThreadItem::UserMessage { .. }
         | ThreadItem::HookPrompt { .. }
+        | ThreadItem::NoteToSelf { .. }
         | ThreadItem::AgentMessage { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }
