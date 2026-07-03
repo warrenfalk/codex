@@ -1,2 +1,7 @@
 #!/usr/bin/env bash
-while true; do pnpm build && pnpm start; sleep 1; done
+this_dir=$(dirname $0)
+cd "$this_dir"
+while true; do
+  nix develop -c pnpm build && nix develop -c pnpm start
+  sleep 1
+done
