@@ -1,0 +1,19 @@
+cabal-version: 3.0
+name: tui-history-cell-spec
+version: 0.1.0.0
+synopsis: Event-sourced Haskell sketch of Codex TUI transcript cells
+description: Experimental specification of decoded app-server transcript inputs and semantic display-cell state.
+license: Apache-2.0
+maintainer: local
+category: Development
+build-type: Simple
+
+library
+  exposed-modules: TuiHistoryCellSpec
+  hs-source-dirs: src
+  default-language: GHC2021
+  ghc-options: -Wall
+  build-depends:
+      base >= 4.18 && < 5
+    , containers >= 0.6 && < 0.8
+    , text >= 2.0 && < 2.2
