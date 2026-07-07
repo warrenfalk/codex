@@ -119,8 +119,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function threadRecencyValue(thread: Thread): number {
+  return thread.recencyAt ?? thread.updatedAt;
+}
+
 function sortThreads(threads: Thread[]): Thread[] {
-  return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  return [...threads].sort(
+    (left, right) => threadRecencyValue(right) - threadRecencyValue(left),
+  );
 }
 
 function stripThreadDetails(thread: Thread): Thread {
@@ -259,10 +265,12 @@ function appendIndexedValue(
 }
 
 function updateThreadStatus(thread: Thread, status: ThreadStatus): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: Math.max(threadRecencyValue(thread), now),
     status,
-    updatedAt: Math.max(thread.updatedAt, Math.floor(Date.now() / 1000)),
+    updatedAt: Math.max(thread.updatedAt, now),
   };
 }
 
@@ -319,10 +327,12 @@ function applyTurnStarted(
   thread: Thread,
   notification: TurnStartedNotification,
 ): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: now,
     status: { type: "active", activeFlags: [] },
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   };
 }
@@ -331,10 +341,12 @@ function applyTurnCompleted(
   thread: Thread,
   notification: TurnCompletedNotification,
 ): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: now,
     status: thread.status.type === "active" ? { type: "idle" } : thread.status,
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   };
 }
@@ -518,6 +530,7 @@ function listNotificationTouchesThread(
       return notification.params.thread.id;
     case "thread/status/changed":
     case "thread/archived":
+    case "thread/deleted":
     case "thread/unarchived":
     case "thread/closed":
     case "thread/name/updated":
@@ -1141,7 +1154,10 @@ export class BackendStateStore {
       return;
     }
 
-    if (notification.method === "thread/archived") {
+    if (
+      notification.method === "thread/archived" ||
+      notification.method === "thread/deleted"
+    ) {
       this.threadDetails.delete(threadId);
       this.runtimeTextByThread.delete(threadId);
       this.threadWarningsByThread.delete(threadId);

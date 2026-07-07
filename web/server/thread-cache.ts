@@ -29,8 +29,14 @@ const TURN_ITEMS_VIEW_RANK: Record<Turn["itemsView"], number> = {
   full: 2,
 };
 
+function threadRecencyValue(thread: Thread): number {
+  return thread.recencyAt ?? thread.updatedAt;
+}
+
 function sortThreads(threads: Thread[]): Thread[] {
-  return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  return [...threads].sort(
+    (left, right) => threadRecencyValue(right) - threadRecencyValue(left),
+  );
 }
 
 function trimPreviewMarkdown(text: string): string {
@@ -186,10 +192,12 @@ function mergeThread(existing: Thread | undefined, incoming: Thread): Thread {
 }
 
 function updateThreadStatus(thread: Thread, status: ThreadStatus): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: Math.max(threadRecencyValue(thread), now),
     status,
-    updatedAt: Math.max(thread.updatedAt, Math.floor(Date.now() / 1000)),
+    updatedAt: Math.max(thread.updatedAt, now),
   };
 }
 
@@ -321,10 +329,12 @@ function applyTurnStarted(
   thread: Thread,
   notification: TurnStartedNotification,
 ): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: now,
     status: { type: "active", activeFlags: [] },
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   };
 }
@@ -333,10 +343,12 @@ function applyTurnCompleted(
   thread: Thread,
   notification: TurnCompletedNotification,
 ): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: now,
     status: thread.status.type === "active" ? { type: "idle" } : thread.status,
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   };
 }
@@ -482,9 +494,11 @@ function applyCommandOutputDelta(
 }
 
 function updatedAtNow(thread: Thread): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
-    updatedAt: Math.floor(Date.now() / 1000),
+    recencyAt: now,
+    updatedAt: now,
   };
 }
 
@@ -581,7 +595,8 @@ export class ThreadCache {
         );
         return true;
       }
-      case "thread/archived": {
+      case "thread/archived":
+      case "thread/deleted": {
         changed =
           this.threadsById.delete(notification.params.threadId) || changed;
         changed =

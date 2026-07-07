@@ -24,6 +24,14 @@ function JsonPreview({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatJson(value: JsonValue): string {
+  return JSON.stringify(value, null, 2);
+}
+
 type CommandApprovalRequest = Extract<
   AnyServerRequest,
   { method: "item/commandExecution/requestApproval" }
@@ -670,6 +678,56 @@ function defaultValueForSchemaProperty(
   return "";
 }
 
+function defaultValueForOpenAiFormProperty(
+  schema: Record<string, unknown>,
+): JsonValue {
+  if (typeof schema.default !== "undefined") {
+    return schema.default as JsonValue;
+  }
+
+  if (schema.type === "openai/imagePicker" && Array.isArray(schema.items)) {
+    const firstItem = schema.items.find(isRecord);
+    const firstItemId = firstItem?.id;
+    if (typeof firstItemId === "string") {
+      return firstItemId;
+    }
+  }
+
+  return defaultValueForSchemaProperty(schema);
+}
+
+function defaultValueForOpenAiFormSchema(
+  schema: JsonValue,
+): Record<string, JsonValue> {
+  if (!isRecord(schema) || schema.type !== "object") {
+    return {};
+  }
+
+  const properties = schema.properties;
+  if (!isRecord(properties)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(properties).map(([name, property]) => [
+      name,
+      isRecord(property) ? defaultValueForOpenAiFormProperty(property) : null,
+    ]),
+  );
+}
+
+function parseJsonValue(text: string): JsonValue | null {
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch {
+    return null;
+  }
+}
+
 function McpFormFields({
   value,
   setValue,
@@ -827,23 +885,28 @@ function McpElicitationCard({
   >;
 }) {
   const initialValue = useMemo(() => {
-    if (request.params.mode !== "form") {
-      return {};
+    if (request.params.mode === "form") {
+      return Object.fromEntries(
+        Object.entries(request.params.requestedSchema.properties).map(
+          ([name, schema]) => [
+            name,
+            defaultValueForSchemaProperty(schema as Record<string, unknown>),
+          ],
+        ),
+      );
     }
 
-    return Object.fromEntries(
-      Object.entries(request.params.requestedSchema.properties).map(
-        ([name, schema]) => [
-          name,
-          defaultValueForSchemaProperty(schema as Record<string, unknown>),
-        ],
-      ),
-    );
+    if (request.params.mode === "openai/form") {
+      return defaultValueForOpenAiFormSchema(request.params.requestedSchema);
+    }
+
+    return {};
   }, [request.params]);
   const [content, setContent] =
     useState<Record<string, JsonValue>>(initialValue);
+  const [contentText, setContentText] = useState(formatJson(initialValue));
   const [metaText, setMetaText] = useState(
-    request.params._meta ? JSON.stringify(request.params._meta, null, 2) : "",
+    request.params._meta ? formatJson(request.params._meta) : "",
   );
 
   const parsedMeta = useMemo(() => {
@@ -851,17 +914,21 @@ function McpElicitationCard({
       return null;
     }
 
-    try {
-      return JSON.parse(metaText) as JsonValue;
-    } catch {
-      return null;
-    }
+    return parseJsonValue(metaText);
   }, [metaText]);
+
+  const parsedContent = useMemo(
+    () => parseJsonValue(contentText),
+    [contentText],
+  );
+
+  const acceptContent =
+    request.params.mode === "openai/form" ? parsedContent : content;
 
   const respond = (action: "accept" | "decline" | "cancel") => {
     const response: McpServerElicitationRequestResponse = {
       action,
-      content: action === "accept" ? content : null,
+      content: action === "accept" ? acceptContent : null,
       _meta: parsedMeta,
     };
     onRespond(request, response);
@@ -874,12 +941,24 @@ function McpElicitationCard({
         <a href={request.params.url} rel="noreferrer" target="_blank">
           Open requested URL
         </a>
-      ) : (
+      ) : request.params.mode === "form" ? (
         <McpFormFields
           requestedSchema={request.params.requestedSchema}
           setValue={setContent}
           value={content}
         />
+      ) : (
+        <>
+          <JsonPreview value={request.params.requestedSchema} />
+          <label className="field-stack">
+            <span>Response content JSON</span>
+            <textarea
+              rows={6}
+              value={contentText}
+              onChange={(event) => setContentText(event.target.value)}
+            />
+          </label>
+        </>
       )}
       <label className="field-stack">
         <span>Optional _meta JSON</span>
@@ -890,7 +969,13 @@ function McpElicitationCard({
         />
       </label>
       <div className="button-row">
-        <button type="button" onClick={() => respond("accept")}>
+        <button
+          disabled={
+            request.params.mode === "openai/form" && parsedContent === null
+          }
+          type="button"
+          onClick={() => respond("accept")}
+        >
           Accept
         </button>
         <button type="button" onClick={() => respond("decline")}>

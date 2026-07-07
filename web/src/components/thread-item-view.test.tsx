@@ -80,6 +80,22 @@ describe("ThreadItemView", () => {
     ).toHaveAttribute("data-streamdown", "inline-code");
   });
 
+  it("renders note-to-self items as markdown", () => {
+    const item: ThreadItem = {
+      type: "noteToSelf",
+      id: "note-1",
+      note: "Remember **this**.",
+    };
+
+    render(<ThreadItemView item={item} />);
+
+    expect(screen.getByText("Note to self")).toBeInTheDocument();
+    expect(screen.getByText("this")).toHaveAttribute(
+      "data-streamdown",
+      "strong",
+    );
+  });
+
   it("pushes local source links through the source file callback", () => {
     const item: ThreadItem = {
       type: "agentMessage",

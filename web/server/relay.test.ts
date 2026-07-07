@@ -96,6 +96,7 @@ function buildThread(
     parentThreadId: null,
     path: null,
     preview: `${name} preview`,
+    recencyAt: 1,
     sessionId: id,
     source: "appServer",
     status: { type: "idle" },

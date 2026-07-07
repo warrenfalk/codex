@@ -32,6 +32,7 @@ function makeThread(id: string, name = id): Thread {
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 1,
+    recencyAt: 1,
     status: { type: "idle" },
     path: null,
     cwd: "/tmp/project",

@@ -19,6 +19,7 @@ function buildThread(overrides: Partial<Thread> = {}): Thread {
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 2,
+    recencyAt: 2,
     status: { type: "idle" },
     path: null,
     cwd: "/workspace",

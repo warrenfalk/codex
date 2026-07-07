@@ -89,6 +89,7 @@ function makeThread(id: string): Thread {
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 2,
+    recencyAt: 2,
     status: { type: "idle" },
     path: null,
     cwd: "/workspace",
@@ -248,6 +249,7 @@ describe("App routing", () => {
         turnId: "turn-1",
         itemId: "item-1",
         startedAtMs: 1,
+        environmentId: null,
         command: "pnpm test",
       },
     };

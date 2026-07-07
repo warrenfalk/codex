@@ -116,6 +116,7 @@ function buildThread(turns: Turn[] = []): Thread {
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 2,
+    recencyAt: 2,
     status: { type: "idle" },
     path: null,
     cwd: "/workspace",
@@ -251,6 +252,7 @@ describe("ThreadView", () => {
         turnId: "turn-1",
         itemId: "item-1",
         startedAtMs: 1,
+        environmentId: null,
         command: "printf test",
       },
     };
@@ -543,6 +545,11 @@ describe("ThreadView", () => {
             content: [],
           },
           {
+            type: "noteToSelf",
+            id: "note-old",
+            note: "Preserve this note.",
+          },
+          {
             type: "commandExecution",
             id: "exec-old",
             command: "old command",
@@ -586,6 +593,7 @@ describe("ThreadView", () => {
     });
 
     expect(screen.getByText("Initial prompt")).toBeInTheDocument();
+    expect(screen.getByText("Preserve this note.")).toBeInTheDocument();
     expect(screen.getByText("Finished earlier work.")).toBeInTheDocument();
     expect(screen.queryByText("Old reasoning")).toBeNull();
     expect(screen.queryByText("old command")).toBeNull();
@@ -603,6 +611,7 @@ describe("ThreadView", () => {
 
     expect(condensedButton).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Old reasoning")).toBeInTheDocument();
+    expect(screen.getByText("Preserve this note.")).toBeInTheDocument();
     expect(screen.getAllByText("old command")).not.toHaveLength(0);
     expect(screen.getByText("Current reasoning")).toBeInTheDocument();
     expect(screen.getAllByText("current command")).not.toHaveLength(0);
@@ -610,6 +619,7 @@ describe("ThreadView", () => {
     fireEvent.click(condensedButton);
 
     expect(condensedButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Preserve this note.")).toBeInTheDocument();
     expect(screen.queryByText("Old reasoning")).toBeNull();
     expect(screen.queryByText("old command")).toBeNull();
   });

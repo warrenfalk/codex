@@ -134,6 +134,13 @@ export function ThreadItemView({
           />
         </article>
       );
+    case "noteToSelf":
+      return (
+        <article className="detail-card" id={anchorId}>
+          <header>Note to self</header>
+          <MarkdownBlock sourceFileLinks={sourceFileLinks} text={item.note} />
+        </article>
+      );
     case "reasoning":
       return (
         <article className="detail-card">
@@ -248,6 +255,22 @@ export function ThreadItemView({
         <article className="detail-card">
           <header>Plan</header>
           <p>{item.text || "Waiting for plan output..."}</p>
+        </article>
+      );
+    case "subAgentActivity":
+      return (
+        <article className="detail-card">
+          <header>Subagent activity</header>
+          <p className="detail-meta">status: {item.kind}</p>
+          <p className="detail-meta">thread: {item.agentThreadId}</p>
+          <p className="detail-meta">path: {item.agentPath}</p>
+        </article>
+      );
+    case "sleep":
+      return (
+        <article className="detail-card">
+          <header>Sleep</header>
+          <p className="detail-meta">duration: {item.durationMs}ms</p>
         </article>
       );
     default:

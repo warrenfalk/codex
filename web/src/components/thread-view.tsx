@@ -127,6 +127,7 @@ function threadTitle(thread: Thread): string {
 function isCondensableThreadItem(item: ThreadItem): boolean {
   switch (item.type) {
     case "userMessage":
+    case "noteToSelf":
     case "agentMessage":
       return false;
     case "hookPrompt":
@@ -137,8 +138,10 @@ function isCondensableThreadItem(item: ThreadItem): boolean {
     case "mcpToolCall":
     case "dynamicToolCall":
     case "collabAgentToolCall":
+    case "subAgentActivity":
     case "webSearch":
     case "imageView":
+    case "sleep":
     case "imageGeneration":
     case "enteredReviewMode":
     case "exitedReviewMode":

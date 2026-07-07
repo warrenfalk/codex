@@ -22,6 +22,7 @@ describe("RequestCard", () => {
         turnId: "turn_1",
         itemId: "item_1",
         startedAtMs: 1,
+        environmentId: null,
         command: "pnpm build",
       },
     };
@@ -240,6 +241,7 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_2",
+        autoResolutionMs: null,
         questions: [
           {
             id: "q1",
@@ -270,5 +272,58 @@ describe("RequestCard", () => {
         },
       },
     });
+  });
+
+  it("submits OpenAI form elicitations through the JSON fallback", async () => {
+    const user = userEvent.setup();
+    const onRespond = vi.fn();
+    const request: ServerRequest = {
+      method: "mcpServer/elicitation/request",
+      id: 10,
+      params: {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        serverName: "apps",
+        mode: "openai/form",
+        _meta: null,
+        message: "Choose a template",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            template: {
+              type: "openai/imagePicker",
+              title: "Template",
+              items: [
+                {
+                  id: "monthly-review",
+                  title: "Monthly review",
+                  image: "data:image/png;base64,abc",
+                },
+              ],
+            },
+          },
+          required: ["template"],
+        },
+      },
+    };
+
+    render(<RequestCard onRespond={onRespond} request={request} />);
+
+    expect(screen.getByLabelText("Response content JSON")).toHaveValue(
+      JSON.stringify({ template: "monthly-review" }, null, 2),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(onRespond).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 10 }),
+      {
+        action: "accept",
+        content: {
+          template: "monthly-review",
+        },
+        _meta: null,
+      },
+    );
   });
 });

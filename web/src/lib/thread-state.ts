@@ -74,8 +74,14 @@ const TURN_ITEMS_VIEW_RANK: Record<Turn["itemsView"], number> = {
   full: 2,
 };
 
+function threadRecencyValue(thread: Thread): number {
+  return thread.recencyAt ?? thread.updatedAt;
+}
+
 function sortThreads(threads: Thread[]): Thread[] {
-  return [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  return [...threads].sort(
+    (left, right) => threadRecencyValue(right) - threadRecencyValue(left),
+  );
 }
 
 function mergeThread(existing: Thread | undefined, incoming: Thread): Thread {
@@ -210,10 +216,12 @@ function updateItem(
 }
 
 function updateThreadStatus(thread: Thread, status: ThreadStatus): Thread {
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...thread,
+    recencyAt: Math.max(threadRecencyValue(thread), now),
     status,
-    updatedAt: Math.max(thread.updatedAt, Math.floor(Date.now() / 1000)),
+    updatedAt: Math.max(thread.updatedAt, now),
   };
 }
 
@@ -221,10 +229,12 @@ function applyTurnStarted(
   threads: Thread[],
   notification: TurnStartedNotification,
 ): Thread[] {
+  const now = Math.floor(Date.now() / 1000);
   return updateThread(threads, notification.threadId, (thread) => ({
     ...thread,
+    recencyAt: now,
     status: { type: "active", activeFlags: [] },
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   }));
 }
@@ -233,10 +243,12 @@ function applyTurnCompleted(
   threads: Thread[],
   notification: TurnCompletedNotification,
 ): Thread[] {
+  const now = Math.floor(Date.now() / 1000);
   return updateThread(threads, notification.threadId, (thread) => ({
     ...thread,
+    recencyAt: now,
     status: thread.status.type === "active" ? { type: "idle" } : thread.status,
-    updatedAt: Math.floor(Date.now() / 1000),
+    updatedAt: now,
     turns: upsertTurn(thread.turns, notification.turn),
   }));
 }
@@ -468,6 +480,7 @@ function applyNotification(
         ),
       };
     case "thread/archived":
+    case "thread/deleted":
       return {
         ...state,
         threads: state.threads.filter(

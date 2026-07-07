@@ -50,6 +50,7 @@ function buildThread(cwd: string): Thread {
     parentThreadId: null,
     path: null,
     preview: "preview",
+    recencyAt: 1,
     sessionId: "thread-1",
     source: "appServer",
     status: { type: "idle" },

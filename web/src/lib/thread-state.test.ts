@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ServerRequest } from "../../../codex-rs/app-server-protocol/schema/typescript/ServerRequest";
+import type { Thread } from "@/types/protocol";
 
 import {
   type AppState,
@@ -8,9 +9,71 @@ import {
   initialState,
   setServerNotification,
   setServerRequest,
+  setThreadsLoaded,
 } from "./thread-state";
 
+function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
+  return {
+    id,
+    sessionId: id,
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: `${id} preview`,
+    ephemeral: false,
+    modelProvider: "openai",
+    createdAt: 1,
+    updatedAt: 1,
+    recencyAt: 1,
+    status: { type: "idle" },
+    path: null,
+    cwd: "/tmp/project",
+    cliVersion: "0.0.0",
+    source: "appServer",
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: id,
+    turns: [],
+    ...overrides,
+  };
+}
+
 describe("thread state reducer", () => {
+  it("orders loaded threads by recency timestamp", () => {
+    const next = appReducer(
+      initialState,
+      setThreadsLoaded([
+        threadFixture("updated-newer", { updatedAt: 30, recencyAt: 1 }),
+        threadFixture("recent-newer", { updatedAt: 2, recencyAt: 40 }),
+      ]),
+    );
+
+    expect(next.threads.map((thread) => thread.id)).toEqual([
+      "recent-newer",
+      "updated-newer",
+    ]);
+  });
+
+  it("removes deleted threads", () => {
+    const state: AppState = {
+      ...initialState,
+      threads: [threadFixture("thr_1"), threadFixture("thr_2")],
+    };
+
+    const next = appReducer(
+      state,
+      setServerNotification({
+        method: "thread/deleted",
+        params: {
+          threadId: "thr_1",
+        },
+      }),
+    );
+
+    expect(next.threads.map((thread) => thread.id)).toEqual(["thr_2"]);
+  });
+
   it("adds pending server requests and resolves them", () => {
     const withRequest = appReducer(
       initialState,
@@ -58,6 +121,7 @@ describe("thread state reducer", () => {
           modelProvider: "openai",
           createdAt: 1,
           updatedAt: 1,
+          recencyAt: 1,
           status: { type: "idle" },
           path: null,
           cwd: "/tmp/project",
@@ -126,6 +190,7 @@ describe("thread state reducer", () => {
           modelProvider: "openai",
           createdAt: 1,
           updatedAt: 1,
+          recencyAt: 1,
           status: { type: "active", activeFlags: [] },
           path: null,
           cwd: "/tmp/project",
