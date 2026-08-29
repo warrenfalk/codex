@@ -125,3 +125,11 @@ export function isKnownServerRequestMethod(
 ): method is KnownServerRequestMethod {
   return knownServerRequestMethods.includes(method as KnownServerRequestMethod);
 }
+
+export function isBlockingServerRequest(request: AnyServerRequest): boolean {
+  if ("unknown" in request || request.method !== "item/tool/requestUserInput") {
+    return true;
+  }
+
+  return request.params.isBlocking;
+}

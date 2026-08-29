@@ -159,6 +159,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     case "agent":
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -171,6 +172,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     default:
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -496,6 +498,19 @@ function applyNotification(
           state.threads,
           notification.params.threadId,
           (thread) => updateThreadStatus(thread, { type: "notLoaded" }),
+        ),
+      };
+    case "thread/reverted":
+      return {
+        ...state,
+        itemRuntimeText:
+          state.selectedThreadId === notification.params.threadId
+            ? {}
+            : state.itemRuntimeText,
+        threads: updateThread(
+          state.threads,
+          notification.params.threadId,
+          (thread) => ({ ...thread, turns: [] }),
         ),
       };
     case "thread/name/updated":

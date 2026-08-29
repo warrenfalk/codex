@@ -63,6 +63,7 @@ const CLIENT_INFO: ClientInfo = {
 
 const CAPABILITIES: InitializeCapabilities = {
   experimentalApi: true,
+  extensions: { "openai/form": {} },
   requestAttestation: false,
 };
 

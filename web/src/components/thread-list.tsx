@@ -246,20 +246,28 @@ export function ThreadList({
           const isAwaitingApproval =
             thread.status.type === "active" &&
             thread.status.activeFlags.includes("waitingOnApproval");
+          const isAwaitingUserInput =
+            thread.status.type === "active" &&
+            thread.status.activeFlags.includes("waitingOnUserInput");
           const activityState = isAwaitingApproval
             ? "approval"
-            : activity.state;
+            : isAwaitingUserInput
+              ? "input"
+              : activity.state;
           const activityLabel = isAwaitingApproval
             ? "needs approval"
-            : activityStatusLabel(activity);
+            : isAwaitingUserInput
+              ? "needs input"
+              : activityStatusLabel(activity);
+          const attentionClass = isAwaitingApproval
+            ? " thread-row-awaiting-approval"
+            : isAwaitingUserInput
+              ? " thread-row-awaiting-input"
+              : "";
           return (
             <button
               key={thread.id}
-              className={
-                isAwaitingApproval
-                  ? "thread-row thread-row-awaiting-approval"
-                  : "thread-row"
-              }
+              className={`thread-row${attentionClass}`}
               type="button"
               onClick={() => onSelect(thread.id)}
             >

@@ -243,6 +243,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     case "agent":
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -255,6 +256,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     default:
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -531,6 +533,11 @@ export class ThreadCache {
     return this.rebuildPreviews();
   }
 
+  replaceThread(thread: Thread): boolean {
+    this.threadsById.set(thread.id, thread);
+    return this.rebuildPreviews();
+  }
+
   mergeThreadTurns(threadId: string, turns: Turn[]): boolean {
     const thread = this.threadsById.get(threadId);
     if (!thread || turns.length === 0) {
@@ -614,6 +621,14 @@ export class ThreadCache {
           updateThreadStatus(thread, { type: "notLoaded" }),
         );
         return true;
+      }
+      case "thread/reverted": {
+        const thread = this.threadsById.get(notification.params.threadId);
+        if (!thread) {
+          return false;
+        }
+        this.threadsById.set(thread.id, { ...thread, turns: [] });
+        return this.rebuildPreviews();
       }
       case "thread/name/updated": {
         const thread = this.threadsById.get(notification.params.threadId);

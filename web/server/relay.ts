@@ -7,6 +7,7 @@ import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 
 import type {
+  InitializeCapabilities,
   InitializeResponse,
   RequestId,
   ServerNotification,
@@ -90,8 +91,9 @@ const CLIENT_INFO = {
   version: "0.0.0",
 };
 
-const CAPABILITIES = {
+const CAPABILITIES: InitializeCapabilities = {
   experimentalApi: true,
+  extensions: { "openai/form": {} },
   requestAttestation: false,
 };
 const RECENT_THREAD_TURN_HYDRATION_CONCURRENCY = 8;
@@ -550,15 +552,22 @@ class RelayController {
         index,
         index + RECENT_THREAD_TURN_HYDRATION_CONCURRENCY,
       );
-      await Promise.all(
-        batch.map((thread) => this.refreshLatestThreadTurnFromUpstream(thread)),
-      );
+      const changed = (
+        await Promise.all(
+          batch.map((thread) =>
+            this.refreshLatestThreadTurnFromUpstream(thread),
+          ),
+        )
+      ).some(Boolean);
+      if (changed) {
+        this.broadcastThreadListSnapshot();
+      }
     }
   }
 
   private async refreshLatestThreadTurnFromUpstream(
     thread: Thread,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const response = await this.requestUpstream<ThreadTurnsListResponse>(
         "thread/turns/list",
@@ -570,17 +579,16 @@ class RelayController {
           threadId: thread.id,
         },
       );
-      if (this.cache.mergeThreadTurns(thread.id, response.data)) {
-        this.broadcastThreadListSnapshot();
-      }
+      return this.cache.mergeThreadTurns(thread.id, response.data);
     } catch (error) {
       if (isExpectedThreadTurnsListError(error)) {
-        return;
+        return false;
       }
       console.warn(
         `Failed to refresh latest turn for thread ${thread.id}.`,
         error,
       );
+      return false;
     }
   }
 
@@ -808,6 +816,16 @@ class RelayController {
         (await this.refreshThread(notification.params.threadId)) || changed;
     }
 
+    if (notification.method === "thread/reverted") {
+      if (changed) {
+        this.broadcastThreadListSnapshot();
+        changed = false;
+      }
+      changed =
+        (await this.refreshRevertedThread(notification.params.threadId)) ||
+        changed;
+    }
+
     if (changed) {
       this.broadcastThreadListSnapshot();
     }
@@ -861,6 +879,25 @@ class RelayController {
     }
 
     return this.cache.mergeThread(thread);
+  }
+
+  private async refreshRevertedThread(threadId: string): Promise<boolean> {
+    const response = await this.requestUpstream<{ thread: Thread }>(
+      "thread/read",
+      {
+        includeTurns: false,
+        threadId,
+      },
+    );
+    const thread = extractThreadFromResponse(response);
+    if (!thread) {
+      return false;
+    }
+
+    const replaced = this.cache.replaceThread(thread);
+    const latestTurnUpdated =
+      await this.refreshLatestThreadTurnFromUpstream(thread);
+    return replaced || latestTurnUpdated;
   }
 
   private buildThreadListResponse(): ProxyThreadListResponse {

@@ -11,7 +11,10 @@ function buildThread(id: string, overrides: Partial<Thread> = {}): Thread {
     forkedFromId: null,
     parentThreadId: null,
     preview: `${id} preview`,
+    projectId: null,
     ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 1,
@@ -61,5 +64,46 @@ describe("ThreadCache", () => {
     expect(cache.snapshot().threads.map((thread) => thread.id)).toEqual([
       "thr_2",
     ]);
+  });
+
+  it("invalidates cached turns when a thread is reverted", () => {
+    const cache = new ThreadCache();
+    cache.replaceThreads([
+      buildThread("thr_1", {
+        turns: [
+          {
+            completedAt: 2,
+            durationMs: 1000,
+            error: null,
+            id: "turn_removed",
+            items: [
+              {
+                delivery: null,
+                id: "agent_removed",
+                memoryCitation: null,
+                phase: null,
+                text: "Removed response",
+                type: "agentMessage",
+              },
+            ],
+            itemsView: "summary",
+            startedAt: 1,
+            status: "completed",
+          },
+        ],
+      }),
+    ]);
+    expect(cache.snapshot().previewsByThreadId).toEqual({
+      thr_1: "**Codex:** Removed response",
+    });
+
+    const changed = cache.applyNotification({
+      method: "thread/reverted",
+      params: { threadId: "thr_1" },
+    });
+
+    expect(changed).toBe(true);
+    expect(cache.getThread("thr_1")?.turns).toEqual([]);
+    expect(cache.snapshot().previewsByThreadId).toEqual({});
   });
 });

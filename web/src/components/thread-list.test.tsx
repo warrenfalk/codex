@@ -15,7 +15,10 @@ function buildThread(overrides: Partial<Thread> = {}): Thread {
     forkedFromId: null,
     parentThreadId: null,
     preview: "Original prompt",
+    projectId: null,
     ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 2,
@@ -204,5 +207,30 @@ describe("ThreadList", () => {
     expect(screen.getByText("needs approval")).toHaveClass(
       "status-thread-approval",
     );
+  });
+
+  it("labels threads waiting on user input separately from approvals", () => {
+    render(
+      <ThreadList
+        loading={false}
+        onRefresh={vi.fn()}
+        onSelect={vi.fn()}
+        previewsByThreadId={{}}
+        threadActivityByThreadId={{}}
+        threads={[
+          buildThread({
+            status: {
+              type: "active",
+              activeFlags: ["waitingOnUserInput"],
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Original prompt/i }),
+    ).toHaveClass("thread-row-awaiting-input");
+    expect(screen.getByText("needs input")).toHaveClass("status-thread-input");
   });
 });

@@ -28,7 +28,10 @@ function makeThread(id: string, name = id): Thread {
     forkedFromId: null,
     parentThreadId: null,
     preview: `${name} preview`,
+    projectId: null,
     ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 1,
@@ -153,13 +156,14 @@ class FakeTransport implements BackendTransport {
 
   async resumeThread(threadId: string): Promise<ThreadResumeResult> {
     this.resumeCalls.set(threadId, (this.resumeCalls.get(threadId) ?? 0) + 1);
-    await this.resumeThreadGate;
-    return {
+    const result = {
       initialTurnsPage: this.initialTurnPagesByThread.get(threadId) ?? null,
       thread: {
         ...(this.detailedThreads.get(threadId) ?? makeThread(threadId)),
       },
     };
+    await this.resumeThreadGate;
+    return result;
   }
 
   async sendPrompt(): Promise<void> {}
@@ -170,6 +174,18 @@ class FakeTransport implements BackendTransport {
 
   setPushSubscriptionEndpoint(endpoint: string | null): void {
     this.pushSubscriptionEndpointUpdates.push(endpoint);
+  }
+
+  setThreadLoadResult(
+    thread: Thread,
+    initialTurnsPage: ThreadTurnsPage | null,
+  ): void {
+    this.detailedThreads.set(thread.id, thread);
+    if (initialTurnsPage) {
+      this.initialTurnPagesByThread.set(thread.id, initialTurnsPage);
+    } else {
+      this.initialTurnPagesByThread.delete(thread.id);
+    }
   }
 
   subscribe(listener: MessageListener): () => void {
@@ -655,6 +671,149 @@ describe("BackendStateStore", () => {
     ]);
   });
 
+  it("reloads thread history after a thread is reverted", async () => {
+    const listedThread = makeThread("thr_1", "Thread 1");
+    const removedTurn = makeTurn("turn_removed");
+    const retainedTurn = makeTurn("turn_retained");
+    const transport = new FakeTransport(
+      [listedThread],
+      {},
+      {},
+      new Map([
+        [
+          "thr_1",
+          {
+            ...listedThread,
+            turns: [retainedTurn, removedTurn],
+          },
+        ],
+      ]),
+      new Map([
+        [
+          "thr_1",
+          {
+            nextCursor: null,
+            turns: [retainedTurn, removedTurn],
+          },
+        ],
+      ]),
+    );
+    const store = new BackendStateStore(transport);
+    const subscriber = vi.fn();
+
+    store.subscribeThread("thr_1", subscriber);
+    await waitFor(() => {
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({
+            turns: [
+              expect.objectContaining({ id: "turn_retained" }),
+              expect.objectContaining({ id: "turn_removed" }),
+            ],
+          }),
+        }),
+      );
+    });
+
+    transport.setThreadLoadResult(
+      { ...listedThread, turns: [retainedTurn] },
+      { nextCursor: null, turns: [retainedTurn] },
+    );
+    transport.emitMessage({
+      method: "thread/reverted",
+      params: { threadId: "thr_1" },
+    });
+
+    expect(subscriber).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        loading: true,
+        thread: expect.objectContaining({ turns: [] }),
+      }),
+    );
+    await waitFor(() => {
+      expect(transport.resumeCalls.get("thr_1")).toBe(2);
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({
+            turns: [expect.objectContaining({ id: "turn_retained" })],
+          }),
+        }),
+      );
+    });
+  });
+
+  it("ignores an older thread load that completes after a revert", async () => {
+    let releaseOldLoad: () => void = () => {
+      throw new Error("old-load gate was not initialized");
+    };
+    const listedThread = makeThread("thr_1", "Thread 1");
+    const removedTurn = makeTurn("turn_removed");
+    const retainedTurn = makeTurn("turn_retained");
+    const transport = new FakeTransport(
+      [listedThread],
+      {},
+      {},
+      new Map([
+        ["thr_1", { ...listedThread, turns: [retainedTurn, removedTurn] }],
+      ]),
+      new Map([
+        [
+          "thr_1",
+          {
+            nextCursor: null,
+            turns: [retainedTurn, removedTurn],
+          },
+        ],
+      ]),
+    );
+    transport.resumeThreadGate = new Promise((resolve) => {
+      releaseOldLoad = resolve;
+    });
+    const store = new BackendStateStore(transport);
+    const subscriber = vi.fn();
+
+    store.subscribeThread("thr_1", subscriber);
+    await waitFor(() => {
+      expect(transport.resumeCalls.get("thr_1")).toBe(1);
+    });
+
+    transport.setThreadLoadResult(
+      { ...listedThread, turns: [retainedTurn] },
+      { nextCursor: null, turns: [retainedTurn] },
+    );
+    transport.resumeThreadGate = null;
+    transport.emitMessage({
+      method: "thread/reverted",
+      params: { threadId: "thr_1" },
+    });
+
+    await waitFor(() => {
+      expect(transport.resumeCalls.get("thr_1")).toBe(2);
+      expect(subscriber).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          loading: false,
+          thread: expect.objectContaining({
+            turns: [expect.objectContaining({ id: "turn_retained" })],
+          }),
+        }),
+      );
+    });
+
+    releaseOldLoad();
+    await flushPromises();
+    await flushPromises();
+
+    expect(subscriber).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        thread: expect.objectContaining({
+          turns: [expect.objectContaining({ id: "turn_retained" })],
+        }),
+      }),
+    );
+  });
+
   it("keeps full turn items when summary turn updates arrive", async () => {
     const fullTurn: Turn = {
       ...makeTurn("turn_1"),
@@ -663,6 +822,7 @@ describe("BackendStateStore", () => {
       items: [
         {
           type: "agentMessage",
+          delivery: null,
           id: "item_1",
           text: "Full response text",
           phase: null,

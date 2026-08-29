@@ -98,6 +98,7 @@ export interface BackendTransport {
 type ThreadSubscriber = (snapshot: ThreadDetailsSnapshot) => void;
 type ThreadEntry = {
   initializing: Promise<void> | null;
+  loadVersion: number;
   loading: boolean;
   snapshot: ThreadDetailsSnapshot;
   subscribers: Set<ThreadSubscriber>;
@@ -182,6 +183,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     case "agent":
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -194,6 +196,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
     default:
       return {
         type: "agentMessage",
+        delivery: null,
         id: itemId,
         text: "",
         phase: null,
@@ -767,6 +770,7 @@ export class BackendStateStore {
 
     const entry: ThreadEntry = {
       initializing: null,
+      loadVersion: 0,
       loading: false,
       snapshot: this.buildThreadSnapshot(threadId, false),
       subscribers: new Set(),
@@ -998,6 +1002,7 @@ export class BackendStateStore {
       return entry.initializing;
     }
 
+    const loadVersion = entry.loadVersion;
     entry.initializing = (async () => {
       let persistedTurns: Turn[] = [];
       let nextTurnsCursor: string | null = null;
@@ -1038,7 +1043,7 @@ export class BackendStateStore {
             : liveThread;
 
         const current = this.threadEntries.get(threadId);
-        if (current) {
+        if (current?.loadVersion === loadVersion) {
           this.threadDetails.set(threadId, thread);
           current.loading = false;
           this.updateThreadEntry(threadId);
@@ -1053,7 +1058,7 @@ export class BackendStateStore {
           nextTurnsCursor = page.nextCursor;
 
           const current = this.threadEntries.get(threadId);
-          if (!current) {
+          if (!current || current.loadVersion !== loadVersion) {
             return;
           }
 
@@ -1068,7 +1073,7 @@ export class BackendStateStore {
         }
       } finally {
         const current = this.threadEntries.get(threadId);
-        if (current) {
+        if (current?.loadVersion === loadVersion) {
           current.initializing = null;
           current.loading = false;
           this.updateThreadEntry(threadId);
@@ -1144,6 +1149,21 @@ export class BackendStateStore {
 
       this.globalWarnings = appendUniqueWarning(this.globalWarnings, message);
       this.updateListSnapshot();
+      return;
+    }
+
+    if (notification.method === "thread/reverted") {
+      const { threadId } = notification.params;
+      this.threadDetails.delete(threadId);
+      this.runtimeTextByThread.delete(threadId);
+
+      const entry = this.threadEntries.get(threadId);
+      if (entry) {
+        entry.loadVersion += 1;
+        entry.initializing = null;
+        this.updateThreadEntry(threadId, { loading: true });
+        void this.requestThreadLoad(threadId).catch(() => undefined);
+      }
       return;
     }
 

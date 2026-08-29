@@ -396,7 +396,8 @@ a {
   text-align: left;
 }
 
-.thread-row-awaiting-approval {
+.thread-row-awaiting-approval,
+.thread-row-awaiting-input {
   background:
     linear-gradient(rgba(240, 179, 91, 0.08), rgba(240, 179, 91, 0.08)),
     var(--bg-strong);
@@ -404,7 +405,8 @@ a {
   box-shadow: inset 0 0 0 1px rgba(240, 179, 91, 0.16);
 }
 
-.thread-row-awaiting-approval:hover {
+.thread-row-awaiting-approval:hover,
+.thread-row-awaiting-input:hover {
   border-color: rgba(240, 179, 91, 0.84);
 }
 
@@ -608,6 +610,11 @@ a {
 .status-thread-approval {
   background: rgba(240, 179, 91, 0.18);
   color: var(--warning);
+}
+
+.status-thread-input {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .status-thread-virgin {

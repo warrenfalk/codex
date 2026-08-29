@@ -112,7 +112,10 @@ function buildThread(turns: Turn[] = []): Thread {
     forkedFromId: null,
     parentThreadId: null,
     preview: "Investigate prompt controls",
+    projectId: null,
     ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 2,
@@ -137,6 +140,7 @@ function buildTurn(id = "turn-1"): Turn {
     items: [
       {
         type: "agentMessage",
+        delivery: null,
         id: `${id}-agent`,
         text: "Working on it.",
         phase: null,
@@ -274,6 +278,26 @@ describe("ThreadView", () => {
     expect(screen.getByLabelText("Prompt")).toHaveValue(
       "draft while approval is pending",
     );
+  });
+
+  it("keeps the composer available for non-blocking input requests", () => {
+    const pendingRequest: AnyServerRequest = {
+      method: "item/tool/requestUserInput",
+      id: 8,
+      params: {
+        autoResolutionMs: null,
+        isBlocking: false,
+        itemId: "item-1",
+        questions: [],
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    };
+
+    renderThreadView({ pendingRequests: [pendingRequest] });
+
+    expect(screen.getByText("Input requested")).toBeInTheDocument();
+    expect(screen.getByLabelText("Prompt")).toBeInTheDocument();
   });
 
   it("shows file paths for file change approval prompts", () => {
@@ -552,6 +576,8 @@ describe("ThreadView", () => {
           {
             type: "commandExecution",
             id: "exec-old",
+            pluginId: null,
+            scriptPath: null,
             command: "old command",
             cwd: "/workspace",
             processId: null,
@@ -564,6 +590,7 @@ describe("ThreadView", () => {
           },
           {
             type: "agentMessage",
+            delivery: null,
             id: "agent-1",
             text: "Finished earlier work.",
             phase: null,
@@ -578,6 +605,8 @@ describe("ThreadView", () => {
           {
             type: "commandExecution",
             id: "exec-current",
+            pluginId: null,
+            scriptPath: null,
             command: "current command",
             cwd: "/workspace",
             processId: null,

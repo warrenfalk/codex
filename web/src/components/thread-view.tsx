@@ -20,6 +20,7 @@ import type {
   ThreadItem,
   Turn,
 } from "@/types/protocol";
+import { isBlockingServerRequest } from "@/types/protocol";
 
 import { ThreadItemView } from "./thread-item-view";
 import { RequestCard } from "./request-cards";
@@ -353,6 +354,7 @@ export function ThreadView({
         initializeSummary ??
         "connection unavailable");
   const hasPendingRequests = pendingRequests.length > 0;
+  const hasBlockingRequests = pendingRequests.some(isBlockingServerRequest);
   const visibleTurns = thread
     ? turnsForCondensedMode(thread.turns, condensedMode)
     : [];
@@ -675,7 +677,9 @@ export function ThreadView({
           <div className="section-header">
             <div>
               <p className="eyebrow">Server requests</p>
-              <h2>Action required</h2>
+              <h2>
+                {hasBlockingRequests ? "Action required" : "Input requested"}
+              </h2>
             </div>
           </div>
           <div className="request-stack">
@@ -692,7 +696,7 @@ export function ThreadView({
         </section>
       )}
 
-      {!hasPendingRequests && (
+      {!hasBlockingRequests && (
         <form
           className="composer"
           onSubmit={async (event) => {

@@ -19,7 +19,10 @@ function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
     forkedFromId: null,
     parentThreadId: null,
     preview: `${id} preview`,
+    projectId: null,
     ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
     modelProvider: "openai",
     createdAt: 1,
     updatedAt: 1,
@@ -74,6 +77,38 @@ describe("thread state reducer", () => {
     expect(next.threads.map((thread) => thread.id)).toEqual(["thr_2"]);
   });
 
+  it("clears stale turns when a thread is reverted", () => {
+    const state: AppState = {
+      ...initialState,
+      threads: [
+        threadFixture("thr_1", {
+          turns: [
+            {
+              completedAt: 2,
+              durationMs: 1000,
+              error: null,
+              id: "turn_removed",
+              items: [],
+              itemsView: "full",
+              startedAt: 1,
+              status: "completed",
+            },
+          ],
+        }),
+      ],
+    };
+
+    const next = appReducer(
+      state,
+      setServerNotification({
+        method: "thread/reverted",
+        params: { threadId: "thr_1" },
+      }),
+    );
+
+    expect(next.threads[0]?.turns).toEqual([]);
+  });
+
   it("adds pending server requests and resolves them", () => {
     const withRequest = appReducer(
       initialState,
@@ -117,7 +152,10 @@ describe("thread state reducer", () => {
           forkedFromId: null,
           parentThreadId: null,
           preview: "preview",
+          projectId: null,
           ephemeral: false,
+          section: null,
+          sectionEnteredAt: null,
           modelProvider: "openai",
           createdAt: 1,
           updatedAt: 1,
@@ -138,6 +176,7 @@ describe("thread state reducer", () => {
               items: [
                 {
                   type: "agentMessage",
+                  delivery: null,
                   id: "item_1",
                   text: "Hello",
                   phase: null,
@@ -186,7 +225,10 @@ describe("thread state reducer", () => {
           forkedFromId: null,
           parentThreadId: null,
           preview: "preview",
+          projectId: null,
           ephemeral: false,
+          section: null,
+          sectionEnteredAt: null,
           modelProvider: "openai",
           createdAt: 1,
           updatedAt: 1,

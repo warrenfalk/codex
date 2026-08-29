@@ -96,7 +96,10 @@ function buildThread(
     parentThreadId: null,
     path: null,
     preview: `${name} preview`,
+    projectId: null,
     recencyAt: 1,
+    section: null,
+    sectionEnteredAt: null,
     sessionId: id,
     source: "appServer",
     status: { type: "idle" },
@@ -188,7 +191,7 @@ describe("attachRelay", () => {
   async function startRelayWithThreads(
     threads: Thread[],
     pushNotifier?: PushNotifier,
-  ): Promise<WebSocket> {
+  ): Promise<{ backendSocket: WebSocket; relayPort: number }> {
     const backendServer = http.createServer();
     servers.push(backendServer);
     const backendWss = new WebSocketServer({ server: backendServer });
@@ -241,9 +244,12 @@ describe("attachRelay", () => {
     await attachRelay(relayServer, `ws://127.0.0.1:${backendPort}`, {
       pushNotifier,
     });
-    await listen(relayServer);
+    const relayPort = await listen(relayServer);
 
-    return await waitFor(() => backendSocket);
+    return {
+      backendSocket: await waitFor(() => backendSocket),
+      relayPort,
+    };
   }
 
   function createPushNotifierCollector() {
@@ -280,6 +286,13 @@ describe("attachRelay", () => {
         (message) => message.method === "initialize",
       );
       expect(initializeRequest.method).toBe("initialize");
+      expect(initializeRequest.params).toMatchObject({
+        capabilities: {
+          experimentalApi: true,
+          extensions: { "openai/form": {} },
+          requestAttestation: false,
+        },
+      });
       socket.send(
         JSON.stringify({
           id: initializeRequest.id,
@@ -493,6 +506,126 @@ describe("attachRelay", () => {
         },
         previewsByThreadId: {
           "thread-2": "**You:** Latest prompt",
+        },
+      },
+    });
+
+    client.close();
+  });
+
+  it("refreshes cached thread activity after a thread is reverted", async () => {
+    const { backendSocket, relayPort } = await startRelayWithThreads([
+      buildThread("thread-1", "Thread 1"),
+    ]);
+    let threadReadParams: unknown = null;
+    backendSocket.on("message", (rawMessage) => {
+      const message = JSON.parse(rawMessage.toString()) as JsonRpcMessage;
+      if (message.method !== "thread/read") {
+        return;
+      }
+
+      threadReadParams = message.params;
+      sendJson(backendSocket, {
+        id: message.id,
+        result: {
+          thread: buildThread("thread-1", "Thread 1", { updatedAt: 5 }),
+        },
+      });
+    });
+
+    const client = new WebSocket(`ws://127.0.0.1:${relayPort}/rpc`);
+    sockets.push(client);
+    const collector = createCollector(client);
+    await new Promise<void>((resolve, reject) => {
+      client.on("open", () => resolve());
+      client.on("error", reject);
+    });
+
+    sendJson(client, {
+      id: 1,
+      method: "initialize",
+      params: {
+        capabilities: { experimentalApi: true },
+        clientInfo: {
+          name: "codex_web",
+          title: "Codex Web",
+          version: "0.0.0",
+        },
+      },
+    });
+    await collector.waitFor(
+      (message) => message.id === 1 && "result" in message,
+    );
+    sendJson(client, { method: "initialized", params: {} });
+    await collector.waitFor(
+      (message) => message.method === PROXY_THREAD_LIST_UPDATED_METHOD,
+    );
+
+    sendJson(backendSocket, {
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          completedAt: 4,
+          durationMs: 1000,
+          error: null,
+          id: "turn-removed",
+          items: [
+            {
+              delivery: null,
+              id: "agent-removed",
+              memoryCitation: null,
+              phase: null,
+              text: "Removed response",
+              type: "agentMessage",
+            },
+          ],
+          itemsView: "summary",
+          startedAt: 3,
+          status: "completed",
+        },
+      },
+    });
+    await collector.waitFor(
+      (message) =>
+        message.method === PROXY_THREAD_LIST_UPDATED_METHOD &&
+        (message.params as { previewsByThreadId?: Record<string, string> })
+          .previewsByThreadId?.["thread-1"] === "**Codex:** Removed response",
+    );
+
+    sendJson(backendSocket, {
+      method: "thread/reverted",
+      params: { threadId: "thread-1" },
+    });
+
+    await waitFor(() => threadReadParams);
+    expect(threadReadParams).toEqual({
+      includeTurns: false,
+      threadId: "thread-1",
+    });
+    expect(
+      await collector.waitFor((message) => {
+        if (message.method !== PROXY_THREAD_LIST_UPDATED_METHOD) {
+          return false;
+        }
+        const params = message.params as {
+          previewsByThreadId: Record<string, string>;
+          threads: Thread[];
+        };
+        return (
+          params.threads[0]?.updatedAt === 5 &&
+          !("thread-1" in params.previewsByThreadId)
+        );
+      }),
+    ).toMatchObject({
+      params: {
+        previewsByThreadId: {},
+        threadActivityByThreadId: {
+          "thread-1": {
+            lastAgentMessage: null,
+            lastUserMessage: null,
+            state: "ready",
+          },
         },
       },
     });
@@ -1069,7 +1202,7 @@ describe("attachRelay", () => {
 
   it("does not notify push service for hidden subagent or unknown server requests", async () => {
     const { notifiedRequests, pushNotifier } = createPushNotifierCollector();
-    const backendSocket = await startRelayWithThreads(
+    const { backendSocket } = await startRelayWithThreads(
       [
         buildThread("thread-1", "Thread 1"),
         buildThread("subagent-thread", "Subagent Thread", {
@@ -1150,7 +1283,7 @@ describe("attachRelay", () => {
   it("does not notify push service for hidden subagent or unknown turn completions", async () => {
     const { notifiedNotifications, pushNotifier } =
       createPushNotifierCollector();
-    const backendSocket = await startRelayWithThreads(
+    const { backendSocket } = await startRelayWithThreads(
       [
         buildThread("thread-1", "Thread 1"),
         buildThread("subagent-thread", "Subagent Thread", {

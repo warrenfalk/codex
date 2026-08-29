@@ -63,6 +63,7 @@ describe("ThreadItemView", () => {
   it("renders Codex output as markdown", () => {
     const item: ThreadItem = {
       type: "agentMessage",
+      delivery: null,
       id: "agent-1",
       text: "Use `codex` with [docs](https://example.test).",
       phase: null,
@@ -99,6 +100,7 @@ describe("ThreadItemView", () => {
   it("pushes local source links through the source file callback", () => {
     const item: ThreadItem = {
       type: "agentMessage",
+      delivery: null,
       id: "agent-source-link-1",
       text: "Open [the component](src/components/thread-item-view.tsx:42).",
       phase: null,
@@ -133,6 +135,7 @@ describe("ThreadItemView", () => {
   it("renders fenced code blocks with separate line elements", () => {
     const item: ThreadItem = {
       type: "agentMessage",
+      delivery: null,
       id: "agent-code-1",
       text: [
         "```sql",
@@ -161,6 +164,8 @@ describe("ThreadItemView", () => {
     const item: ThreadItem = {
       type: "commandExecution",
       id: "command-1",
+      pluginId: null,
+      scriptPath: null,
       command: "pnpm run typecheck",
       cwd: "/workspace",
       processId: null,

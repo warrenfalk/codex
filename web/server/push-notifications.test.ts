@@ -49,6 +49,7 @@ describe("push notification payloads", () => {
       pushMessageForServerNotification(
         turnCompletedNotification([
           {
+            delivery: null,
             id: "agent-1",
             memoryCitation: null,
             phase: "commentary",
@@ -56,6 +57,7 @@ describe("push notification payloads", () => {
             type: "agentMessage",
           },
           {
+            delivery: null,
             id: "agent-2",
             memoryCitation: null,
             phase: "final_answer",

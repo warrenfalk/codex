@@ -241,6 +241,7 @@ describe("RequestCard", () => {
         threadId: "thr_1",
         turnId: "turn_1",
         itemId: "item_2",
+        isBlocking: true,
         autoResolutionMs: null,
         questions: [
           {
