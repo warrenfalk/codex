@@ -35,6 +35,7 @@ use crate::fs_helper::FsHelperResponse;
 use crate::local_file_system::current_sandbox_cwd;
 use crate::rpc::internal_error;
 use crate::rpc::invalid_request;
+use crate::rpc::not_found;
 
 const FS_HELPER_ENV_ALLOWLIST: &[&str] = &["PATH", "TMPDIR", "TMP", "TEMP"];
 #[cfg(any(windows, test))]
@@ -480,7 +481,16 @@ pub(crate) fn spawn_command(
             Ok(())
         });
     }
-    command.spawn().map_err(io_error)
+    command.spawn().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound
+            && std::fs::metadata(cwd.as_path())
+                .is_err_and(|cwd_err| cwd_err.kind() == std::io::ErrorKind::NotFound)
+        {
+            not_found(err.to_string())
+        } else {
+            io_error(err)
+        }
+    })
 }
 
 pub(crate) fn io_error(err: std::io::Error) -> JSONRPCErrorError {
