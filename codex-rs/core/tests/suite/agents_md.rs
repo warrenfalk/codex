@@ -627,6 +627,43 @@ async fn restricted_project_without_instructions_starts_successfully() -> Result
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restricted_project_with_missing_cwd_starts_successfully() -> Result<()> {
+    skip_if_target_windows!(
+        Ok(()),
+        "Windows restricted-token sandbox cannot enforce deny-read policies"
+    );
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let missing_cwd_parent = TempDir::new()?;
+    let missing_cwd = missing_cwd_parent.path().join("missing").abs();
+    let mut builder = test_codex().with_config(move |config| {
+        config.cwd = missing_cwd;
+        let mut file_system_policy = FileSystemSandboxPolicy::read_only();
+        file_system_policy.entries.push(FileSystemSandboxEntry::new(
+            config.cwd.join("private.txt").into(),
+            FileSystemAccessMode::Deny,
+        ));
+        config
+            .permissions
+            .set_permission_profile(PermissionProfile::from_runtime_permissions(
+                &file_system_policy,
+                NetworkSandboxPolicy::Restricted,
+            ))
+            .expect("test config should allow a restricted read policy");
+    });
+
+    let test = builder.build_with_auto_env(&server).await?;
+
+    assert_eq!(
+        test.codex.instruction_sources().await,
+        Vec::<PathUri>::new()
+    );
+
+    Ok(())
+}
+
 /// Thread creation fails when sandboxing prevents project instructions from loading.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn denied_project_instructions_fail_thread_creation() -> Result<()> {
