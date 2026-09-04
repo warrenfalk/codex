@@ -278,6 +278,24 @@ impl ChatWidget {
         self.last_rendered_user_message_display = None;
         let was_replaying_turn_completion = self.thread_usage.replaying_turn_completion;
         self.thread_usage.replaying_turn_completion = replay_kind.is_some();
+        if matches!(notification.turn.status, TurnStatus::Completed)
+            && !notification.turn.items.is_empty()
+            && notification
+                .turn
+                .items
+                .iter()
+                .all(|item| matches!(item, ThreadItem::NoteToSelf { .. }))
+        {
+            let turn_id = notification.turn.id;
+            let render_source =
+                replay_kind.map_or(ThreadItemRenderSource::Live, ThreadItemRenderSource::Replay);
+            for item in notification.turn.items {
+                self.handle_thread_item(item, turn_id.clone(), render_source);
+            }
+            self.request_redraw();
+            self.thread_usage.replaying_turn_completion = was_replaying_turn_completion;
+            return;
+        }
         match notification.turn.status {
             TurnStatus::Completed => {
                 let last_agent_message =

@@ -93,6 +93,8 @@ use codex_app_server_protocol::ThreadMemoryModeSetResponse;
 use codex_app_server_protocol::ThreadMetadataGitInfoUpdateParams;
 use codex_app_server_protocol::ThreadMetadataUpdateParams;
 use codex_app_server_protocol::ThreadMetadataUpdateResponse;
+use codex_app_server_protocol::ThreadNoteCreateParams;
+use codex_app_server_protocol::ThreadNoteCreateResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
@@ -1067,6 +1069,24 @@ impl AppServerSession {
         )
         .await?;
         Ok(response.thread)
+    }
+
+    pub(crate) async fn thread_note_create(
+        &mut self,
+        thread_id: ThreadId,
+        note: String,
+    ) -> Result<ThreadNoteCreateResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::ThreadNoteCreate {
+                request_id,
+                params: ThreadNoteCreateParams {
+                    thread_id: thread_id.to_string(),
+                    note,
+                },
+            })
+            .await
+            .wrap_err("failed to create note to self")
     }
 
     pub(crate) async fn thread_archive(&mut self, thread_id: ThreadId) -> Result<()> {

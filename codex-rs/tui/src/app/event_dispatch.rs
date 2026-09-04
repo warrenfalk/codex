@@ -834,6 +834,12 @@ impl App {
                 )
                 .await;
             }
+            AppEvent::CreateNoteToSelf { thread_id, note } => {
+                if let Err(err) = app_server.thread_note_create(thread_id, note).await {
+                    self.chat_widget
+                        .add_error_message(format!("Failed to create note to self: {err}"));
+                }
+            }
             AppEvent::AppendMessageHistoryEntry { thread_id, text } => {
                 self.append_message_history_entry(thread_id, text);
             }

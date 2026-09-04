@@ -979,6 +979,30 @@
         },
         {
           "properties": {
+            "id": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "noteToSelf"
+              ],
+              "title": "NoteToSelfThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "note",
+            "type"
+          ],
+          "title": "NoteToSelfThreadItem",
+          "type": "object"
+        },
+        {
+          "properties": {
             "delivery": {
               "anyOf": [
                 {

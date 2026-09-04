@@ -173,6 +173,10 @@ impl ThreadState {
         self.shutdown_drain_waiter.take()
     }
 
+    pub(crate) fn active_turn_id_if_explicit(&self) -> Option<String> {
+        self.current_turn_history.active_turn_id_if_explicit()
+    }
+
     pub(crate) fn track_current_turn_event(&mut self, event_turn_id: &str, event: &EventMsg) {
         if let EventMsg::TurnStarted(payload) = event {
             self.turn_summary.started_at = payload.started_at;

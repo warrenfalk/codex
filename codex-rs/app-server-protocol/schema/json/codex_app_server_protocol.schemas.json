@@ -845,6 +845,30 @@
             },
             "method": {
               "enum": [
+                "thread/note/create"
+              ],
+              "title": "Thread/note/createRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadNoteCreateParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/note/createRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/turns/list"
               ],
               "title": "Thread/turns/listRequestMethod",
@@ -21471,6 +21495,30 @@
           },
           {
             "properties": {
+              "id": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "noteToSelf"
+                ],
+                "title": "NoteToSelfThreadItemType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "note",
+              "type"
+            ],
+            "title": "NoteToSelfThreadItem",
+            "type": "object"
+          },
+          {
+            "properties": {
               "delivery": {
                 "anyOf": [
                   {
@@ -22624,6 +22672,40 @@
           "threadId"
         ],
         "title": "ThreadNameUpdatedNotification",
+        "type": "object"
+      },
+      "ThreadNoteCreateParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "threadId"
+        ],
+        "title": "ThreadNoteCreateParams",
+        "type": "object"
+      },
+      "ThreadNoteCreateResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "item": {
+            "$ref": "#/definitions/v2/ThreadItem"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "turnId"
+        ],
+        "title": "ThreadNoteCreateResponse",
         "type": "object"
       },
       "ThreadProjectEnvReadParams": {

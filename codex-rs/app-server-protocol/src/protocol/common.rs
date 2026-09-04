@@ -800,6 +800,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadReadResponse,
     },
+    ThreadNoteCreate => "thread/note/create" {
+        params: v2::ThreadNoteCreateParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadNoteCreateResponse,
+    },
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
         // Explicitly concurrent: this primarily reads append-only rollout storage.

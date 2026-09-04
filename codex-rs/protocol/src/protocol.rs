@@ -1463,6 +1463,9 @@ pub enum EventMsg {
     /// User/system input message (what was sent to the model)
     UserMessage(UserMessageEvent),
 
+    /// User-visible note recorded in the thread without entering model-visible history.
+    NoteToSelf(NoteToSelfEvent),
+
     /// Reasoning event from agent.
     AgentReasoning(AgentReasoningEvent),
 
@@ -2597,6 +2600,15 @@ pub fn user_message_preview(user: &UserMessageEvent) -> Option<String> {
         return Some("[Audio]".to_string());
     }
     None
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, TS)]
+pub struct NoteToSelfEvent {
+    pub note: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_turn_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
