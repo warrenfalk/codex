@@ -2,9 +2,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
@@ -2667,6 +2669,7 @@ impl Session {
         additional_permissions: Option<AdditionalPermissionProfile>,
         available_decisions: Option<Vec<ReviewDecision>>,
         plugin_attribution_override: Option<PluginCommandAttribution>,
+        auto_approve_after: Option<Duration>,
     ) -> ReviewDecision {
         let _elicitation = self.services.elicitations.register();
         //  command-level approvals use `call_id`.
@@ -2735,10 +2738,19 @@ impl Session {
             proposed_network_policy_amendments,
             additional_permissions,
             available_decisions: Some(available_decisions),
+            auto_approve_after_ms: auto_approve_after
+                .map(|duration| duration.as_millis().try_into().unwrap_or(u64::MAX)),
             parsed_cmd,
         });
         self.send_event(turn_context, event).await;
-        rx_approve.await.unwrap_or(ReviewDecision::Abort)
+        Self::await_approval_response_with_timeout(rx_approve, auto_approve_after, || async {
+            let mut active = self.active_turn.lock().await;
+            if let Some(at) = active.as_mut() {
+                let mut ts = at.turn_state.lock().await;
+                ts.remove_pending_approval(&effective_approval_id);
+            }
+        })
+        .await
     }
 
     #[expect(
@@ -2831,6 +2843,8 @@ impl Session {
                 });
             }
             AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
             | AskForApproval::UnlessTrusted
             | AskForApproval::Granular(_) => {}
         }
@@ -2865,6 +2879,7 @@ impl Session {
                 approval_reason: None,
                 retry_reason: None,
                 network_approval_context: None,
+                auto_approve_after: None,
             };
             let decision = tokio::select! {
                 biased;
@@ -3268,6 +3283,30 @@ impl Session {
     pub(crate) fn stamp_response_item_for_history(item: &mut ResponseItem, turn_id: &str) {
         item.set_turn_id_if_missing(turn_id);
         item.set_create_time_if_missing(Self::response_item_create_time());
+    }
+
+    async fn await_approval_response_with_timeout<F, Fut>(
+        rx_approve: oneshot::Receiver<ReviewDecision>,
+        auto_approve_after: Option<Duration>,
+        on_timeout: F,
+    ) -> ReviewDecision
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let Some(auto_approve_after) = auto_approve_after else {
+            return rx_approve.await.unwrap_or(ReviewDecision::Abort);
+        };
+        let timeout = tokio::time::sleep(auto_approve_after);
+        tokio::pin!(timeout);
+        tokio::select! {
+            biased;
+            decision = rx_approve => decision.unwrap_or(ReviewDecision::Abort),
+            _ = &mut timeout => {
+                on_timeout().await;
+                ReviewDecision::Approved
+            }
+        }
     }
 
     /// Records conversation items: append to history, persist to rollout, and

@@ -1,0 +1,6 @@
+---
+source: tui/src/status/tests.rs
+expression: "rendered_labels.join(\"\\n\")"
+---
+Workspace (trust-sandbox)
+Workspace (trust-sandbox-timeout)

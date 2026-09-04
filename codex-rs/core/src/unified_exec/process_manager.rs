@@ -876,6 +876,7 @@ impl UnifiedExecProcessManager {
                 approval_reason: Some(approval_reason),
                 retry_reason: None,
                 network_approval_context: None,
+                auto_approve_after: None,
             };
             context
                 .session

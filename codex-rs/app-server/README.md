@@ -1030,6 +1030,8 @@ ignore_rules = ["protected-model"]
 
 Models in `required_on_models` use `approvalsReviewer: "auto_review"` while preserving any valid configured `approvalPolicy`. Full Access is downgraded to workspace-write access. Incompatible runtime overrides or disabled Guardian automatic review are rejected. Models in `ignore_rules` ignore saved command-prefix approvals.
 
+`approvalPolicy` also accepts `"trust-sandbox"` and `"trust-sandbox-timeout"`. Both trust managed restricted sandbox enforcement for dangerous command-shape fallback heuristics while still prompting for sandbox overrides and explicit exec-policy prompt rules. `"trust-sandbox-timeout"` additionally auto-approves sandbox-override command prompts after 300 seconds without persisting session approval or policy amendments.
+
 ```json
 { "method": "turn/start", "id": 30, "params": {
     "threadId": "thr_123",

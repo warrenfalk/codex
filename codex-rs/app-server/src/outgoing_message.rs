@@ -203,6 +203,10 @@ impl ThreadScopedOutgoingMessageSender {
             .await
     }
 
+    pub(crate) async fn resolve_request_locally(&self, id: &RequestId) -> bool {
+        self.outgoing.resolve_request_locally(id).await
+    }
+
     pub(crate) async fn send_response<T>(&self, request_id: ConnectionRequestId, response: T)
     where
         T: Into<ClientResponsePayload>,
@@ -426,6 +430,10 @@ impl OutgoingMessageSender {
         } else {
             false
         }
+    }
+
+    pub(crate) async fn resolve_request_locally(&self, id: &RequestId) -> bool {
+        self.take_request_callback(id).await.is_some()
     }
 
     pub(crate) async fn cancel_all_requests(&self, error: Option<JSONRPCErrorError>) {

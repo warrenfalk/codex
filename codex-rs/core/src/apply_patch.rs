@@ -3,6 +3,7 @@ use crate::safety::SafetyCheck;
 use crate::safety::assess_patch_safety;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnEnvironment;
+use crate::tools::sandboxing::ExecApprovalPromptCause;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
@@ -50,6 +51,7 @@ pub(crate) fn prepare_apply_patch(
                 auto_approved: false,
                 exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
                     reason: None,
+                    prompt_cause: ExecApprovalPromptCause::FileChange,
                     proposed_execpolicy_amendment: None,
                 },
             })

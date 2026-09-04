@@ -1129,7 +1129,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             model_override: Some("gpt-5.2"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandFailure {
-                output_contains: "you cannot ask for escalated permissions",
+                output_contains: "this policy does not allow model-requested permission overrides",
             },
         },
         ScenarioSpec {
@@ -2475,6 +2475,73 @@ async fn assert_execpolicy_amendment_context(
                 && message.contains(r#"["touch", "permissions-prefix.txt"]"#)),
         "expected developer message documenting saved rule, got: {developer_messages:?}"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn trust_sandbox_timeout_marks_sandbox_override_for_auto_approval() -> Result<()> {
+    let server = start_mock_server().await;
+    let approval_policy = AskForApproval::TrustSandboxTimeout;
+    let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
+    let sandbox_policy_for_config = sandbox_policy.clone();
+    let mut builder = test_codex().with_config(move |config| {
+        config.permissions.approval_policy = Constrained::allow_any(approval_policy);
+        config
+            .set_legacy_sandbox_policy(sandbox_policy_for_config)
+            .expect("set sandbox policy");
+    });
+    let test = builder.build(&server).await?;
+
+    let call_id = "trust-sandbox-timeout";
+    let (event, expected_command) = ActionKind::RunCommand {
+        command: "echo trust-sandbox-timeout",
+    }
+    .prepare(
+        &test,
+        &server,
+        call_id,
+        SandboxPermissions::RequireEscalated,
+    )
+    .await?;
+    let expected_command = expected_command.expect("sandbox override should produce a command");
+
+    let _ = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-trust-sandbox-timeout-1"),
+            event,
+            ev_completed("resp-trust-sandbox-timeout-1"),
+        ]),
+    )
+    .await;
+    let _ = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-trust-sandbox-timeout", "done"),
+            ev_completed("resp-trust-sandbox-timeout-2"),
+        ]),
+    )
+    .await;
+
+    submit_turn(
+        &test,
+        "trust-sandbox-timeout",
+        approval_policy,
+        sandbox_policy,
+    )
+    .await?;
+
+    let approval = expect_exec_approval(&test, expected_command.as_str()).await;
+    assert_eq!(approval.auto_approve_after_ms, Some(300_000));
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: None,
+            decision: ReviewDecision::denied("test completed"),
+        })
+        .await?;
+    wait_for_completion(&test).await;
 
     Ok(())
 }

@@ -94,6 +94,8 @@ use codex_protocol::turn_input::TurnInputSubmission;
 use codex_tools::ToolSpec;
 use codex_utils_path_uri::PathUri;
 use std::collections::BTreeMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use tracing::Span;
 
 use crate::connectors::AppInfo;
@@ -12645,7 +12647,7 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
     };
 
     let expected = format!(
-        "approval policy is {policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {policy:?}",
+        "approval policy is {policy:?}; reject command — this policy does not allow model-requested permission overrides",
         policy = turn_context.approval_policy()
     );
 
@@ -12754,4 +12756,60 @@ async fn session_start_hooks_require_project_trust_without_config_toml() -> std:
     }
 
     Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_approval_timeout_auto_approves_after_duration() {
+    let (_tx, rx) = tokio::sync::oneshot::channel();
+    let cleaned_up = Arc::new(AtomicBool::new(false));
+    let cleaned_up_for_timeout = cleaned_up.clone();
+
+    let task = tokio::spawn(async move {
+        Session::await_approval_response_with_timeout(
+            rx,
+            Some(std::time::Duration::from_secs(300)),
+            move || {
+                let cleaned_up_for_timeout = cleaned_up_for_timeout;
+                async move {
+                    cleaned_up_for_timeout.store(true, Ordering::SeqCst);
+                }
+            },
+        )
+        .await
+    });
+
+    tokio::time::advance(std::time::Duration::from_secs(299)).await;
+    assert!(!task.is_finished());
+
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    assert_eq!(ReviewDecision::Approved, task.await.expect("task result"));
+    assert!(cleaned_up.load(Ordering::SeqCst));
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_approval_manual_response_wins_before_timeout() {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let cleaned_up = Arc::new(AtomicBool::new(false));
+    let cleaned_up_for_timeout = cleaned_up.clone();
+
+    let task = tokio::spawn(async move {
+        Session::await_approval_response_with_timeout(
+            rx,
+            Some(std::time::Duration::from_secs(300)),
+            move || {
+                let cleaned_up_for_timeout = cleaned_up_for_timeout;
+                async move {
+                    cleaned_up_for_timeout.store(true, Ordering::SeqCst);
+                }
+            },
+        )
+        .await
+    });
+
+    let decision = ReviewDecision::denied("manual response");
+    tx.send(decision.clone())
+        .expect("receiver should be waiting");
+
+    assert_eq!(decision, task.await.expect("task result"));
+    assert!(!cleaned_up.load(Ordering::SeqCst));
 }

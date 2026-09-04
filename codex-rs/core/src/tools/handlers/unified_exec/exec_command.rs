@@ -337,7 +337,7 @@ impl ExecCommandHandler {
         {
             manager.release_process_id(process_id).await;
             return Err(FunctionCallError::RespondToModel(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {approval_policy:?}"
+                "approval policy is {approval_policy:?}; reject command — this policy does not allow model-requested permission overrides"
             )));
         }
 

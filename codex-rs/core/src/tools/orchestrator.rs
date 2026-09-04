@@ -29,7 +29,6 @@ use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::exec_output::ExecToolCallOutput;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ReviewDecision;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxType;
@@ -187,6 +186,7 @@ impl ToolOrchestrator {
                         approval_reason: None,
                         retry_reason: None,
                         network_approval_context: None,
+                        auto_approve_after: None,
                     };
                     tool_ctx
                         .session
@@ -220,6 +220,7 @@ impl ToolOrchestrator {
                     approval_reason: reason.clone(),
                     retry_reason: None,
                     network_approval_context: None,
+                    auto_approve_after: requirement.auto_approve_after(approval_policy),
                 };
                 tool_ctx
                     .session
@@ -363,16 +364,15 @@ impl ToolOrchestrator {
                 // surface a concise sandbox denial that preserves the
                 // original output.
                 if !tool.wants_no_sandbox_approval(approval_policy) {
-                    let allow_on_request_network_prompt =
-                        matches!(approval_policy, AskForApproval::OnRequest)
-                            && network_approval_context.is_some()
-                            && matches!(
-                                default_exec_approval_requirement(
-                                    approval_policy,
-                                    &file_system_sandbox_policy
-                                ),
-                                ExecApprovalRequirement::NeedsApproval { .. }
-                            );
+                    let allow_on_request_network_prompt = approval_policy.behaves_like_on_request()
+                        && network_approval_context.is_some()
+                        && matches!(
+                            default_exec_approval_requirement(
+                                approval_policy,
+                                &file_system_sandbox_policy
+                            ),
+                            ExecApprovalRequirement::NeedsApproval { .. }
+                        );
                     if !allow_on_request_network_prompt {
                         otel.sandbox_outcome(
                             &otel_tn,
@@ -429,6 +429,7 @@ impl ToolOrchestrator {
                         approval_reason,
                         retry_reason: Some(retry_reason),
                         network_approval_context: network_approval_context.clone(),
+                        auto_approve_after: requirement.auto_approve_after(approval_policy),
                     };
 
                     tool_ctx

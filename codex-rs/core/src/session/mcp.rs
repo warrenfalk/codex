@@ -927,8 +927,11 @@ async fn review_guardian_mcp_elicitation(
         AskForApproval::Granular(config) if !config.allows_mcp_elicitations() => {
             return Ok(Some(mcp_elicitation_decline_without_message()));
         }
-        AskForApproval::OnRequest | AskForApproval::UnlessTrusted | AskForApproval::Granular(_) => {
-        }
+        AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
+        | AskForApproval::UnlessTrusted
+        | AskForApproval::Granular(_) => {}
     }
 
     let approvals_reviewer = crate::connectors::mcp_approvals_reviewer_from_layers(

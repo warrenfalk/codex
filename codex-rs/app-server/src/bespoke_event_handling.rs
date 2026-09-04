@@ -127,6 +127,7 @@ use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::Mutex;
@@ -693,6 +694,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 proposed_network_policy_amendments,
                 additional_permissions,
                 parsed_cmd,
+                auto_approve_after_ms,
                 ..
             } = ev;
             let cwd_uri = match PathUri::try_from(cwd.clone()) {
@@ -812,6 +814,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     approval_id,
                     call_id,
                     completion_item,
+                    auto_approve_after_ms,
                     pending_request_id,
                     rx,
                     conversation,
@@ -2059,6 +2062,32 @@ async fn on_file_change_request_approval_response(
     }
 }
 
+enum CommandApprovalClientResponse {
+    Client(std::result::Result<ClientRequestResult, oneshot::error::RecvError>),
+    AutoApproved,
+}
+
+async fn await_command_approval_client_response(
+    receiver: oneshot::Receiver<ClientRequestResult>,
+    auto_approve_after_ms: Option<u64>,
+    outgoing: &ThreadScopedOutgoingMessageSender,
+    pending_request_id: &RequestId,
+) -> CommandApprovalClientResponse {
+    let Some(auto_approve_after_ms) = auto_approve_after_ms else {
+        return CommandApprovalClientResponse::Client(receiver.await);
+    };
+    let timeout = tokio::time::sleep(Duration::from_millis(auto_approve_after_ms));
+    tokio::pin!(timeout);
+    tokio::select! {
+        biased;
+        response = receiver => CommandApprovalClientResponse::Client(response),
+        _ = &mut timeout => {
+            outgoing.resolve_request_locally(pending_request_id).await;
+            CommandApprovalClientResponse::AutoApproved
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn on_command_execution_request_approval_response(
     event_turn_id: String,
@@ -2066,6 +2095,7 @@ async fn on_command_execution_request_approval_response(
     approval_id: Option<String>,
     item_id: String,
     completion_item: Option<CommandExecutionCompletionItem>,
+    auto_approve_after_ms: Option<u64>,
     pending_request_id: RequestId,
     receiver: oneshot::Receiver<ClientRequestResult>,
     conversation: Arc<CodexThread>,
@@ -2073,74 +2103,87 @@ async fn on_command_execution_request_approval_response(
     thread_state: Arc<Mutex<ThreadState>>,
     permission_guard: ThreadWatchActiveGuard,
 ) {
-    let response = receiver.await;
+    let response = await_command_approval_client_response(
+        receiver,
+        auto_approve_after_ms,
+        &outgoing,
+        &pending_request_id,
+    )
+    .await;
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(permission_guard);
     let (decision, completion_status) = match response {
-        Ok(Ok(value)) => {
-            match serde_json::from_value::<CommandExecutionRequestApprovalResponse>(value) {
-                Ok(response) => match response.decision {
-                    CommandExecutionApprovalDecision::Accept => (ReviewDecision::Approved, None),
-                    CommandExecutionApprovalDecision::AcceptForSession => {
-                        (ReviewDecision::ApprovedForSession, None)
-                    }
-                    CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
-                        execpolicy_amendment,
-                    } => (
-                        ReviewDecision::ApprovedExecpolicyAmendment {
-                            proposed_execpolicy_amendment: execpolicy_amendment.into_core(),
-                        },
-                        None,
-                    ),
-                    CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
-                        network_policy_amendment,
-                    } => {
-                        let completion_status = match network_policy_amendment.action {
-                            V2NetworkPolicyRuleAction::Allow => None,
-                            V2NetworkPolicyRuleAction::Deny => {
-                                Some(CommandExecutionStatus::Declined)
-                            }
-                        };
-                        (
-                            ReviewDecision::NetworkPolicyAmendment {
-                                network_policy_amendment: network_policy_amendment.into_core(),
+        CommandApprovalClientResponse::AutoApproved => (ReviewDecision::Approved, None),
+        CommandApprovalClientResponse::Client(response) => match response {
+            Ok(Ok(value)) => {
+                match serde_json::from_value::<CommandExecutionRequestApprovalResponse>(value) {
+                    Ok(response) => match response.decision {
+                        CommandExecutionApprovalDecision::Accept => {
+                            (ReviewDecision::Approved, None)
+                        }
+                        CommandExecutionApprovalDecision::AcceptForSession => {
+                            (ReviewDecision::ApprovedForSession, None)
+                        }
+                        CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+                            execpolicy_amendment,
+                        } => (
+                            ReviewDecision::ApprovedExecpolicyAmendment {
+                                proposed_execpolicy_amendment: execpolicy_amendment.into_core(),
                             },
-                            completion_status,
+                            None,
+                        ),
+                        CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+                            network_policy_amendment,
+                        } => {
+                            let completion_status = match network_policy_amendment.action {
+                                V2NetworkPolicyRuleAction::Allow => None,
+                                V2NetworkPolicyRuleAction::Deny => {
+                                    Some(CommandExecutionStatus::Declined)
+                                }
+                            };
+                            (
+                                ReviewDecision::NetworkPolicyAmendment {
+                                    network_policy_amendment: network_policy_amendment.into_core(),
+                                },
+                                completion_status,
+                            )
+                        }
+                        CommandExecutionApprovalDecision::Decline => (
+                            ReviewDecision::denied("rejected by user"),
+                            Some(CommandExecutionStatus::Declined),
+                        ),
+                        CommandExecutionApprovalDecision::Cancel => (
+                            ReviewDecision::Abort,
+                            Some(CommandExecutionStatus::Declined),
+                        ),
+                    },
+                    Err(err) => {
+                        error!(
+                            "failed to deserialize CommandExecutionRequestApprovalResponse: {err}"
+                        );
+                        (
+                            ReviewDecision::denied("approval request failed"),
+                            Some(CommandExecutionStatus::Failed),
                         )
                     }
-                    CommandExecutionApprovalDecision::Decline => (
-                        ReviewDecision::denied("rejected by user"),
-                        Some(CommandExecutionStatus::Declined),
-                    ),
-                    CommandExecutionApprovalDecision::Cancel => (
-                        ReviewDecision::Abort,
-                        Some(CommandExecutionStatus::Declined),
-                    ),
-                },
-                Err(err) => {
-                    error!("failed to deserialize CommandExecutionRequestApprovalResponse: {err}");
-                    (
-                        ReviewDecision::denied("approval request failed"),
-                        Some(CommandExecutionStatus::Failed),
-                    )
                 }
             }
-        }
-        Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
-        Ok(Err(err)) => {
-            error!("request failed with client error: {err:?}");
-            (
-                ReviewDecision::denied("approval request failed"),
-                Some(CommandExecutionStatus::Failed),
-            )
-        }
-        Err(err) => {
-            error!("request failed: {err:?}");
-            (
-                ReviewDecision::denied("approval request failed"),
-                Some(CommandExecutionStatus::Failed),
-            )
-        }
+            Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
+            Ok(Err(err)) => {
+                error!("request failed with client error: {err:?}");
+                (
+                    ReviewDecision::denied("approval request failed"),
+                    Some(CommandExecutionStatus::Failed),
+                )
+            }
+            Err(err) => {
+                error!("request failed: {err:?}");
+                (
+                    ReviewDecision::denied("approval request failed"),
+                    Some(CommandExecutionStatus::Failed),
+                )
+            }
+        },
     };
 
     let suppress_subcommand_completion_item = {

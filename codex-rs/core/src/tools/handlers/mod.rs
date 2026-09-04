@@ -200,9 +200,9 @@ pub(crate) fn normalize_and_validate_additional_permissions(
     }
 
     if uses_additional_permissions {
-        if !permissions_preapproved && !matches!(approval_policy, AskForApproval::OnRequest) {
+        if !permissions_preapproved && !approval_policy.behaves_like_on_request() {
             return Err(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot request additional permissions unless the approval policy is OnRequest"
+                "approval policy is {approval_policy:?}; reject command — this policy does not allow model-requested permission overrides"
             ));
         }
         let Some(additional_permissions) = additional_permissions else {

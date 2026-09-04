@@ -38,7 +38,11 @@ pub fn assess_patch_safety(
     }
 
     match policy {
-        AskForApproval::Never | AskForApproval::OnRequest | AskForApproval::Granular(_) => {
+        AskForApproval::Never
+        | AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
+        | AskForApproval::Granular(_) => {
             // Continue to see if this can be auto-approved.
         }
         // TODO(ragona): I'm not sure this is actually correct? I believe in this case
