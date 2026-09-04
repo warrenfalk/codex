@@ -421,6 +421,7 @@ fn streaming_hides_partial_directive_and_renders_completed_link() {
         /*width*/ Some(80),
         Path::new("/workspace"),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
         Some(context),
     );
 

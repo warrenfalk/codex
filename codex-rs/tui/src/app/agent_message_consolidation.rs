@@ -55,9 +55,10 @@ impl App {
                 "ConsolidateAgentMessage: replacing cells [{start}..{end}] with AgentMarkdownCell"
             );
             let consolidated: Arc<dyn HistoryCell> = Arc::new(
-                history_cell::AgentMarkdownCell::new_with_inline_visualizations(
+                history_cell::AgentMarkdownCell::new_with_file_opener_and_inline_visualizations(
                     source,
                     &cwd,
+                    self.config.file_opener,
                     inline_visualization_context,
                 ),
             );

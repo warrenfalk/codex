@@ -131,6 +131,8 @@ mod exec_cell;
 mod exec_command;
 mod external_agent_config_migration;
 mod external_editor;
+mod file_links;
+mod file_reference_index;
 mod file_search;
 mod frames;
 mod get_git_diff;
@@ -3277,6 +3279,7 @@ mod tests {
                 thread_id,
                 crate::thread_transcript::RawReasoningVisibility::Hidden,
                 /*config*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             )
             .await?;
             assert!(cells.len() > 100);

@@ -47,6 +47,7 @@ use codex_app_server_protocol::ThreadSortKey;
 use codex_app_server_protocol::ThreadUnarchiveParams;
 use codex_app_server_protocol::ThreadUnarchiveResponse;
 use codex_config::types::SessionPickerViewMode;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
 use color_eyre::eyre::Result;
@@ -449,6 +450,7 @@ async fn run_resume_picker_with_launch_context(
             include_non_interactive,
             raw_reasoning_visibility(config),
             (!uses_remote_workspace).then(|| config.clone()),
+            config.file_opener,
             bg_tx,
         ),
         bg_rx,
@@ -503,6 +505,7 @@ pub async fn run_fork_picker_with_app_server(
             /*include_non_interactive*/ false,
             raw_reasoning_visibility(config),
             (!uses_remote_workspace).then(|| config.clone()),
+            config.file_opener,
             bg_tx,
         ),
         bg_rx,
@@ -656,6 +659,7 @@ fn spawn_app_server_page_loader(
     include_non_interactive: bool,
     raw_reasoning_visibility: RawReasoningVisibility,
     config: Option<Config>,
+    file_opener: UriBasedFileOpener,
     bg_tx: mpsc::UnboundedSender<BackgroundEvent>,
 ) -> PickerLoader {
     let (request_tx, mut request_rx) = mpsc::unbounded_channel::<PickerLoadRequest>();
@@ -697,6 +701,7 @@ fn spawn_app_server_page_loader(
                             thread_id,
                             raw_reasoning_visibility,
                             config.as_ref(),
+                            file_opener,
                         ) => {
                             let _ = bg_tx.send(BackgroundEvent::Transcript {
                                 thread_id,
@@ -6357,6 +6362,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -6424,6 +6430,7 @@ session_picker_view = "dense"
             thread.clone(),
             RawReasoningVisibility::Hidden,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -6434,6 +6441,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -6499,6 +6507,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))

@@ -159,6 +159,7 @@ impl ChatWidget {
                 self.current_stream_width(/*reserved_cols*/ 4),
                 &self.config.cwd,
                 self.history_render_mode(),
+                self.config.file_opener,
             ));
         }
         if let Some(controller) = self.plan_stream_controller.as_mut()
@@ -475,8 +476,9 @@ impl ChatWidget {
             });
             self.stream_controller = Some(StreamController::new_with_inline_visualizations(
                 self.current_stream_width(/*reserved_cols*/ 2),
-                &self.config.cwd,
+                &self.active_transcript_cwd(),
                 self.history_render_mode(),
+                self.config.file_opener,
                 inline_visualization_context,
             ));
         }

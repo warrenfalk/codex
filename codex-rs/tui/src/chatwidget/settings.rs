@@ -498,6 +498,7 @@ impl ChatWidget {
         self.sync_personality_command_enabled();
         if cwd_changed {
             self.invalidate_connector_scope();
+            self.refresh_file_reference_index();
             self.refresh_skills_for_current_cwd(/*force_reload*/ true);
             self.refresh_connector_mentions(/*force_refresh*/ false);
         }

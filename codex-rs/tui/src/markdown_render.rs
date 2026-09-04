@@ -36,6 +36,7 @@
 //! body rows, or even 3-char-wide columns cannot fit, body rows render as
 //! key/value records.
 
+use crate::file_links::split_file_reference_segments;
 use crate::markdown_text_merge::DecodedTextMerge;
 use crate::render::highlight::foreground_style_for_scopes;
 use crate::render::highlight::highlight_code_to_lines;
@@ -51,6 +52,7 @@ use crate::width::display_width;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::word_wrap_line;
+use codex_config::types::UriBasedFileOpener;
 use pulldown_cmark::Alignment;
 use pulldown_cmark::CodeBlockKind;
 use pulldown_cmark::CowStr;
@@ -74,10 +76,13 @@ mod table_key_value;
 mod web_links;
 
 use local_links::is_local_path_like_link;
+use local_links::render_local_link_href;
 use local_links::render_local_link_target;
 use local_links::should_render_local_link_label;
 pub(crate) use streaming::StreamingMarkdownRender;
+#[cfg(test)]
 pub(crate) use streaming::render_streaming_markdown_lines_with_width_and_cwd;
+pub(crate) use streaming::render_streaming_markdown_lines_with_width_cwd_and_file_opener;
 pub(crate) use web_links::hide_web_link_destination;
 
 const TABLE_COLUMN_GAP: usize = 2;
@@ -315,11 +320,28 @@ pub(crate) fn render_markdown_lines_with_width_and_cwd(
     width: Option<usize>,
     cwd: Option<&Path>,
 ) -> Vec<HyperlinkLine> {
-    render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+    render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
         input,
         width,
         cwd,
+        UriBasedFileOpener::None,
         &never_hide_link_destination,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    is_hidden_link_destination: &dyn Fn(&str) -> bool,
+) -> Vec<HyperlinkLine> {
+    render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
+        input,
+        width,
+        cwd,
+        UriBasedFileOpener::None,
+        is_hidden_link_destination,
     )
 }
 
@@ -327,17 +349,41 @@ fn never_hide_link_destination(_: &str) -> bool {
     false
 }
 
-pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+#[cfg(test)]
+pub(crate) fn render_markdown_lines_with_width_cwd_and_file_opener(
     input: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
+) -> Vec<HyperlinkLine> {
+    render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
+        input,
+        width,
+        cwd,
+        file_opener,
+        &never_hide_link_destination,
+    )
+}
+
+pub(crate) fn render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
 ) -> Vec<HyperlinkLine> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
     let parser = DecodedTextMerge::new(Parser::new_ext(input, options).into_offset_iter());
-    let mut w = Writer::new(input, parser, width, cwd, is_hidden_link_destination);
+    let mut w = Writer::new(
+        input,
+        parser,
+        width,
+        cwd,
+        file_opener,
+        is_hidden_link_destination,
+    );
     w.run();
     w.text
 }
@@ -354,6 +400,7 @@ struct LinkState {
     /// can collapse to this canonical target without losing descriptive labels.
     local_target_display: Option<String>,
     local_label_spans: Vec<Span<'static>>,
+    href: Option<String>,
 }
 
 fn should_render_link_destination(dest_url: &str) -> bool {
@@ -388,6 +435,7 @@ where
     code_block_buffer: String,
     wrap_width: Option<usize>,
     cwd: Option<PathBuf>,
+    file_opener: UriBasedFileOpener,
     is_hidden_link_destination: &'policy dyn Fn(&str) -> bool,
     line_ends_with_local_link_target: bool,
     pending_local_link_soft_break: bool,
@@ -408,6 +456,7 @@ where
         iter: I,
         wrap_width: Option<usize>,
         cwd: Option<&Path>,
+        file_opener: UriBasedFileOpener,
         is_hidden_link_destination: &'policy dyn Fn(&str) -> bool,
     ) -> Self {
         Self {
@@ -429,6 +478,7 @@ where
             code_block_buffer: String::new(),
             wrap_width,
             cwd: cwd.map(Path::to_path_buf),
+            file_opener,
             is_hidden_link_destination,
             line_ends_with_local_link_target: false,
             pending_local_link_soft_break: false,
@@ -681,9 +731,8 @@ where
             if i > 0 {
                 self.push_line(Line::default());
             }
-            let content = line.to_string();
             let style = self.inline_styles.last().copied().unwrap_or_default();
-            self.push_text_spans(&content, style);
+            self.push_text_spans(line, style);
         }
         self.needs_newline = false;
     }
@@ -703,8 +752,11 @@ where
             self.push_line(Line::default());
             self.pending_marker_line = false;
         }
-        let span = Span::from(code.into_string()).style(self.styles.code);
-        self.push_span(span);
+        self.push_text_spans_with_options(
+            code.as_ref(),
+            self.styles.code,
+            /*annotate_web_urls*/ false,
+        );
     }
 
     fn html(&mut self, html: CowStr<'a>, inline: bool) {
@@ -745,7 +797,7 @@ where
                 self.push_line(Line::default());
             }
             let style = self.inline_styles.last().copied().unwrap_or_default();
-            self.push_span(Span::styled(line.to_string(), style));
+            self.push_text_spans_with_options(line, style, /*annotate_web_urls*/ false);
         }
         self.needs_newline = !inline;
     }
@@ -1027,8 +1079,18 @@ where
         let mut annotated = HyperlinkLine::new(Line::default());
         annotated.push_span(
             span,
-            self.link.as_ref().map(|link| link.destination.as_str()),
+            self.link.as_ref().and_then(|link| link.href.as_deref()),
         );
+        if let Some(table_state) = self.table_state.as_mut()
+            && let Some(cell) = table_state.current_cell.as_mut()
+        {
+            cell.push_annotated(annotated);
+        }
+    }
+
+    fn push_linked_span_to_table_cell(&mut self, span: Span<'static>, href: Option<String>) {
+        let mut annotated = HyperlinkLine::new(Line::default());
+        annotated.push_span(span, href.as_deref());
         if let Some(table_state) = self.table_state.as_mut()
             && let Some(cell) = table_state.current_cell.as_mut()
         {
@@ -1056,15 +1118,27 @@ where
 
     fn push_text_spans_to_table_cell(&mut self, text: &str, style: Style) {
         let span = self.style_link_label(Span::styled(text.to_string(), style));
-        let destination = self
-            .link
-            .as_ref()
-            .and_then(|link| web_destination(&link.destination));
-        let mut annotated = if let Some(destination) = destination {
+        let link_destination = self.link.as_ref().and_then(|link| link.href.clone());
+        let mut annotated = if let Some(destination) = link_destination {
             let mut annotated = HyperlinkLine::new(Line::default());
             annotated.push_span(span, Some(&destination));
             annotated
-        } else if self.link.is_some() || self.in_code_block {
+        } else if self.link.is_some() {
+            HyperlinkLine::new(Line::from(span))
+        } else if let Some(cwd) = self.cwd.as_deref() {
+            let segments = split_file_reference_segments(text, cwd, self.file_opener);
+            if segments.iter().any(|segment| segment.href.is_some()) {
+                let mut annotated = HyperlinkLine::new(Line::default());
+                for segment in segments {
+                    annotated.push_span(Span::styled(segment.text, style), segment.href.as_deref());
+                }
+                annotated
+            } else if self.in_code_block {
+                HyperlinkLine::new(Line::from(span))
+            } else {
+                annotate_web_urls_in_line(Line::from(span))
+            }
+        } else if self.in_code_block {
             HyperlinkLine::new(Line::from(span))
         } else {
             annotate_web_urls_in_line(Line::from(span))
@@ -1815,17 +1889,23 @@ where
         if style_label {
             self.push_inline_style(self.styles.link);
         }
+        let is_local = is_local_path_like_link(&dest_url);
         let show_destination = !style_label && should_render_link_destination(&dest_url);
         self.link = Some(LinkState {
             show_destination,
             style_label,
             has_visible_label: false,
-            local_target_display: if is_local_path_like_link(&dest_url) {
+            local_target_display: if is_local {
                 render_local_link_target(&dest_url, self.cwd.as_deref())
             } else {
                 None
             },
             local_label_spans: Vec::new(),
+            href: if is_local {
+                render_local_link_href(&dest_url, self.cwd.as_deref(), self.file_opener)
+            } else {
+                Some(dest_url.clone())
+            },
             destination: dest_url,
         });
     }
@@ -1843,25 +1923,17 @@ where
                 // line to avoid detached url lines.
                 if self.in_table_cell() {
                     self.push_span_to_table_cell(" (".into());
-                    let mut destination = HyperlinkLine::new(Line::default());
-                    destination.push_span(
+                    self.push_linked_span_to_table_cell(
                         Span::styled(link.destination.clone(), self.styles.link),
-                        web_destination(&link.destination).as_deref(),
+                        link.href,
                     );
-                    if let Some(table_state) = self.table_state.as_mut()
-                        && let Some(cell) = table_state.current_cell.as_mut()
-                    {
-                        cell.push_annotated(destination);
-                    }
                     self.push_span_to_table_cell(")".into());
                 } else {
                     self.push_span(" (".into());
-                    let mut destination = HyperlinkLine::new(Line::default());
-                    destination.push_span(
+                    self.push_linked_span(
                         Span::styled(link.destination.clone(), self.styles.link),
-                        web_destination(&link.destination).as_deref(),
+                        link.href,
                     );
-                    self.push_annotated(destination);
                     self.push_span(")".into());
                 }
             } else if let Some(local_target_display) = link.local_target_display {
@@ -1886,7 +1958,7 @@ where
                         }
                         self.push_span_to_table_cell(" (".into());
                     }
-                    self.push_span_to_table_cell(span);
+                    self.push_linked_span_to_table_cell(span, link.href);
                     if show_label {
                         self.push_span_to_table_cell(")".into());
                     }
@@ -1900,7 +1972,7 @@ where
                         }
                         self.push_span(" (".into());
                     }
-                    self.push_span(span);
+                    self.push_linked_span(span, link.href);
                     if show_label {
                         self.push_span(")".into());
                     }
@@ -2038,9 +2110,15 @@ where
         if let Some(line) = self.current_line_content.as_mut() {
             line.push_span(
                 span,
-                self.link.as_ref().map(|link| link.destination.as_str()),
+                self.link.as_ref().and_then(|link| link.href.as_deref()),
             );
         }
+    }
+
+    fn push_linked_span(&mut self, span: Span<'static>, href: Option<String>) {
+        let mut annotated = HyperlinkLine::new(Line::default());
+        annotated.push_span(span, href.as_deref());
+        self.push_annotated(annotated);
     }
 
     fn push_annotated(&mut self, mut appended: HyperlinkLine) {
@@ -2059,16 +2137,32 @@ where
     }
 
     fn push_text_spans(&mut self, text: &str, style: Style) {
+        self.push_text_spans_with_options(text, style, /*annotate_web_urls*/ true);
+    }
+
+    fn push_text_spans_with_options(&mut self, text: &str, style: Style, annotate_web_urls: bool) {
         let span = self.style_link_label(Span::styled(text.to_string(), style));
-        let destination = self
-            .link
-            .as_ref()
-            .and_then(|link| web_destination(&link.destination));
-        let annotated = if let Some(destination) = destination {
+        let link_destination = self.link.as_ref().and_then(|link| link.href.clone());
+        let annotated = if let Some(destination) = link_destination {
             let mut annotated = HyperlinkLine::new(Line::default());
             annotated.push_span(span, Some(&destination));
             annotated
-        } else if self.link.is_some() || self.in_code_block {
+        } else if self.link.is_some() {
+            HyperlinkLine::new(Line::from(span))
+        } else if let Some(cwd) = self.cwd.as_deref() {
+            let segments = split_file_reference_segments(text, cwd, self.file_opener);
+            if segments.iter().any(|segment| segment.href.is_some()) {
+                let mut annotated = HyperlinkLine::new(Line::default());
+                for segment in segments {
+                    annotated.push_span(Span::styled(segment.text, style), segment.href.as_deref());
+                }
+                annotated
+            } else if self.in_code_block || !annotate_web_urls {
+                HyperlinkLine::new(Line::from(span))
+            } else {
+                annotate_web_urls_in_line(Line::from(span))
+            }
+        } else if self.in_code_block || !annotate_web_urls {
             HyperlinkLine::new(Line::from(span))
         } else {
             annotate_web_urls_in_line(Line::from(span))
@@ -2325,6 +2419,7 @@ mod tests {
             std::iter::empty(),
             /*wrap_width*/ Some(80),
             /*cwd*/ None,
+            /*file_opener*/ UriBasedFileOpener::None,
             &never_hide_link_destination,
         );
         let wrapped = writer.wrap_cell(&cell, /*width*/ 40);

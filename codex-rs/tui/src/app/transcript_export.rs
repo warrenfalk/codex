@@ -124,6 +124,9 @@ pub(super) async fn load_export_transcript(
                 [item],
                 visibility,
                 config,
+                config.map_or(codex_config::types::UriBasedFileOpener::None, |config| {
+                    config.file_opener
+                }),
             ));
         }
     }

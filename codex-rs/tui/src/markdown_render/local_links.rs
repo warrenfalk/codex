@@ -7,9 +7,11 @@
 //! canonical target to avoid duplicate file references.
 //!
 
+use codex_config::types::UriBasedFileOpener;
 use codex_utils_string::normalize_markdown_hash_location_suffix;
 use regex_lite::Regex;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use url::Url;
 
@@ -114,6 +116,28 @@ pub(super) fn render_local_link_target(dest_url: &str, cwd: Option<&Path>) -> Op
         rendered.push_str(&location_suffix);
     }
     Some(rendered)
+}
+
+pub(super) fn render_local_link_href(
+    dest_url: &str,
+    cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
+) -> Option<String> {
+    let scheme = crate::file_links::file_opener_scheme(file_opener)?;
+    let (path_text, location_suffix) = parse_local_link_target(dest_url)?;
+    if path_text.starts_with("~/") {
+        return None;
+    }
+    let resolved_path = if is_absolute_local_link_path(&path_text) {
+        PathBuf::from(&path_text)
+    } else {
+        cwd?.join(&path_text)
+    };
+    let path = resolved_path.to_string_lossy().replace('\\', "/");
+    Some(format!(
+        "{scheme}://file{path}{}",
+        location_suffix.unwrap_or_default()
+    ))
 }
 
 /// Split a local-link destination into `(normalized_path_text, location_suffix)`.

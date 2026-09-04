@@ -10,6 +10,7 @@ use super::Options;
 use super::Parser;
 use super::Tag;
 use super::Writer;
+use codex_config::types::UriBasedFileOpener;
 use std::ops::Range;
 use std::path::Path;
 
@@ -29,10 +30,27 @@ pub(crate) struct StreamingMarkdownRender {
 ///
 /// Every reported byte offset indexes the exact `input` passed here. Callers that transform source
 /// before rendering must map the offset back to their original source before retaining a prefix.
+#[cfg(test)]
 pub(crate) fn render_streaming_markdown_lines_with_width_and_cwd(
     input: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    is_hidden_link_destination: &dyn Fn(&str) -> bool,
+) -> StreamingMarkdownRender {
+    render_streaming_markdown_lines_with_width_cwd_and_file_opener(
+        input,
+        width,
+        cwd,
+        UriBasedFileOpener::None,
+        is_hidden_link_destination,
+    )
+}
+
+pub(crate) fn render_streaming_markdown_lines_with_width_cwd_and_file_opener(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
 ) -> StreamingMarkdownRender {
     let mut options = Options::empty();
@@ -47,7 +65,14 @@ pub(crate) fn render_streaming_markdown_lines_with_width_and_cwd(
         last_start: 0,
         first_is_html: false,
     };
-    let mut writer = Writer::new(input, parser, width, cwd, is_hidden_link_destination);
+    let mut writer = Writer::new(
+        input,
+        parser,
+        width,
+        cwd,
+        file_opener,
+        is_hidden_link_destination,
+    );
     writer.run();
     StreamingMarkdownRender {
         lines: writer.text,
