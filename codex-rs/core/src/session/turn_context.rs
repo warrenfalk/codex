@@ -5,7 +5,9 @@ use super::*;
 use crate::config::TokenBudgetConfig;
 use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::environment_selection::TurnEnvironmentSnapshot;
+use crate::environment_selection::TurnEnvironmentState;
 use crate::exec_policy::AllowPrefixRules;
+use crate::git_metadata_permissions::with_git_metadata_write_access;
 use crate::shell_snapshot::ShellSnapshotFile;
 use crate::tools::sandboxing::executor_windows_sandbox_level;
 use arc_swap::ArcSwap;
@@ -928,7 +930,10 @@ impl Session {
         multi_agent_runtime: TurnMultiAgentRuntime,
         git_enrichment_policy: GitEnrichmentPolicy,
     ) -> Arc<TurnContext> {
-        let turn_environments = self.services.turn_environments.snapshot().await;
+        let mut turn_environments = self.services.turn_environments.snapshot().await;
+        let primary_environment_id = turn_environments
+            .primary()
+            .map(|environment| environment.selection.environment_id.clone());
         let primary_turn_environment = turn_environments.primary();
         // TODO(anp): Migrate per-turn config and legacy TurnContext cwd consumers to PathUri so
         // a foreign primary environment does not fall back to the session's host cwd.
@@ -941,6 +946,65 @@ impl Session {
             .map(TurnEnvironment::permission_profile)
             .cloned()
             .unwrap_or_else(|| session_configuration.permission_profile());
+        if session_configuration.git_metadata_write_enabled() {
+            let mut primary_permission_profile = None;
+            for state in &mut turn_environments.environments {
+                let TurnEnvironmentState::Ready(environment) = state else {
+                    continue;
+                };
+                let Ok(environment_cwd) = environment.cwd().to_abs_path() else {
+                    continue;
+                };
+                let base_permission_profile = environment.permission_profile_with_workspace_roots();
+                let permission_profile = with_git_metadata_write_access(
+                    environment.environment.get_filesystem().as_ref(),
+                    &environment_cwd,
+                    base_permission_profile.clone(),
+                )
+                .await;
+                if primary_environment_id.as_deref()
+                    == Some(environment.selection.environment_id.as_str())
+                {
+                    primary_permission_profile = Some(permission_profile.clone());
+                }
+                if permission_profile == base_permission_profile {
+                    continue;
+                }
+
+                let active_permission_profile = environment.active_permission_profile();
+                let profile_workspace_roots = environment
+                    .config()
+                    .permission_profile
+                    .profile_workspace_roots()
+                    .to_vec();
+                let EnvironmentConfigState::Ready(config) = &mut environment.selection.config
+                else {
+                    unreachable!("ready turn environments always carry resolved configuration")
+                };
+                config.permission_profile = match active_permission_profile {
+                    Some(active_permission_profile) => {
+                        PermissionProfileSnapshot::active_with_profile_workspace_roots(
+                            permission_profile,
+                            active_permission_profile,
+                            profile_workspace_roots,
+                        )
+                    }
+                    None => PermissionProfileSnapshot::legacy(permission_profile),
+                };
+            }
+
+            if let Some(permission_profile) = primary_permission_profile
+                && permission_profile != per_turn_config.permissions.effective_permission_profile()
+                && let Err(err) = per_turn_config
+                    .permissions
+                    .replace_permission_profile_with_internal_overlay(permission_profile)
+            {
+                tracing::warn!(
+                    error = %err,
+                    "failed to install Git metadata permission overlay"
+                );
+            }
+        }
         let model_info = session_configuration
             .step_settings
             .resolve_model_info(
@@ -993,7 +1057,8 @@ impl Session {
             let skills_input =
                 skills_load_input_from_config(&per_turn_config, effective_skill_roots)
                     .with_plugin_skill_snapshots(plugin_skill_snapshots);
-            let fs = primary_turn_environment
+            let fs = turn_environments
+                .primary()
                 .map(|turn_environment| turn_environment.environment.get_filesystem());
             self.services
                 .skills_service

@@ -198,6 +198,14 @@ impl SessionConfiguration {
         self.permission_profile_state.active_permission_profile()
     }
 
+    pub(super) fn git_metadata_write_enabled(&self) -> bool {
+        self.active_permission_profile().is_some_and(|profile| {
+            self.original_config_do_not_use
+                .permissions
+                .git_metadata_write_enabled_for(&profile.id)
+        })
+    }
+
     pub(super) fn apply_permission_profile_to_permissions(
         &self,
         permissions: &mut crate::config::Permissions,

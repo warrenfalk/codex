@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io;
 use std::path::Component;
 use std::path::Path;
@@ -44,6 +45,7 @@ pub(crate) const BUILT_IN_READ_ONLY_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_
 pub(crate) const BUILT_IN_WORKSPACE_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 pub(crate) const BUILT_IN_DANGER_FULL_ACCESS_PROFILE: &str =
     BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+pub(crate) const GIT_METADATA_SPECIAL_PATH: &str = ":git_metadata";
 
 pub(crate) fn default_builtin_permission_profile_name(
     active_project: &ProjectConfig,
@@ -202,6 +204,37 @@ pub fn resolve_permission_profile(
     permissions
         .resolve_profile(profile_name, extensible_builtin_parent_profile)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))
+}
+
+pub(crate) fn git_metadata_write_profile_ids(
+    permissions: Option<&PermissionsToml>,
+) -> BTreeSet<String> {
+    let Some(permissions) = permissions else {
+        return BTreeSet::new();
+    };
+
+    permissions
+        .entries
+        .keys()
+        .filter_map(|profile_id| {
+            resolve_permission_profile(permissions, profile_id)
+                .ok()
+                .filter(permission_profile_enables_git_metadata_write)
+                .map(|_| profile_id.clone())
+        })
+        .collect()
+}
+
+fn permission_profile_enables_git_metadata_write(profile: &PermissionProfileToml) -> bool {
+    matches!(
+        profile
+            .filesystem
+            .as_ref()
+            .and_then(|filesystem| filesystem.entries.get(GIT_METADATA_SPECIAL_PATH)),
+        Some(FilesystemPermissionToml::Access(
+            FileSystemAccessMode::Write
+        ))
+    )
 }
 
 fn extensible_builtin_parent_profile(profile_name: &str) -> Option<PermissionProfileToml> {
@@ -383,6 +416,20 @@ pub fn compile_permission_profile(
                 }
             }
             for (path, permission) in &filesystem.entries {
+                if path == GIT_METADATA_SPECIAL_PATH {
+                    if !matches!(
+                        permission,
+                        FilesystemPermissionToml::Access(FileSystemAccessMode::Write)
+                    ) {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!(
+                                "filesystem path `{GIT_METADATA_SPECIAL_PATH}` only supports `write` access"
+                            ),
+                        ));
+                    }
+                    continue;
+                }
                 file_system_sandbox_policy
                     .entries
                     .extend(compile_filesystem_permission(

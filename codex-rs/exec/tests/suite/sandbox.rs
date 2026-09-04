@@ -1,6 +1,16 @@
 #![cfg(unix)]
 use codex_core::spawn::StdioPolicy;
 use codex_protocol::models::PermissionProfile;
+#[cfg(target_os = "linux")]
+use codex_protocol::permissions::FileSystemAccessMode;
+#[cfg(target_os = "linux")]
+use codex_protocol::permissions::FileSystemPath;
+#[cfg(target_os = "linux")]
+use codex_protocol::permissions::FileSystemSandboxEntry;
+#[cfg(target_os = "linux")]
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+#[cfg(target_os = "linux")]
+use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
@@ -429,6 +439,122 @@ async fn sandbox_blocks_first_time_dot_codex_creation() {
         "{} should not have been created",
         config_toml.display()
     );
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn sandbox_starts_with_collapsed_missing_read_only_paths_beneath_nested_write_root() {
+    core_test_support::skip_if_sandbox!();
+    let Some(sh) = find_executable_on_path("sh") else {
+        eprintln!("sh not found in PATH, skipping test.");
+        return;
+    };
+    let sandbox_env = match linux_sandbox_test_env().await {
+        Some(env) => env,
+        None => return,
+    };
+
+    let temp = tempfile::tempdir().expect("should be able to create temp dir");
+    let workspace = temp.path().join("workspace").abs();
+    let admin = workspace.join("admin");
+    let private = admin.join("private");
+    let config_worktree = private.join("config.worktree");
+    let alternates = private.join("objects/info/alternates");
+    let http_alternates = private.join("objects/info/http-alternates");
+    create_dir_all(&private).await.expect("mkdir private root");
+    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Special {
+                value: FileSystemSpecialPath::Root,
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: workspace.clone().into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: admin.clone().into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: private.clone().into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: config_worktree.clone().into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: alternates.clone().into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: http_alternates.clone().into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+    ]);
+    let permission_profile = PermissionProfile::from_runtime_permissions(
+        &file_system_sandbox_policy,
+        NetworkSandboxPolicy::Restricted,
+    );
+
+    let mut child = spawn_command_under_sandbox(
+        vec![
+            sh.to_string_lossy().into_owned(),
+            "-c".to_string(),
+            "for target in \"$@\"; do if : > \"$target\"; then exit 42; fi; test ! -e \"$target\" || exit; done"
+                .to_string(),
+            "sh".to_string(),
+            config_worktree.to_string_lossy().into_owned(),
+            alternates.to_string_lossy().into_owned(),
+            http_alternates.to_string_lossy().into_owned(),
+        ],
+        workspace.clone(),
+        &permission_profile,
+        &workspace,
+        StdioPolicy::RedirectForShellTool,
+        sandbox_env,
+    )
+    .await
+    .expect("should spawn command with nested Git-style carveouts");
+
+    let status = child
+        .wait()
+        .await
+        .expect("should wait for sandboxed command");
+    assert!(
+        status.success(),
+        "sandbox setup failed or allowed missing nested read-only path creation: {status:?}"
+    );
+    for path in [&config_worktree, &alternates, &http_alternates] {
+        assert!(
+            !tokio::fs::try_exists(path)
+                .await
+                .expect("check protected path"),
+            "synthetic mount target for {} should be cleaned up",
+            path.display()
+        );
+    }
 }
 
 fn unix_sock_body() {

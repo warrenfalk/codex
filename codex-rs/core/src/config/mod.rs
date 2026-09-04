@@ -136,6 +136,7 @@ use rmcp::model::UrlElicitationCapability;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -153,6 +154,7 @@ use crate::config::permissions::compile_permission_profile_selection;
 use crate::config::permissions::compile_permission_profile_workspace_roots;
 use crate::config::permissions::default_builtin_permission_profile_name;
 use crate::config::permissions::get_readable_roots_required_for_codex_runtime;
+use crate::config::permissions::git_metadata_write_profile_ids;
 use crate::config::permissions::network_proxy_config_for_profile_selection;
 use crate::config::permissions::validate_user_permission_profile_names;
 use crate::responses_metadata::validate_extra_metadata;
@@ -308,6 +310,10 @@ pub struct Permissions {
     permission_profile_state: PermissionProfileState,
     /// Managed deny-read rules retained independently from user-defined denies.
     managed_deny_read_policy: Option<Arc<FileSystemSandboxPolicy>>,
+    /// Named permission profiles that opt in to the Git metadata state-write
+    /// overlay. The selected profile id is checked at turn time so profile
+    /// switches do not retain stale repository access.
+    git_metadata_write_profile_ids: BTreeSet<String>,
     /// Thread-scoped runtime workspace roots. Symbolic `:workspace_roots`
     /// entries in the permission profile are materialized against these roots.
     workspace_roots: Vec<AbsolutePathBuf>,
@@ -344,6 +350,7 @@ impl Permissions {
                 permission_profile,
             )?,
             managed_deny_read_policy: None,
+            git_metadata_write_profile_ids: BTreeSet::new(),
             workspace_roots: Vec::new(),
             network: None,
             allow_login_shell: true,
@@ -362,6 +369,10 @@ impl Permissions {
         permission_profile_state: PermissionProfileState,
     ) {
         self.permission_profile_state = permission_profile_state;
+    }
+
+    pub(crate) fn git_metadata_write_enabled_for(&self, profile_id: &str) -> bool {
+        self.git_metadata_write_profile_ids.contains(profile_id)
     }
 
     /// Apply a permission profile snapshot emitted by core session state.
@@ -388,6 +399,23 @@ impl Permissions {
         self.permission_profile_state =
             PermissionProfileState::from_constrained_snapshot(permission_profile, snapshot)?;
         Ok(())
+    }
+
+    pub(crate) fn replace_permission_profile_with_internal_overlay(
+        &mut self,
+        permission_profile: PermissionProfile,
+    ) -> ConstraintResult<()> {
+        let snapshot = match self.active_permission_profile() {
+            Some(active_permission_profile) => {
+                PermissionProfileSnapshot::active_with_profile_workspace_roots(
+                    permission_profile,
+                    active_permission_profile,
+                    self.profile_workspace_roots().to_vec(),
+                )
+            }
+            None => PermissionProfileSnapshot::legacy(permission_profile),
+        };
+        self.replace_permission_profile_from_session_snapshot(snapshot)
     }
 
     /// Borrow the canonical profile before runtime workspace-root
@@ -3442,6 +3470,9 @@ impl Config {
         .into_iter()
         .filter(|profile| !is_builtin_permission_profile_name(&profile.id))
         .collect();
+        let git_metadata_write_profile_ids = git_metadata_write_profile_ids(
+            effective_permission_selection.profiles.as_ref(),
+        );
         let using_implicit_builtin_profile = !effective_permission_selection
             .persisted_profile_id_was_provided
             && permission_config_syntax.is_none()
@@ -4157,6 +4188,7 @@ impl Config {
                 approval_policy: constrained_approval_policy.value,
                 permission_profile_state,
                 managed_deny_read_policy,
+                git_metadata_write_profile_ids,
                 workspace_roots,
                 network,
                 allow_login_shell,
