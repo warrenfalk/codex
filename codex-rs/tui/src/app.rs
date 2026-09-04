@@ -239,6 +239,8 @@ mod resize_reflow;
 mod resume_config;
 mod safety_buffering;
 mod session_lifecycle;
+#[cfg(unix)]
+mod shutdown_signal;
 mod side;
 mod side_summary;
 mod startup;
