@@ -51,6 +51,7 @@ pub(crate) struct Session {
     /// Serializes rebuild/apply cycles for the running proxy; each cycle
     /// rebuilds from the current SessionState while holding this lock.
     pub(super) managed_network_proxy_refresh_lock: Semaphore,
+    pub(super) thread_name_update_lock: Semaphore,
     /// The set of enabled features should be invariant for the lifetime of the
     /// session.
     pub(super) features: ManagedFeatures,
@@ -232,6 +233,10 @@ impl SessionConfiguration {
         self.permission_profile_state
             .permission_profile()
             .network_sandbox_policy()
+    }
+
+    pub(crate) fn has_thread_name(&self) -> bool {
+        self.thread_name.is_some()
     }
 
     pub(super) fn thread_config_snapshot(
@@ -1493,6 +1498,7 @@ impl Session {
                 state: Mutex::new(state),
                 thread_settings_persistence: Semaphore::new(/*permits*/ 1),
                 managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
+                thread_name_update_lock: Semaphore::new(/*permits*/ 1),
                 features: config.features.clone(),
                 windows_sandbox_proxy_settings_mode,
                 multi_agent_version,

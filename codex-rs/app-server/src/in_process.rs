@@ -459,7 +459,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
         ));
 
         let processor_outgoing = Arc::clone(&outgoing_message_sender);
-        let config_manager = ConfigManager::new(
+        let mut config_manager = ConfigManager::new(
             args.config.codex_home.to_path_buf(),
             args.cli_overrides,
             args.loader_overrides,
@@ -468,6 +468,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
             args.arg0_paths.clone(),
             args.thread_config_loader,
         );
+        config_manager.auto_thread_title_override = Some(args.config.auto_thread_title);
         let (processor_tx, mut processor_rx) = mpsc::channel::<ProcessorCommand>(channel_capacity);
         let mut processor_handle = tokio::spawn(async move {
             let processor = Arc::new(MessageProcessor::new(MessageProcessorArgs {

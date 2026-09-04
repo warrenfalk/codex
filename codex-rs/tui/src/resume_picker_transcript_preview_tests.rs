@@ -326,12 +326,13 @@ async fn transcript_preview_for_history_mode(
         "compact",
     )
     .expect("write mock config");
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .fallback_cwd(Some(codex_home.path().to_path_buf()))
         .build()
         .await
         .expect("build config");
+    config.auto_thread_title = false;
     let mut app_server = crate::start_embedded_app_server_for_picker(&config)
         .await
         .expect("start app server");
