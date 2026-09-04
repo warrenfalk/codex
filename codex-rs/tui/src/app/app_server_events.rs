@@ -121,6 +121,15 @@ impl App {
 
             return;
         }
+        if let ServerNotificationThreadTarget::Thread(thread_id) =
+            server_notification_thread_target(&notification)
+            && self.is_prompt_rewrite_thread(thread_id)
+        {
+            if matches!(notification, ServerNotification::ThreadClosed(_)) {
+                self.prompt_rewrite_thread_tombstones.remove(&thread_id);
+            }
+            return;
+        }
 
         if let ServerNotification::ThreadStarted(started) = &notification
             && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
@@ -522,6 +531,20 @@ impl App {
                 }
                 return;
             }
+        }
+
+        if let Some(thread_id) = thread_id
+            && self.is_prompt_rewrite_thread(thread_id)
+        {
+            let request_id = request.id().clone();
+            let reason = "Prompt rewrite turns cannot call tools.".to_string();
+            if let Err(err) = self
+                .reject_app_server_request(app_server_client, request_id, reason)
+                .await
+            {
+                tracing::warn!("{err}");
+            }
+            return;
         }
 
         if let Some(unsupported) = self

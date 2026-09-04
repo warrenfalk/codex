@@ -956,6 +956,32 @@ impl BottomPane {
         self.composer.cursor()
     }
 
+    pub(crate) fn prepare_prompt_rewrite_snapshot(&mut self) -> ComposerDraftSnapshot {
+        self.composer.prepare_prompt_rewrite_snapshot()
+    }
+
+    pub(crate) fn recognizes_prompt_rewrite_excluded_slash_command(&self) -> bool {
+        self.composer
+            .recognizes_prompt_rewrite_excluded_slash_command()
+    }
+
+    pub(crate) fn apply_prompt_rewrite(
+        &mut self,
+        expected: &ComposerDraftSnapshot,
+        rewritten: crate::prompt_rewrite::RewrittenComposerDraft,
+    ) -> bool {
+        let applied = self.composer.apply_prompt_rewrite(expected, rewritten);
+        if applied {
+            self.request_redraw();
+        }
+        applied
+    }
+
+    pub(crate) fn show_composer_flash(&mut self, line: Line<'static>, duration: Duration) {
+        self.composer.show_footer_flash(line, duration);
+        self.request_redraw();
+    }
+
     #[cfg(test)]
     pub(crate) fn composer_text_elements(&self) -> Vec<TextElement> {
         self.composer.text_elements()

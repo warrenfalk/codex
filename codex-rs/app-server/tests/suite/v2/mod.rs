@@ -123,6 +123,7 @@ mod turn_cost_otel;
 mod turn_interrupt;
 mod turn_settings_update;
 mod turn_start;
+mod turn_start_model_only;
 mod turn_start_zsh_fork;
 mod turn_steer;
 mod view_image;

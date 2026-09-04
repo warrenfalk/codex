@@ -269,6 +269,30 @@ pub struct TurnStartResponse {
     pub turn: Turn,
 }
 
+/// Starts a turn that can only sample the model.
+///
+/// Model-only turns keep the thread's model-visible history but do not expose tools, run hooks,
+/// inject skills or plugins, start memory work, or generate thread titles.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnStartModelOnlyParams {
+    pub thread_id: String,
+    pub input: Vec<UserInput>,
+    pub model: String,
+    #[ts(optional = nullable)]
+    pub effort: Option<ReasoningEffort>,
+    #[ts(optional = nullable)]
+    pub output_schema: Option<JsonValue>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnStartModelOnlyResponse {
+    pub turn: Turn,
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
 )]

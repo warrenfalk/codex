@@ -263,6 +263,7 @@ define_runtime_action_bindings! {
     ],
     "composer" => Composer, composer, composer [
         submit,
+        rewrite_prompt,
         queue,
         toggle_shortcuts,
         history_search_previous,

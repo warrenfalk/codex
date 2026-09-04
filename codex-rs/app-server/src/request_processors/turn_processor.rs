@@ -176,9 +176,52 @@ impl TurnRequestProcessor {
             params,
             app_server_client_name,
             app_server_client_version,
+            TurnExecutionMode::Normal,
         )
         .await
         .map(|response| Some(response.into()))
+    }
+
+    pub(crate) async fn turn_start_model_only(
+        &self,
+        request_id: ConnectionRequestId,
+        params: TurnStartModelOnlyParams,
+        app_server_client_name: Option<String>,
+        app_server_client_version: Option<String>,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        validate_user_input_image_urls(&params.input)?;
+        let collaboration_mode = codex_protocol::config_types::CollaborationMode {
+            mode: codex_protocol::config_types::ModeKind::Default,
+            settings: codex_protocol::config_types::Settings {
+                model: params.model.clone(),
+                reasoning_effort: params.effort.clone(),
+                developer_instructions: None,
+            },
+        };
+        let response = self
+            .turn_start_inner(
+                request_id,
+                TurnStartParams {
+                    thread_id: params.thread_id,
+                    input: params.input,
+                    environments: Some(Vec::new()),
+                    model: Some(params.model),
+                    effort: params.effort,
+                    output_schema: params.output_schema,
+                    collaboration_mode: Some(collaboration_mode),
+                    ..Default::default()
+                },
+                app_server_client_name,
+                app_server_client_version,
+                TurnExecutionMode::ModelOnly,
+            )
+            .await?;
+        Ok(Some(
+            TurnStartModelOnlyResponse {
+                turn: response.turn,
+            }
+            .into(),
+        ))
     }
 
     pub(crate) async fn thread_inject_items(
@@ -505,6 +548,7 @@ impl TurnRequestProcessor {
         params: TurnStartParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
+        execution_mode: TurnExecutionMode,
     ) -> Result<TurnStartResponse, JSONRPCErrorError> {
         let (thread_id, thread) =
             self.load_thread(&params.thread_id)
@@ -607,7 +651,10 @@ impl TurnRequestProcessor {
             .build_thread_settings_overrides(
                 thread.as_ref(),
                 ThreadSettingsBuildParams {
-                    method: "turn/start",
+                    method: match execution_mode {
+                        TurnExecutionMode::Normal => "turn/start",
+                        TurnExecutionMode::ModelOnly => "turn/startModelOnly",
+                    },
                     environments,
                     approval_policy: params.approval_policy,
                     approvals_reviewer: params.approvals_reviewer,
@@ -623,38 +670,43 @@ impl TurnRequestProcessor {
             )
             .await?;
 
-        let submission = thread
-            .start_or_steer_turn(
-                TurnInputRequest::new(input)
-                    .with_thread_settings(thread_settings)
-                    .on_start(TurnStartOptions {
-                        turn_trigger: params.turn_trigger,
-                        final_output_json_schema: params.output_schema,
-                        service_tier: params.service_tier_for_turn,
-                        cyber_access_program: params.cyber_access_program.map(Into::into),
-                        ..Default::default()
-                    })
-                    .with_additional_context(additional_context)
-                    .with_responses_metadata(params.responsesapi_client_metadata)
-                    .with_trace(self.request_trace_context(&request_id).await),
-            )
-            .await
-            .map_err(|err| {
-                let error = internal_error(format!("failed to submit turn input: {err}"));
-                self.track_error_response(&request_id, &error, /*error_type*/ None);
-                error
-            })?;
-        let (turn_id, started) = match submission {
-            TurnInputSubmission::Started { turn_id } => (turn_id, true),
-            TurnInputSubmission::Steered { turn_id } => (turn_id, false),
-            TurnInputSubmission::NotSubmitted { reason } => {
-                let error = internal_error(format!("failed to submit turn input: {reason:?}"));
-                self.track_error_response(&request_id, &error, /*error_type*/ None);
-                return Err(error);
-            }
+        let turn_request = TurnInputRequest::new(input)
+            .with_thread_settings(thread_settings)
+            .on_start(TurnStartOptions {
+                turn_trigger: params.turn_trigger,
+                final_output_json_schema: params.output_schema,
+                service_tier: params.service_tier_for_turn,
+                cyber_access_program: params.cyber_access_program.map(Into::into),
+                execution_mode,
+                ..Default::default()
+            })
+            .with_additional_context(additional_context)
+            .with_responses_metadata(params.responsesapi_client_metadata)
+            .with_trace(self.request_trace_context(&request_id).await);
+        let submission = match execution_mode {
+            TurnExecutionMode::Normal => match thread.start_or_steer_turn(turn_request).await {
+                Ok(TurnInputSubmission::Started { turn_id }) => Ok((turn_id, true)),
+                Ok(TurnInputSubmission::Steered { turn_id }) => Ok((turn_id, false)),
+                Ok(TurnInputSubmission::NotSubmitted { reason }) => {
+                    Err(format!("failed to submit turn input: {reason:?}"))
+                }
+                Err(err) => Err(format!("failed to submit turn input: {err}")),
+            },
+            TurnExecutionMode::ModelOnly => match thread.start_turn_if_idle(turn_request).await {
+                Ok(StartIfIdleSubmission::Started { turn_id }) => Ok((turn_id, true)),
+                Ok(StartIfIdleSubmission::NotSubmitted { reason }) => {
+                    Err(format!("failed to submit turn input: {reason:?}"))
+                }
+                Err(err) => Err(format!("failed to submit turn input: {err}")),
+            },
         };
+        let (turn_id, started) = submission.map_err(|message| {
+            let error = internal_error(message);
+            self.track_error_response(&request_id, &error, /*error_type*/ None);
+            error
+        })?;
 
-        if turn_has_input && started {
+        if turn_has_input && started && execution_mode == TurnExecutionMode::Normal {
             let config_snapshot = thread.config_snapshot().await;
             if config_snapshot.is_primary_environment_configured() {
                 codex_memories_write::start_memories_startup_task(

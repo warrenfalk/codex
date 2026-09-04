@@ -135,6 +135,8 @@ pub(crate) struct ChatKeymap {
 pub(crate) struct ComposerKeymap {
     /// Submit current draft.
     pub(crate) submit: Vec<KeyBinding>,
+    /// Rewrite current draft for clarity and concision.
+    pub(crate) rewrite_prompt: Vec<KeyBinding>,
     /// Queue current draft while a task is running.
     pub(crate) queue: Vec<KeyBinding>,
     /// Toggle composer shortcut overlay.
@@ -694,6 +696,7 @@ impl RuntimeKeymap {
 
         let composer = ComposerKeymap {
             submit: resolve_with_global!(keymap, defaults, composer, submit),
+            rewrite_prompt: resolve_local!(keymap, defaults, composer, rewrite_prompt),
             queue: resolve_with_global!(keymap, defaults, composer, queue),
             toggle_shortcuts: resolve_with_global!(keymap, defaults, composer, toggle_shortcuts),
             history_search_previous: resolve_local!(
@@ -1461,6 +1464,7 @@ impl RuntimeKeymap {
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
+                rewrite_prompt: default_bindings![alt(KeyCode::Char('w'))],
                 queue: default_bindings![plain(KeyCode::Tab)],
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
@@ -1812,6 +1816,10 @@ impl RuntimeKeymap {
                 self.chat.edit_queued_message.as_slice(),
             ),
             ("composer.submit", self.composer.submit.as_slice()),
+            (
+                "composer.rewrite_prompt",
+                self.composer.rewrite_prompt.as_slice(),
+            ),
             ("composer.queue", self.composer.queue.as_slice()),
             (
                 "composer.toggle_shortcuts",
@@ -1939,6 +1947,10 @@ impl RuntimeKeymap {
                     self.chat.next_permission_mode.as_slice(),
                 ),
                 ("composer.submit", self.composer.submit.as_slice()),
+                (
+                    "composer.rewrite_prompt",
+                    self.composer.rewrite_prompt.as_slice(),
+                ),
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
@@ -2661,6 +2673,10 @@ mod tests {
         assert_eq!(
             runtime.composer.history_search_previous,
             vec![key_hint::ctrl(KeyCode::Char('r'))]
+        );
+        assert_eq!(
+            runtime.composer.rewrite_prompt,
+            vec![key_hint::alt(KeyCode::Char('w'))]
         );
         assert_eq!(
             runtime.composer.history_search_next,
@@ -3634,6 +3650,28 @@ mod tests {
         keymap.composer.toggle_shortcuts = Some(KeybindingsSpec::Many(vec![]));
         let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
         assert!(runtime.composer.toggle_shortcuts.is_empty());
+    }
+
+    #[test]
+    fn prompt_rewrite_can_be_remapped_or_unbound() {
+        let mut keymap = TuiKeymap::default();
+        keymap.composer.rewrite_prompt = Some(one("f12"));
+        let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
+        assert_eq!(
+            runtime.composer.rewrite_prompt,
+            vec![key_hint::plain(KeyCode::F(12))]
+        );
+
+        keymap.composer.rewrite_prompt = Some(KeybindingsSpec::Many(Vec::new()));
+        let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
+        assert!(runtime.composer.rewrite_prompt.is_empty());
+    }
+
+    #[test]
+    fn prompt_rewrite_rejects_main_surface_conflicts() {
+        let mut keymap = TuiKeymap::default();
+        keymap.composer.rewrite_prompt = Some(one("alt-u"));
+        expect_conflict(&keymap, "composer.rewrite_prompt", "editor.undo");
     }
 
     #[test]

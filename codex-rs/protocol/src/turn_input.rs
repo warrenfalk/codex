@@ -150,6 +150,16 @@ pub enum CyberAccessProgram {
     DaybreakRed,
 }
 
+/// Host capability policy for a newly started turn.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TurnExecutionMode {
+    /// Run a regular turn with the configured tools and lifecycle integrations.
+    #[default]
+    Normal,
+    /// Restrict the turn to model sampling without host-side capabilities.
+    ModelOnly,
+}
+
 /// Options for the new-turn branch of a submission.
 ///
 /// Core only records these options when input starts a turn. When input steers,
@@ -173,6 +183,8 @@ pub struct TurnStartOptions {
     /// Explicit cyber treatment for this turn. Omission preserves the backend's
     /// automatic behavior.
     pub cyber_access_program: Option<CyberAccessProgram>,
+    /// Host capability policy for this new turn.
+    pub execution_mode: TurnExecutionMode,
 }
 
 /// What Core did with input submitted through `start_or_steer_turn`.

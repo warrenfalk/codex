@@ -70,6 +70,8 @@ pub(super) async fn make_test_app() -> App {
         side_threads: HashMap::new(),
         abandoned_side_threads: HashSet::new(),
         pending_side_summary: None,
+        pending_prompt_rewrite: None,
+        prompt_rewrite_thread_tombstones: HashSet::new(),
         active_thread_id: None,
         active_thread_rx: None,
         primary_thread_id: None,

@@ -1543,6 +1543,16 @@ impl MessageProcessor {
                     )
                     .await
             }
+            ClientRequest::TurnStartModelOnly { params, .. } => {
+                self.turn_processor
+                    .turn_start_model_only(
+                        request_id.clone(),
+                        params,
+                        app_server_client_name.clone(),
+                        client_version.clone(),
+                    )
+                    .await
+            }
             ClientRequest::ThreadInjectItems { params, .. } => {
                 self.turn_processor
                     .thread_inject_items(&request_id, params)

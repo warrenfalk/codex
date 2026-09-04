@@ -992,6 +992,12 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::TurnStartResponse,
     },
+    #[experimental("turn/startModelOnly")]
+    TurnStartModelOnly => "turn/startModelOnly" {
+        params: v2::TurnStartModelOnlyParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::TurnStartModelOnlyResponse,
+    },
     #[experimental("turn/settings/update")]
     TurnSettingsUpdate => "turn/settings/update" {
         params: v2::TurnSettingsUpdateParams,

@@ -306,6 +306,7 @@ mod draft_state;
 mod footer_state;
 mod history_search;
 mod popup_state;
+mod prompt_rewrite;
 mod reconnect;
 mod slash_input;
 mod undo;
@@ -585,6 +586,17 @@ pub(crate) struct ComposerDraftSnapshot {
     pub(crate) pending_pastes: Vec<(String, String)>,
     pub(crate) startup_local_history: Vec<HistoryEntry>,
     pub(crate) last_composer_activity_at: Option<Instant>,
+}
+
+impl ComposerDraftSnapshot {
+    fn has_same_content(&self, other: &Self) -> bool {
+        self.text == other.text
+            && self.text_elements == other.text_elements
+            && self.local_images == other.local_images
+            && self.remote_image_urls == other.remote_image_urls
+            && self.mention_bindings == other.mention_bindings
+            && self.pending_pastes == other.pending_pastes
+    }
 }
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
@@ -1600,7 +1612,6 @@ impl ChatComposer {
         urls
     }
 
-    #[cfg(test)]
     pub(crate) fn show_footer_flash(&mut self, line: Line<'static>, duration: Duration) {
         self.footer.show_flash(line, duration);
     }

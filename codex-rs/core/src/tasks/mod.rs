@@ -478,6 +478,7 @@ impl Session {
                 NewTurnContextOptions {
                     final_output_json_schema: start_options.final_output_json_schema,
                     cyber_access_program: start_options.cyber_access_program,
+                    model_only: false,
                 },
             )
             .await;

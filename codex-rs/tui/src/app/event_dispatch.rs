@@ -201,6 +201,9 @@ impl App {
             AppEvent::CopySelection { text, label } => {
                 self.chat_widget.copy_selection(text, label);
             }
+            AppEvent::PromptRewriteCompleted(completion) => {
+                self.finish_prompt_rewrite(completion);
+            }
             AppEvent::ClearUi { name } => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();

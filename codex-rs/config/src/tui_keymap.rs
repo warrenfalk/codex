@@ -148,6 +148,8 @@ pub struct TuiChatKeymap {
 pub struct TuiComposerKeymap {
     /// Submit the current composer draft.
     pub submit: Option<KeybindingsSpec>,
+    /// Rewrite the current composer draft for clarity and concision.
+    pub rewrite_prompt: Option<KeybindingsSpec>,
     /// Queue the current composer draft while a task is running.
     pub queue: Option<KeybindingsSpec>,
     /// Toggle the composer shortcut overlay.

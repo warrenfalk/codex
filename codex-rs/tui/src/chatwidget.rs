@@ -382,6 +382,7 @@ use self::skills::find_skill_mentions_with_tool_mentions;
 use self::skills::is_app_mentionable;
 mod plugin_catalog;
 mod plugins;
+mod prompt_rewrite;
 use self::plugins::PluginInstallAuthFlowState;
 use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;

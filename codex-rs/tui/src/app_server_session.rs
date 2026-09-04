@@ -117,6 +117,8 @@ use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
+use codex_app_server_protocol::TurnStartModelOnlyParams;
+use codex_app_server_protocol::TurnStartModelOnlyResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
@@ -1266,6 +1268,30 @@ impl AppServerSession {
             })
             .await
             .wrap_err("turn/start failed in TUI")
+    }
+
+    pub(crate) async fn turn_start_model_only(
+        &mut self,
+        thread_id: ThreadId,
+        items: Vec<UserInput>,
+        model: String,
+        effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+        output_schema: Option<serde_json::Value>,
+    ) -> Result<TurnStartModelOnlyResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::TurnStartModelOnly {
+                request_id,
+                params: TurnStartModelOnlyParams {
+                    thread_id: thread_id.to_string(),
+                    input: items,
+                    model,
+                    effort,
+                    output_schema,
+                },
+            })
+            .await
+            .wrap_err("turn/startModelOnly failed in TUI")
     }
 
     pub(crate) async fn turn_interrupt(
