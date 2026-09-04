@@ -191,6 +191,7 @@ impl ChatWidget {
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
             review: ReviewState::default(),
+            connected_mode_footer_state: None,
             active_hook_cell: None,
             pet_http_client,
             ambient_pet: None,

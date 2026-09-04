@@ -531,6 +531,12 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) session_telemetry: SessionTelemetry,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConnectedModeFooterState {
+    Connected,
+    Disconnected,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ExternalEditorState {
     #[default]
@@ -661,6 +667,7 @@ pub(crate) struct ChatWidget {
     reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
     review: ReviewState,
+    connected_mode_footer_state: Option<ConnectedModeFooterState>,
     // Active hook runs render in a dedicated live cell so they can run alongside tools.
     active_hook_cell: Option<HookCell>,
     // Reused for built-in pet CDN requests so redirects remain route-aware.
@@ -1398,6 +1405,22 @@ impl ChatWidget {
         self.frame_requester.schedule_frame();
     }
 
+    fn set_connected_mode_footer_state(&mut self, state: Option<ConnectedModeFooterState>) {
+        if self.connected_mode_footer_state == state {
+            return;
+        }
+        self.connected_mode_footer_state = state;
+        self.refresh_status_line();
+    }
+
+    pub(crate) fn show_connected_mode_footer(&mut self) {
+        self.set_connected_mode_footer_state(Some(ConnectedModeFooterState::Connected));
+    }
+
+    pub(crate) fn show_disconnected_mode_footer(&mut self) {
+        self.set_connected_mode_footer_state(Some(ConnectedModeFooterState::Disconnected));
+    }
+
     fn bump_active_cell_revision(&mut self) {
         self.transcript.bump_active_cell_revision();
     }
@@ -1983,6 +2006,11 @@ impl ChatWidget {
     #[cfg(test)]
     pub(crate) fn status_line_text(&self) -> Option<String> {
         self.bottom_pane.status_line_text()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status_line_value(&self) -> Option<Line<'static>> {
+        self.bottom_pane.status_line_value()
     }
 
     pub(crate) fn clear_token_usage(&mut self) {
