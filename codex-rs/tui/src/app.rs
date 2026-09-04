@@ -911,6 +911,7 @@ impl App {
                     // Allow widgets to process any pending timers before rendering.
                     let had_active_view = self.chat_widget.has_active_view();
                     self.chat_widget.pre_draw_tick();
+                    tui.set_window_title(self.chat_widget.window_title());
                     let rendered_area = self.render_chat_widget_frame(tui, screen_size)?;
                     if !had_active_view
                         && self.chat_widget.has_active_view()
