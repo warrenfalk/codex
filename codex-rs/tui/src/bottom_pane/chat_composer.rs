@@ -2814,16 +2814,23 @@ impl ChatComposer {
         })
     }
 
-    /// Replace the active `@token` (the one under the cursor) with `path`.
+    /// Replace the active `@token` with a Markdown code span for `path`.
     fn insert_selected_path(&mut self, token_range: Range<usize>, path: &str) {
-        // If the path contains whitespace, wrap it in double quotes so the
-        // local prompt arg parser treats it as a single argument. Avoid adding
-        // quotes when the path already contains one to keep behavior simple.
-        let needs_quotes = path.chars().any(char::is_whitespace);
-        let inserted = if needs_quotes && !path.contains('"') {
-            format!("\"{path}\"")
+        let mut longest_backtick_run = 0;
+        let mut current_backtick_run = 0;
+        for ch in path.chars() {
+            if ch == '`' {
+                current_backtick_run += 1;
+                longest_backtick_run = longest_backtick_run.max(current_backtick_run);
+            } else {
+                current_backtick_run = 0;
+            }
+        }
+        let code_fence = "`".repeat(longest_backtick_run + 1);
+        let inserted = if path.starts_with('`') || path.ends_with('`') {
+            format!("{code_fence} {path} {code_fence}")
         } else {
-            path.to_string()
+            format!("{code_fence}{path}{code_fence}")
         };
 
         // Replace just the active `@token` so unrelated text elements, such as
@@ -10625,7 +10632,7 @@ mod tests {
             composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
         let text = composer.draft.textarea.text().to_string();
-        assert_eq!(text, format!("{placeholder} src/main.rs "));
+        assert_eq!(text, format!("{placeholder} `src/main.rs` "));
         let elements = composer.draft.textarea.text_elements();
         assert_eq!(elements.len(), 1);
         assert_eq!(elements[0].placeholder(&text), Some(placeholder.as_str()));
@@ -10638,7 +10645,7 @@ mod tests {
                 text,
                 text_elements,
             } => {
-                assert_eq!(text, format!("{large} src/main.rs"));
+                assert_eq!(text, format!("{large} `src/main.rs`"));
                 assert!(text_elements.is_empty());
             }
             _ => panic!("expected Submitted"),
@@ -10685,7 +10692,7 @@ mod tests {
             PathBuf::from("src/main.rs"),
         );
 
-        assert_eq!(composer.current_text(), "src/main.rs  $HOME");
+        assert_eq!(composer.current_text(), "`src/main.rs`  $HOME");
     }
 
     #[test]
@@ -10705,7 +10712,7 @@ mod tests {
         configure_bound_plugin_left_of_unbound_plugin(&mut composer);
         composer.insert_selected_file_path("@sample".len().."@sample@other".len(), "src/main.rs");
 
-        assert_eq!(composer.current_text(), "@sample src/main.rs ");
+        assert_eq!(composer.current_text(), "@sample `src/main.rs` ");
     }
 
     #[test]
@@ -10744,7 +10751,7 @@ mod tests {
         );
         composer.insert_str("foo");
 
-        assert_eq!(composer.current_text(), "src/main.rs foo next");
+        assert_eq!(composer.current_text(), "`src/main.rs` foo next");
     }
 
     #[test]
@@ -10755,7 +10762,10 @@ mod tests {
             composer.insert_selected_path(0.."@ma".len(), "src/main.rs");
             composer.insert_str("foo");
 
-            assert_eq!(composer.current_text(), format!("src/main.rs foo {suffix}"));
+            assert_eq!(
+                composer.current_text(),
+                format!("`src/main.rs` foo {suffix}")
+            );
         }
     }
 
@@ -10771,7 +10781,7 @@ mod tests {
         );
         composer.insert_str("foo");
 
-        assert_eq!(composer.current_text(), "src/main.rs foo\nnext");
+        assert_eq!(composer.current_text(), "`src/main.rs` foo\nnext");
     }
 
     #[test]
@@ -10785,14 +10795,14 @@ mod tests {
             PathBuf::from("@scope/main.rs"),
         );
 
-        assert_eq!(composer.current_text(), "@scope/main.rs \nnext");
+        assert_eq!(composer.current_text(), "`@scope/main.rs` \nnext");
         assert!(matches!(composer.popups.active, ActivePopup::None));
 
         let (result, consumed) =
             composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(consumed);
         match result {
-            InputResult::Submitted { text, .. } => assert_eq!(text, "@scope/main.rs \nnext"),
+            InputResult::Submitted { text, .. } => assert_eq!(text, "`@scope/main.rs` \nnext"),
             _ => panic!("expected completed path to submit"),
         }
     }
@@ -10807,7 +10817,10 @@ mod tests {
             "ma",
             PathBuf::from("@scope/main.rs"),
         );
-        composer.draft.textarea.set_cursor("@scope/main.rs  ".len());
+        composer
+            .draft
+            .textarea
+            .set_cursor("`@scope/main.rs`  ".len());
         composer.sync_popups();
 
         assert!(matches!(composer.popups.active, ActivePopup::File(_)));
@@ -10852,6 +10865,108 @@ mod tests {
 
         assert_eq!(composer.current_text(), "email@ma.com @ma");
         assert!(matches!(composer.popups.active, ActivePopup::None));
+    }
+
+    #[test]
+    fn file_completion_wraps_selected_path_in_backticks() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "Ask Codex to do anything".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+
+        composer.insert_str("read @ma");
+        composer.on_file_search_result(
+            "ma".to_string(),
+            vec![FileMatch {
+                score: 1,
+                path: PathBuf::from("src/main file.rs"),
+                match_type: codex_file_search::MatchType::File,
+                root: PathBuf::from("/tmp"),
+                indices: None,
+            }],
+        );
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+        assert_eq!(composer.draft.textarea.text(), "read `src/main file.rs` ");
+
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        match result {
+            InputResult::Submitted { text, .. } => assert_eq!(text, "read `src/main file.rs`"),
+            _ => panic!("expected Submitted"),
+        }
+    }
+
+    #[test]
+    fn file_completion_code_span_snapshot() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        snapshot_composer_state(
+            "file_completion_selected_path_code_span",
+            /*enhanced_keys_supported*/ false,
+            |composer| {
+                composer.insert_str("read @ma");
+                composer.on_file_search_result(
+                    "ma".to_string(),
+                    vec![FileMatch {
+                        score: 1,
+                        path: PathBuf::from("src/main file.rs"),
+                        match_type: codex_file_search::MatchType::File,
+                        root: PathBuf::from("/tmp"),
+                        indices: None,
+                    }],
+                );
+                let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+            },
+        );
+    }
+
+    #[test]
+    fn file_completion_uses_longer_code_fence_for_paths_with_backticks() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "Ask Codex to do anything".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+
+        composer.insert_str("@tick");
+        composer.on_file_search_result(
+            "tick".to_string(),
+            vec![FileMatch {
+                score: 1,
+                path: PathBuf::from("src/has`tick.rs"),
+                match_type: codex_file_search::MatchType::File,
+                root: PathBuf::from("/tmp"),
+                indices: None,
+            }],
+        );
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+        assert_eq!(composer.draft.textarea.text(), "``src/has`tick.rs`` ");
     }
 
     /// Behavior: multiple paste operations can coexist; placeholders should be expanded to their
