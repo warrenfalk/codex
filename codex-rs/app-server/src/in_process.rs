@@ -439,15 +439,17 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
         let outbound_initialized = Arc::new(AtomicBool::new(false));
         let outbound_experimental_api_enabled = Arc::new(AtomicBool::new(false));
         let outbound_opted_out_notification_methods = Arc::new(RwLock::new(HashSet::new()));
+        let session = Arc::new(ConnectionSessionState::new());
 
         let mut outbound_connections = HashMap::<ConnectionId, OutboundConnectionState>::new();
         outbound_connections.insert(
             IN_PROCESS_CONNECTION_ID,
-            OutboundConnectionState::new(
+            OutboundConnectionState::new_with_session(
                 writer_tx,
                 Arc::clone(&outbound_initialized),
                 Arc::clone(&outbound_experimental_api_enabled),
                 Arc::clone(&outbound_opted_out_notification_methods),
+                Arc::clone(&session),
                 /*disconnect_sender*/ None,
             ),
         );
@@ -470,6 +472,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
         );
         config_manager.auto_thread_title_override = Some(args.config.auto_thread_title);
         let (processor_tx, mut processor_rx) = mpsc::channel::<ProcessorCommand>(channel_capacity);
+        let processor_session = Arc::clone(&session);
         let mut processor_handle = tokio::spawn(async move {
             let processor = Arc::new(MessageProcessor::new(MessageProcessorArgs {
                 outgoing: Arc::clone(&processor_outgoing),
@@ -491,7 +494,6 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                 plugin_startup_tasks: Some(PluginStartupConfig::Current),
             }));
             let mut thread_created_rx = processor.thread_created_receiver();
-            let session = Arc::new(ConnectionSessionState::new());
             let mut listen_for_threads = true;
 
             loop {
@@ -499,20 +501,20 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                     command = processor_rx.recv() => {
                         match command {
                             Some(ProcessorCommand::Request(request)) => {
-                                let was_initialized = session.initialized();
+                                let was_initialized = processor_session.initialized();
                                 processor
                                     .process_client_request(
                                         IN_PROCESS_CONNECTION_ID,
                                         *request,
-                                        Arc::clone(&session),
+                                        Arc::clone(&processor_session),
                                         &outbound_initialized,
                                     )
                                     .await;
                                 let opted_out_notification_methods_snapshot =
-                                    session.opted_out_notification_methods();
+                                    processor_session.opted_out_notification_methods();
                                 let experimental_api_enabled =
-                                    session.experimental_api_enabled();
-                                let is_initialized = session.initialized();
+                                    processor_session.experimental_api_enabled();
+                                let is_initialized = processor_session.initialized();
                                 if let Ok(mut opted_out_notification_methods) =
                                     outbound_opted_out_notification_methods.write()
                                 {
@@ -540,7 +542,9 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                     created = thread_created_rx.recv(), if listen_for_threads => {
                         match created {
                             Ok(thread_id) => {
-                                let connection_ids = if session.initialized() {
+                                let connection_ids = if processor_session.initialized()
+                                    && !processor_session.firehose_subscribed()
+                                {
                                     vec![IN_PROCESS_CONNECTION_ID]
                                 } else {
                                     Vec::<ConnectionId>::new()
@@ -563,7 +567,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
             processor.clear_runtime_references();
             processor.cancel_active_login().await;
             processor
-                .connection_closed(IN_PROCESS_CONNECTION_ID, &session)
+                .connection_closed(IN_PROCESS_CONNECTION_ID, &processor_session)
                 .await;
             processor.clear_all_thread_listeners().await;
             processor.drain_background_tasks().await;
@@ -630,14 +634,28 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                             }
                         }
                         Some(InProcessClientMessage::ServerRequestResponse { request_id, result }) => {
-                            outgoing_message_sender
-                                .notify_client_response(request_id, result)
-                                .await;
+                            if session.take_answerable_server_request(&request_id).await {
+                                outgoing_message_sender
+                                    .notify_client_response(request_id, result)
+                                    .await;
+                            } else {
+                                warn!(
+                                    request_id = ?request_id,
+                                    "ignoring in-process response for unowned server request"
+                                );
+                            }
                         }
                         Some(InProcessClientMessage::ServerRequestError { request_id, error }) => {
-                            outgoing_message_sender
-                                .notify_client_error(request_id, error)
-                                .await;
+                            if session.take_answerable_server_request(&request_id).await {
+                                outgoing_message_sender
+                                    .notify_client_error(request_id, error)
+                                    .await;
+                            } else {
+                                warn!(
+                                    request_id = ?request_id,
+                                    "ignoring in-process error for unowned server request"
+                                );
+                            }
                         }
                         Some(InProcessClientMessage::Shutdown { done_tx }) => {
                             shutdown_ack = Some(done_tx);

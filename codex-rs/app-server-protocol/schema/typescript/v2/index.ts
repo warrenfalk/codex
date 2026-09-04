@@ -129,6 +129,7 @@ export type { DynamicToolNamespaceTool } from "./DynamicToolNamespaceTool";
 export type { DynamicToolSpec } from "./DynamicToolSpec";
 export type { EnvironmentConnectionNotification } from "./EnvironmentConnectionNotification";
 export type { ErrorNotification } from "./ErrorNotification";
+export type { EventFirehoseResponse } from "./EventFirehoseResponse";
 export type { ExecPolicyAmendment } from "./ExecPolicyAmendment";
 export type { ExperimentalFeature } from "./ExperimentalFeature";
 export type { ExperimentalFeatureEnablementSetParams } from "./ExperimentalFeatureEnablementSetParams";
@@ -431,6 +432,7 @@ export type { SendAddCreditsNudgeEmailParams } from "./SendAddCreditsNudgeEmailP
 export type { SendAddCreditsNudgeEmailResponse } from "./SendAddCreditsNudgeEmailResponse";
 export type { ServerDiagnosticsGauge } from "./ServerDiagnosticsGauge";
 export type { ServerDiagnosticsProcess } from "./ServerDiagnosticsProcess";
+export type { ServerRequestObservedNotification } from "./ServerRequestObservedNotification";
 export type { ServerRequestResolvedNotification } from "./ServerRequestResolvedNotification";
 export type { SessionMigration } from "./SessionMigration";
 export type { SessionSource } from "./SessionSource";

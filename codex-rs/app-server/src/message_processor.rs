@@ -3,6 +3,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use crate::attestation::app_server_attestation_provider;
 use crate::config_manager::ConfigManager;
@@ -64,12 +65,14 @@ use codex_app_server_protocol::ClientNotification;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::EventFirehoseResponse;
 use codex_app_server_protocol::ExperimentalApi;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::experimental_required_message;
 use codex_arg0::Arg0DispatchPaths;
 use codex_code_mode::CodeModeSessionProvider;
@@ -170,6 +173,8 @@ pub(crate) struct ConnectionSessionState {
     pub(crate) rpc_gate: Arc<ConnectionRpcGate>,
     pub(crate) mcp_event_streams: McpEventStreams,
     initialized: OnceLock<InitializedConnectionSessionState>,
+    firehose_subscribed: Arc<AtomicBool>,
+    answerable_server_request_ids: Mutex<HashSet<RequestId>>,
 }
 
 #[derive(Debug)]
@@ -194,6 +199,8 @@ impl ConnectionSessionState {
             rpc_gate: Arc::new(ConnectionRpcGate::new()),
             mcp_event_streams: McpEventStreams::default(),
             initialized: OnceLock::new(),
+            firehose_subscribed: Arc::new(AtomicBool::new(false)),
+            answerable_server_request_ids: Mutex::new(HashSet::new()),
         }
     }
 
@@ -238,6 +245,29 @@ impl ConnectionSessionState {
             .map(|session| session.client_mcp_extensions.clone())
             .unwrap_or_default()
     }
+
+    pub(crate) fn subscribe_firehose(&self) {
+        self.firehose_subscribed.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn firehose_subscribed(&self) -> bool {
+        self.firehose_subscribed.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn note_answerable_server_request(&self, request_id: RequestId) {
+        self.answerable_server_request_ids
+            .lock()
+            .await
+            .insert(request_id);
+    }
+
+    pub(crate) async fn take_answerable_server_request(&self, request_id: &RequestId) -> bool {
+        self.answerable_server_request_ids
+            .lock()
+            .await
+            .remove(request_id)
+    }
+
     pub(crate) fn initialize(&self, session: InitializedConnectionSessionState) -> Result<(), ()> {
         self.initialized.set(session).map_err(|_| ())
     }
@@ -833,14 +863,44 @@ impl MessageProcessor {
             .subscribe_running_assistant_turn_count()
     }
 
+    pub(crate) async fn lifecycle_connection_count(
+        &self,
+        connections: Vec<(ConnectionId, Arc<ConnectionSessionState>)>,
+    ) -> usize {
+        let mut count = 0;
+        for (connection_id, session) in connections {
+            if !session.firehose_subscribed()
+                || self
+                    .thread_processor
+                    .connection_has_thread_subscriptions(connection_id)
+                    .await
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
     /// Handle a standalone JSON-RPC response originating from the peer.
-    pub(crate) async fn process_response(&self, response: JSONRPCResponse) {
+    pub(crate) async fn process_response(
+        &self,
+        response: JSONRPCResponse,
+        session: &ConnectionSessionState,
+    ) {
         let JSONRPCResponse { id, result, .. } = response;
+        if !session.take_answerable_server_request(&id).await {
+            tracing::warn!(request_id = ?id, "ignoring response for unowned server request");
+            return;
+        }
         self.outgoing.notify_client_response(id, result).await
     }
 
     /// Handle an error object received from the peer.
-    pub(crate) async fn process_error(&self, err: JSONRPCError) {
+    pub(crate) async fn process_error(&self, err: JSONRPCError, session: &ConnectionSessionState) {
+        if !session.take_answerable_server_request(&err.id).await {
+            tracing::warn!(request_id = ?err.id, "ignoring error for unowned server request");
+            return;
+        }
         self.outgoing.notify_client_error(err.id, err.error).await;
     }
 
@@ -911,6 +971,14 @@ impl MessageProcessor {
             connection_request_id.request_id.clone(),
             &codex_request,
         );
+
+        if let ClientRequest::EventFirehose { .. } = codex_request {
+            session.subscribe_firehose();
+            self.outgoing
+                .send_response(connection_request_id, EventFirehoseResponse {})
+                .await;
+            return Ok(());
+        }
 
         let event_stream_ready = match &codex_request {
             ClientRequest::McpServerEventStreamStart { params, .. } => Some(
@@ -1125,6 +1193,7 @@ impl MessageProcessor {
                 .model_provider_capabilities_read()
                 .await
                 .map(|response| Some(response.into())),
+            ClientRequest::EventFirehose { .. } => Ok(Some(EventFirehoseResponse {}.into())),
             ClientRequest::ThreadStart { params, .. } => {
                 self.thread_processor
                     .thread_start(

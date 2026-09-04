@@ -95,6 +95,10 @@ pub(crate) enum OutgoingEnvelope {
         message: OutgoingMessage,
         write_complete_tx: Option<oneshot::Sender<()>>,
     },
+    ToConnections {
+        connection_ids: Vec<ConnectionId>,
+        message: OutgoingMessage,
+    },
     Broadcast {
         message: OutgoingMessage,
     },
@@ -326,28 +330,19 @@ impl OutgoingMessageSender {
                     .await
             }
             Some(connection_ids) => {
-                let mut send_error = None;
+                if connection_ids.is_empty() {
+                    return (outgoing_message_id, rx_approve);
+                }
                 for connection_id in connection_ids {
-                    if let Err(err) = self
-                        .sender
-                        .send(OutgoingEnvelope::ToConnection {
-                            connection_id: *connection_id,
-                            message: outgoing_message.clone(),
-                            write_complete_tx: None,
-                        })
-                        .await
-                    {
-                        send_error = Some(err);
-                        break;
-                    } else {
-                        self.analytics_events_client
-                            .track_server_request(connection_id.0, request.clone());
-                    }
+                    self.analytics_events_client
+                        .track_server_request(connection_id.0, request.clone());
                 }
-                match send_error {
-                    Some(err) => Err(err),
-                    None => Ok(()),
-                }
+                self.sender
+                    .send(OutgoingEnvelope::ToConnections {
+                        connection_ids: connection_ids.to_vec(),
+                        message: outgoing_message,
+                    })
+                    .await
             }
         };
 
@@ -616,18 +611,15 @@ impl OutgoingMessageSender {
             }
             return;
         }
-        for connection_id in connection_ids {
-            if let Err(err) = self
-                .sender
-                .send(OutgoingEnvelope::ToConnection {
-                    connection_id: *connection_id,
-                    message: outgoing_message.clone(),
-                    write_complete_tx: None,
-                })
-                .await
-            {
-                warn!("failed to send server notification to client: {err:?}");
-            }
+        if let Err(err) = self
+            .sender
+            .send(OutgoingEnvelope::ToConnections {
+                connection_ids: connection_ids.to_vec(),
+                message: outgoing_message,
+            })
+            .await
+        {
+            warn!("failed to send server notification to client: {err:?}");
         }
     }
 
@@ -731,7 +723,7 @@ fn now_unix_timestamp_ms() -> u64 {
         .unwrap_or_default()
 }
 
-fn timestamped_server_notification(notification: ServerNotification) -> OutgoingMessage {
+pub(crate) fn timestamped_server_notification(notification: ServerNotification) -> OutgoingMessage {
     OutgoingMessage::AppServerNotification(ServerNotificationEnvelope {
         notification,
         emitted_at_ms: Some(now_unix_timestamp_ms().try_into().unwrap_or_default()),
@@ -1170,7 +1162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_server_notification_to_connections_reuses_timestamp() {
+    async fn send_server_notification_to_connections_uses_one_envelope() {
         let (tx, mut rx) = mpsc::channel::<OutgoingEnvelope>(2);
         let outgoing =
             OutgoingMessageSender::new(tx, codex_analytics::AnalyticsEventsClient::disabled());
@@ -1187,23 +1179,27 @@ mod tests {
             )
             .await;
 
-        let timestamps = [
-            rx.recv()
-                .await
-                .expect("first connection should receive notification"),
-            rx.recv()
-                .await
-                .expect("second connection should receive notification"),
-        ]
-        .map(|envelope| match envelope {
-            OutgoingEnvelope::ToConnection {
-                message: OutgoingMessage::AppServerNotification(envelope),
-                ..
-            } => envelope.emitted_at_ms,
-            _ => panic!("expected targeted server notification"),
-        });
-
-        assert_eq!(timestamps[0], timestamps[1]);
+        let envelope = rx
+            .recv()
+            .await
+            .expect("targeted connections should receive a notification");
+        let OutgoingEnvelope::ToConnections {
+            connection_ids,
+            message,
+        } = envelope
+        else {
+            panic!("expected multi-connection server notification");
+        };
+        assert_eq!(connection_ids, vec![ConnectionId(1), ConnectionId(2)]);
+        let OutgoingMessage::AppServerNotification(envelope) = message else {
+            panic!("expected app-server notification");
+        };
+        assert!(
+            envelope
+                .emitted_at_ms
+                .is_some_and(|emitted_at_ms| emitted_at_ms > 0)
+        );
+        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]

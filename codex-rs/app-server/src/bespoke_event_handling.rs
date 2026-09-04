@@ -2270,6 +2270,7 @@ mod tests {
         match envelope {
             OutgoingEnvelope::Broadcast { message } => Ok(message),
             OutgoingEnvelope::ToConnection { message, .. } => Ok(message),
+            OutgoingEnvelope::ToConnections { message, .. } => Ok(message),
         }
     }
 
