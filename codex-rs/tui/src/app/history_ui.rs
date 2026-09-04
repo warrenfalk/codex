@@ -23,7 +23,8 @@ pub(super) struct ThreadUsageStatusHistory {
 impl App {
     pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
         let cell: Arc<dyn HistoryCell> = cell.into();
-        if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+        let should_display = self.cell_visible_in_current_scrollback(cell.as_ref());
+        if should_display && let Some(Overlay::Transcript(t)) = &mut self.overlay {
             t.insert_cell(cell.clone());
             tui.frame_requester().schedule_frame();
         }
@@ -45,19 +46,25 @@ impl App {
                 lines: lines.clone(),
             });
         }
-        if self.initial_history_replay_buffer.as_ref().is_some() {
-            self.insert_history_cell_lines_with_initial_replay_buffer(tui, cell.as_ref(), width);
-            self.last_rendered_history_tail = None;
-        } else {
-            self.insert_history_cell_lines(tui, cell.as_ref(), width);
-            self.last_rendered_history_tail = if self.overlay.is_none() && !lines.is_empty() {
-                Some(RenderedHistoryTail {
-                    cell: Arc::downgrade(&cell),
-                    lines,
-                })
+        if should_display {
+            if self.initial_history_replay_buffer.as_ref().is_some() {
+                self.insert_history_cell_lines_with_initial_replay_buffer(
+                    tui,
+                    cell.as_ref(),
+                    width,
+                );
+                self.last_rendered_history_tail = None;
             } else {
-                None
-            };
+                self.insert_history_cell_lines(tui, cell.as_ref(), width);
+                self.last_rendered_history_tail = if self.overlay.is_none() && !lines.is_empty() {
+                    Some(RenderedHistoryTail {
+                        cell: Arc::downgrade(&cell),
+                        lines,
+                    })
+                } else {
+                    None
+                };
+            }
         }
         // A committed cell can unblock a settled /usage card that was waiting
         // behind a transient active cell or a provisional stream tail.
@@ -307,6 +314,7 @@ impl App {
     pub(super) fn reset_transcript_state_after_clear(&mut self) {
         self.overlay = None;
         self.transcript_cells.clear();
+        self.clean_scrollback_enabled = false;
         self.last_rendered_history_tail = None;
         self.last_thread_usage_status_cell = None;
         self.pending_thread_usage_history_refresh = false;

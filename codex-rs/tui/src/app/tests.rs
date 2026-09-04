@@ -60,6 +60,7 @@ use crate::goal_files;
 use crate::history_cell::AgentMarkdownCell;
 use crate::history_cell::AgentMessageCell;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::UserHistoryCell;
 use crate::history_cell::new_session_info;
@@ -5442,6 +5443,7 @@ async fn make_test_app() -> App {
         runtime_permission_profile_override: None,
         file_search,
         transcript_cells: Vec::new(),
+        clean_scrollback_enabled: false,
         last_rendered_history_tail: None,
         last_thread_usage_status_cell: None,
         pending_thread_usage_history_refresh: false,
@@ -5526,6 +5528,7 @@ async fn make_test_app_with_channels() -> (
             runtime_permission_profile_override: None,
             file_search,
             transcript_cells: Vec::new(),
+            clean_scrollback_enabled: false,
             last_rendered_history_tail: None,
             last_thread_usage_status_cell: None,
             pending_thread_usage_history_refresh: false,
@@ -5832,6 +5835,13 @@ fn plain_line_cell(text: impl Into<String>) -> Arc<dyn HistoryCell> {
     Arc::new(PlainHistoryCell::new(vec![Line::from(text.into())])) as Arc<dyn HistoryCell>
 }
 
+fn noisy_line_cell(text: impl Into<String>) -> Arc<dyn HistoryCell> {
+    Arc::new(PlainHistoryCell::new_with_visibility_kind(
+        vec![Line::from(text.into())],
+        HistoryVisibilityKind::Noise,
+    )) as Arc<dyn HistoryCell>
+}
+
 fn rendered_line_text(line: &crate::terminal_hyperlinks::HyperlinkLine) -> String {
     line.line
         .spans
@@ -6003,6 +6013,161 @@ async fn uncapped_resize_reflow_renders_all_cells_under_row_limit() {
             String::new(),
             "cell 2".to_string(),
         ]
+    );
+}
+
+#[tokio::test]
+async fn clean_scrollback_reflow_filters_noise_without_mutating_transcript_cells() {
+    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
+    app.config.terminal_resize_reflow.max_rows = TerminalResizeReflowMaxRows::Disabled;
+    app.transcript_cells = vec![
+        plain_line_cell("visible before"),
+        noisy_line_cell("tool output"),
+        plain_line_cell("visible after"),
+    ];
+    app.clean_scrollback_enabled = true;
+
+    let rendered = app.render_transcript_lines_for_reflow(/*width*/ 80);
+
+    assert_eq!(app.transcript_cells.len(), 3);
+    assert_eq!(
+        rendered
+            .lines
+            .iter()
+            .map(rendered_line_text)
+            .collect::<Vec<_>>(),
+        vec![
+            "visible before".to_string(),
+            String::new(),
+            "visible after".to_string(),
+        ]
+    );
+
+    app.clean_scrollback_enabled = false;
+    let rendered = app.render_transcript_lines_for_reflow(/*width*/ 80);
+    assert_eq!(
+        rendered
+            .lines
+            .iter()
+            .map(rendered_line_text)
+            .collect::<Vec<_>>(),
+        vec![
+            "visible before".to_string(),
+            String::new(),
+            "tool output".to_string(),
+            String::new(),
+            "visible after".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn clean_scrollback_filters_new_noise_cells_but_keeps_them_in_memory() {
+    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
+    app.config.terminal_resize_reflow.max_rows = TerminalResizeReflowMaxRows::Disabled;
+    app.clean_scrollback_enabled = true;
+    app.transcript_cells.push(plain_line_cell("visible"));
+    app.transcript_cells
+        .push(noisy_line_cell("hidden while clean"));
+
+    let rendered = app.render_transcript_lines_for_reflow(/*width*/ 80);
+
+    assert_eq!(app.transcript_cells.len(), 2);
+    assert_eq!(
+        rendered
+            .lines
+            .iter()
+            .map(rendered_line_text)
+            .collect::<Vec<_>>(),
+        vec!["visible".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn clean_scrollback_reflow_tracks_the_last_visible_cell() -> Result<()> {
+    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
+    app.config.terminal_resize_reflow.max_rows = TerminalResizeReflowMaxRows::Disabled;
+    app.clean_scrollback_enabled = true;
+    app.transcript_cells = vec![
+        plain_line_cell("visible"),
+        noisy_line_cell("hidden while clean"),
+    ];
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let terminal_width = tui.terminal.last_known_screen_size.into();
+
+    app.reflow_transcript_now(&mut tui, terminal_width)?;
+
+    let rendered_tail = app
+        .last_rendered_history_tail
+        .as_ref()
+        .expect("visible transcript cell should remain the rendered tail");
+    assert_eq!(
+        rendered_tail
+            .lines
+            .iter()
+            .map(rendered_line_text)
+            .collect::<Vec<_>>(),
+        vec!["visible".to_string()]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn clean_scrollback_syncs_transcript_overlay_to_filtered_and_full_cells() {
+    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
+    app.transcript_cells = vec![
+        plain_line_cell("visible before"),
+        noisy_line_cell("tool output"),
+        plain_line_cell("visible after"),
+    ];
+    app.clean_scrollback_enabled = true;
+    app.overlay = Some(Overlay::new_transcript(
+        app.transcript_cells_for_current_scrollback(),
+        app.keymap.pager.clone(),
+    ));
+
+    let render_overlay = |overlay: &mut Overlay| {
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 12,
+        );
+        let mut buffer = Buffer::empty(area);
+        match overlay {
+            Overlay::Transcript(transcript) => transcript.render(area, &mut buffer),
+            Overlay::Static(_) => panic!("expected transcript overlay"),
+        }
+        buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>()
+    };
+    let filtered = match app.overlay.as_mut() {
+        Some(overlay) => render_overlay(overlay),
+        _ => panic!("expected transcript overlay"),
+    };
+    assert_eq!(
+        (
+            filtered.contains("visible before"),
+            filtered.contains("tool output"),
+            filtered.contains("visible after"),
+        ),
+        (true, false, true),
+    );
+
+    app.clean_scrollback_enabled = false;
+    app.sync_transcript_overlay_cells();
+
+    let restored = match app.overlay.as_mut() {
+        Some(overlay) => render_overlay(overlay),
+        _ => panic!("expected transcript overlay"),
+    };
+    assert_eq!(
+        (
+            restored.contains("visible before"),
+            restored.contains("tool output"),
+            restored.contains("visible after"),
+        ),
+        (true, true, true),
     );
 }
 
@@ -8717,6 +8882,7 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     ));
     app.deferred_history_lines = vec![Line::from("stale buffered line").into()];
     app.has_emitted_history_lines = true;
+    app.clean_scrollback_enabled = true;
     app.backtrack.primed = true;
     app.backtrack.overlay_preview_active = true;
     app.backtrack.nth_user_message = 0;
@@ -8728,6 +8894,7 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     assert!(app.transcript_cells.is_empty());
     assert!(app.deferred_history_lines.is_empty());
     assert!(!app.has_emitted_history_lines);
+    assert!(!app.clean_scrollback_enabled);
     assert!(!app.backtrack.primed);
     assert!(!app.backtrack.overlay_preview_active);
     assert!(!app.backtrack_render_pending);

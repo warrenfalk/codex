@@ -100,6 +100,8 @@ pub(crate) struct AppKeymap {
     pub(crate) toggle_raw_output: Vec<KeyBinding>,
     /// Switch between a side conversation and its parent without closing either.
     pub(crate) toggle_side_conversation: Vec<KeyBinding>,
+    /// Toggle clean scrollback mode for hiding committed tool/status noise.
+    pub(crate) toggle_clean_scrollback: Vec<KeyBinding>,
 }
 
 /// Chat-level keybindings evaluated at the app event layer.
@@ -651,6 +653,11 @@ impl RuntimeKeymap {
                     "tui.keymap.global.toggle_side_conversation",
                 )?
             },
+            toggle_clean_scrollback: resolve_bindings(
+                keymap.global.toggle_clean_scrollback.as_ref(),
+                &defaults.app.toggle_clean_scrollback,
+                "tui.keymap.global.toggle_clean_scrollback",
+            )?,
         };
 
         let mut chat = ChatKeymap {
@@ -1431,6 +1438,7 @@ impl RuntimeKeymap {
                 toggle_fast_mode: default_bindings![],
                 toggle_raw_output: default_bindings![alt(KeyCode::Char('r'))],
                 toggle_side_conversation: default_bindings![ctrl(KeyCode::Char('/'))],
+                toggle_clean_scrollback: default_bindings![alt(KeyCode::Char('n'))],
             },
             chords: Arc::default(),
             chat: ChatKeymap {
@@ -1774,6 +1782,10 @@ impl RuntimeKeymap {
             ("toggle_side_conversation", side_toggle_bindings.as_slice()),
             ("chat.interrupt_turn", self.chat.interrupt_turn.as_slice()),
             (
+                "toggle_clean_scrollback",
+                self.app.toggle_clean_scrollback.as_slice(),
+            ),
+            (
                 "chat.decrease_reasoning_effort",
                 self.chat.decrease_reasoning_effort.as_slice(),
             ),
@@ -1865,6 +1877,10 @@ impl RuntimeKeymap {
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
                 ("toggle_side_conversation", side_toggle_bindings.as_slice()),
+                (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
             ],
             approval_overlay_bindings,
             [(
@@ -1921,6 +1937,10 @@ impl RuntimeKeymap {
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
                 ("toggle_side_conversation", side_toggle_bindings.as_slice()),
+                (
+                    "toggle_clean_scrollback",
+                    self.app.toggle_clean_scrollback.as_slice(),
+                ),
                 (
                     "composer.history_search_previous",
                     self.composer.history_search_previous.as_slice(),
@@ -3593,6 +3613,28 @@ mod tests {
         assert_eq!(
             runtime.app.toggle_raw_output,
             vec![key_hint::plain(KeyCode::F(12))]
+        );
+    }
+
+    #[test]
+    fn clean_scrollback_toggle_defaults_to_alt_n() {
+        let runtime = RuntimeKeymap::defaults();
+        assert_eq!(
+            runtime.app.toggle_clean_scrollback,
+            vec![key_hint::alt(KeyCode::Char('n'))]
+        );
+    }
+
+    #[test]
+    fn clean_scrollback_toggle_can_be_remapped() {
+        let mut keymap = TuiKeymap::default();
+        keymap.global.toggle_clean_scrollback = Some(one("f11"));
+
+        let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
+
+        assert_eq!(
+            runtime.app.toggle_clean_scrollback,
+            vec![key_hint::plain(KeyCode::F(11))]
         );
     }
 

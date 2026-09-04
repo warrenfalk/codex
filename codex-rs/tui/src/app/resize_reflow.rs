@@ -486,16 +486,18 @@ impl App {
                 self.history_line_wrap_policy(),
             );
         }
-        self.last_rendered_history_tail =
-            self.transcript_cells
-                .last()
-                .map(|cell| super::history_ui::RenderedHistoryTail {
-                    cell: Arc::downgrade(cell),
-                    lines: cell.display_hyperlink_lines_for_mode(
-                        width,
-                        self.chat_widget.history_render_mode(),
-                    ),
-                });
+        self.last_rendered_history_tail = self
+            .transcript_cells
+            .iter()
+            .rev()
+            .find(|cell| self.cell_visible_in_current_scrollback(cell.as_ref()))
+            .map(|cell| super::history_ui::RenderedHistoryTail {
+                cell: Arc::downgrade(cell),
+                lines: cell.display_hyperlink_lines_for_mode(
+                    width,
+                    self.chat_widget.history_render_mode(),
+                ),
+            });
         if let Some(status_history) = self.last_thread_usage_status_cell.as_mut()
             && let Some(cell) = status_history.cell.upgrade()
         {
@@ -583,6 +585,9 @@ impl App {
         while start > 0 {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
+            if !self.cell_visible_in_current_scrollback(cell.as_ref()) {
+                continue;
+            }
             let lines = cell
                 .display_hyperlink_lines_for_mode(width, self.chat_widget.history_render_mode());
             rendered_rows += lines.len();
@@ -604,6 +609,9 @@ impl App {
         {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
+            if !self.cell_visible_in_current_scrollback(cell.as_ref()) {
+                continue;
+            }
             cell_displays.push_front(ReflowCellDisplay {
                 lines: cell.display_hyperlink_lines_for_mode(
                     width,

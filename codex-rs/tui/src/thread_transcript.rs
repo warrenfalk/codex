@@ -7,6 +7,7 @@ use crate::app_server_session::HistoryHydrationScope;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::history_cell::AgentMarkdownCell;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::PrefixedWrappedHistoryCell;
 use crate::history_cell::ReasoningSummaryCell;
@@ -203,6 +204,27 @@ pub(crate) fn thread_items_to_transcript_cells(
 }
 
 fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
+    let visibility_kind = match item {
+        ThreadItem::HookPrompt { .. }
+        | ThreadItem::CommandExecution { .. }
+        | ThreadItem::FileChange { .. }
+        | ThreadItem::McpToolCall { .. }
+        | ThreadItem::DynamicToolCall { .. }
+        | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::SubAgentActivity { .. }
+        | ThreadItem::WebSearch(_)
+        | ThreadItem::ImageView { .. }
+        | ThreadItem::ImageGeneration(_) => HistoryVisibilityKind::Noise,
+        ThreadItem::UserMessage { .. }
+        | ThreadItem::AgentMessage { .. }
+        | ThreadItem::FunctionCallOutput { .. }
+        | ThreadItem::Plan { .. }
+        | ThreadItem::Reasoning { .. }
+        | ThreadItem::Sleep(_)
+        | ThreadItem::EnteredReviewMode { .. }
+        | ThreadItem::ExitedReviewMode { .. }
+        | ThreadItem::ContextCompaction { .. } => HistoryVisibilityKind::Normal,
+    };
     let lines = match item {
         ThreadItem::HookPrompt { fragments, .. } => fragments
             .iter()
@@ -316,5 +338,5 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::Reasoning { .. }
         | ThreadItem::Sleep(_) => return None,
     };
-    (!lines.is_empty()).then(|| PlainHistoryCell::new(lines))
+    (!lines.is_empty()).then(|| PlainHistoryCell::new_with_visibility_kind(lines, visibility_kind))
 }

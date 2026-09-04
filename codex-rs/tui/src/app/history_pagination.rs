@@ -178,9 +178,7 @@ impl App {
                 for index in hidden_transcript_indices {
                     self.transcript_cells.remove(index);
                 }
-                if let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut() {
-                    overlay.replace_cells(self.transcript_cells.clone());
-                }
+                self.sync_transcript_overlay_cells();
             }
         }
         items.retain(|item| !hidden_item_ids.contains(item.id()));
@@ -219,10 +217,21 @@ impl App {
             );
         }
         self.scrollback_has_older_history = app_server.has_older_history(thread_id);
+        let transcript_index = self
+            .transcript_cells
+            .iter()
+            .rposition(|cell| cell.as_any().is::<SessionInfoCell>())
+            .map_or(/*default*/ 0, |index| index.saturating_add(/*rhs*/ 1));
+        let scrollback_cells = cells
+            .iter()
+            .filter(|cell| self.cell_visible_in_current_scrollback(cell.as_ref()))
+            .cloned()
+            .collect();
+        self.transcript_cells
+            .splice(transcript_index..transcript_index, cells);
         let mut continue_to_start = false;
         if let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut() {
-            let index = overlay.prepend(cells.clone(), width);
-            self.transcript_cells.splice(index..index, cells);
+            overlay.prepend(scrollback_cells, width);
             let previous_state = overlay.set_history_state(if self.scrollback_has_older_history {
                 TranscriptHistoryState::Partial
             } else {
@@ -231,12 +240,6 @@ impl App {
             continue_to_start = previous_state == TranscriptHistoryState::LoadingBeginning
                 && self.scrollback_has_older_history;
         } else {
-            let index = self
-                .transcript_cells
-                .iter()
-                .rposition(|cell| cell.as_any().is::<SessionInfoCell>())
-                .map_or(/*default*/ 0, |index| index.saturating_add(/*rhs*/ 1));
-            self.transcript_cells.splice(index..index, cells);
             let wrap_width = self.chat_widget.history_wrap_width(width);
             let rendered_rows = self
                 .render_transcript_lines_for_reflow(wrap_width)

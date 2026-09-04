@@ -239,7 +239,7 @@ impl App {
     pub(crate) fn open_transcript_overlay(&mut self, tui: &mut tui::Tui) {
         let _ = tui.enter_alt_screen();
         self.overlay = Some(Overlay::new_transcript(
-            self.transcript_cells.clone(),
+            self.transcript_cells_for_current_scrollback(),
             self.keymap.pager.clone(),
         ));
         if self.scrollback_has_older_history
@@ -370,8 +370,9 @@ impl App {
     pub(crate) fn apply_backtrack_selection_internal(&mut self, nth_user_message: usize) {
         if let Some(cell_idx) = nth_user_position(&self.transcript_cells, nth_user_message) {
             self.backtrack.nth_user_message = nth_user_message;
+            let scrollback_idx = self.scrollback_index_for_transcript_cell_index(cell_idx);
             if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                t.set_highlight_cell(Some(cell_idx));
+                t.set_highlight_cell(scrollback_idx);
             }
         } else {
             self.backtrack.nth_user_message = usize::MAX;
