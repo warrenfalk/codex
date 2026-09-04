@@ -535,6 +535,7 @@ See the Codex keymap documentation for supported actions and examples."
             agents_overview: Default::default(),
             side_threads: HashMap::new(),
             abandoned_side_threads: HashSet::new(),
+            pending_side_summary: None,
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,

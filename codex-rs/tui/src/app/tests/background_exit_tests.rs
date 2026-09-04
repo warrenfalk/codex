@@ -319,7 +319,7 @@ async fn exit_interrupts_before_requesting_shutdown() -> Result<()> {
 }
 
 #[tokio::test]
-async fn daemon_ctrl_c_closes_running_side_thread_and_returns_to_parent() -> Result<()> {
+async fn daemon_ctrl_c_interrupts_running_side_thread_before_close_prompt() -> Result<()> {
     let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let side_thread_id = prepare_running_local_daemon(&mut app)?;
     let (mut app_server, mut tui) =
@@ -343,9 +343,9 @@ async fn daemon_ctrl_c_closes_running_side_thread_and_returns_to_parent() -> Res
     open_running_task_exit_menu(&mut app, &mut tui, &mut app_server).await;
 
     assert!(app.chat_widget.no_modal_or_popup_active());
-    assert_eq!(app.active_thread_id, Some(parent_thread_id));
-    assert!(!app.side_threads.contains_key(&side_thread_id));
-    assert!(op_rx.try_recv().is_err());
+    assert_eq!(app.active_thread_id, Some(side_thread_id));
+    assert!(app.side_threads.contains_key(&side_thread_id));
+    assert_matches!(op_rx.try_recv(), Ok(Op::Interrupt));
     Ok(())
 }
 

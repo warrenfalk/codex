@@ -24,7 +24,7 @@ const SIDE_NO_STARTED_CONVERSATION_MESSAGE: &str = concat!(
     "Send a message first, then try /side again."
 );
 const SIDE_ALREADY_OPEN_MESSAGE: &str =
-    "A side conversation is already open. Press ctrl + c to return before starting another.";
+    "A side conversation is already open. Press ctrl + c to close it before starting another.";
 const SIDE_BOUNDARY_PROMPT: &str = r#"Side conversation boundary.
 
 Everything before this boundary is inherited history from the parent thread. It is reference context only. It is not your current task.
@@ -351,27 +351,27 @@ impl App {
         }
     }
 
-    pub(super) async fn maybe_return_from_side(
-        &mut self,
-        tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
-    ) -> bool {
-        if self.overlay.is_none()
-            && self.chat_widget.no_modal_or_popup_active()
-            && self.chat_widget.composer_is_empty()
-            && let Some(parent_thread_id) = self.active_side_parent_thread_id()
-        {
-            if self
-                .select_agent_thread_and_discard_side(tui, app_server, parent_thread_id)
+    pub(super) async fn maybe_open_side_close_prompt(&mut self) -> bool {
+        let Some(side_thread_id) = self.current_displayed_thread_id() else {
+            return false;
+        };
+        if self.overlay.is_some()
+            || !self.chat_widget.no_modal_or_popup_active()
+            || !self.chat_widget.composer_is_empty()
+            || self.pending_side_summary.is_some()
+            || self.active_side_parent_thread_id().is_none()
+            || (self.chat_widget.thread_id() == Some(side_thread_id)
+                && self.chat_widget.is_agent_turn_running())
+            || self
+                .active_turn_id_for_thread(side_thread_id)
                 .await
-                .is_err()
-            {
-                return false;
-            }
-            self.active_side_parent_thread_id().is_none()
-        } else {
-            false
+                .is_some()
+        {
+            return false;
         }
+
+        self.chat_widget.open_side_conversation_close_prompt();
+        true
     }
 
     pub(super) fn side_thread_to_discard_after_switch(
@@ -497,6 +497,13 @@ impl App {
     }
 
     pub(super) async fn discard_thread_local_state(&mut self, thread_id: ThreadId) {
+        if self
+            .pending_side_summary
+            .as_ref()
+            .is_some_and(|pending| pending.side_thread_id == thread_id)
+        {
+            self.pending_side_summary = None;
+        }
         let app_event_tx = self.app_event_tx.clone();
         self.dynamic_tool_tasks
             .retain(|request_id, (source, task)| {
@@ -541,7 +548,7 @@ impl App {
         })
     }
 
-    async fn keep_side_thread_visible_after_cleanup_failure(
+    pub(super) async fn keep_side_thread_visible_after_cleanup_failure(
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,

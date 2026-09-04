@@ -423,6 +423,8 @@ mod settings;
 mod settings_popups;
 mod side;
 use self::safety_buffering::SafetyBufferingState;
+#[cfg(test)]
+pub(crate) use self::side::SIDE_CLOSE_PROMPT_VIEW_ID;
 mod status_state;
 mod windows_sandbox_prompts;
 use self::status_state::StatusIndicatorState;
@@ -1796,6 +1798,11 @@ impl ChatWidget {
 
     pub(crate) fn has_active_view(&self) -> bool {
         self.bottom_pane.has_active_view()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_view_id(&self) -> Option<&'static str> {
+        self.bottom_pane.active_view_id()
     }
 
     pub(crate) fn show_esc_backtrack_hint(&mut self) {
