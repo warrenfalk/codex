@@ -151,6 +151,8 @@ pub(crate) struct ComposerKeymap {
 /// participate in global/chat fallback resolution.
 #[derive(Clone, Debug)]
 pub(crate) struct EditorKeymap {
+    pub(crate) undo: Vec<KeyBinding>,
+    pub(crate) redo: Vec<KeyBinding>,
     pub(crate) insert_newline: Vec<KeyBinding>,
     pub(crate) move_left: Vec<KeyBinding>,
     pub(crate) move_right: Vec<KeyBinding>,
@@ -704,6 +706,8 @@ impl RuntimeKeymap {
         };
 
         let editor = Arc::new(EditorKeymap {
+            undo: resolve_local!(keymap, defaults, editor, undo),
+            redo: resolve_local!(keymap, defaults, editor, redo),
             insert_newline: resolve_local!(keymap, defaults, editor, insert_newline),
             move_left: resolve_local!(keymap, defaults, editor, move_left),
             move_right: resolve_local!(keymap, defaults, editor, move_right),
@@ -1466,6 +1470,8 @@ impl RuntimeKeymap {
                 history_search_next: default_bindings![ctrl(KeyCode::Char('s'))],
             },
             editor: Arc::new(EditorKeymap {
+                undo: default_bindings![alt(KeyCode::Char('u'))],
+                redo: default_bindings![alt(KeyCode::Char('e'))],
                 insert_newline: default_bindings![
                     ctrl(KeyCode::Char('j')),
                     ctrl(KeyCode::Char('m')),
@@ -1947,6 +1953,8 @@ impl RuntimeKeymap {
                 ),
             ],
             [
+                ("editor.undo", self.editor.undo.as_slice()),
+                ("editor.redo", self.editor.redo.as_slice()),
                 (
                     "editor.insert_newline",
                     self.editor.insert_newline.as_slice(),
@@ -2978,6 +2986,40 @@ mod tests {
             };
             expect_conflict(&keymap, "move_left", action);
         }
+    }
+
+    #[test]
+    fn editor_undo_redo_defaults_preserve_job_control() {
+        let runtime = RuntimeKeymap::defaults();
+
+        assert_eq!(runtime.editor.undo, vec![key_hint::alt(KeyCode::Char('u'))]);
+        assert_eq!(runtime.editor.redo, vec![key_hint::alt(KeyCode::Char('e'))]);
+        assert!(
+            !runtime
+                .editor
+                .undo
+                .contains(&key_hint::ctrl(KeyCode::Char('z')))
+        );
+    }
+
+    #[test]
+    fn editor_undo_redo_bindings_can_be_remapped() {
+        let mut keymap = TuiKeymap::default();
+        keymap.editor.undo = Some(one("alt-z"));
+        keymap.editor.redo = Some(one("alt-y"));
+
+        let runtime = RuntimeKeymap::from_config(&keymap).expect("keymap should resolve");
+        assert_eq!(runtime.editor.undo, vec![key_hint::alt(KeyCode::Char('z'))]);
+        assert_eq!(runtime.editor.redo, vec![key_hint::alt(KeyCode::Char('y'))]);
+    }
+
+    #[test]
+    fn editor_undo_redo_bindings_are_unique() {
+        let mut keymap = TuiKeymap::default();
+        keymap.editor.undo = Some(one("alt-z"));
+        keymap.editor.redo = Some(one("alt-z"));
+
+        expect_conflict(&keymap, "undo", "redo");
     }
 
     #[test]

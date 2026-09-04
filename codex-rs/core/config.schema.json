@@ -3916,6 +3916,8 @@
               "move_up": null,
               "move_word_left": null,
               "move_word_right": null,
+              "redo": null,
+              "undo": null,
               "yank": null
             },
             "global": {
@@ -4520,6 +4522,22 @@
           ],
           "description": "Move cursor to end of next word."
         },
+        "redo": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Redo the most recently undone draft edit."
+        },
+        "undo": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Undo the most recent draft edit."
+        },
         "yank": {
           "allOf": [
             {
@@ -4730,6 +4748,8 @@
             "move_up": null,
             "move_word_left": null,
             "move_word_right": null,
+            "redo": null,
+            "undo": null,
             "yank": null
           }
         },

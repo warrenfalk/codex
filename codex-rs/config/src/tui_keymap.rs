@@ -163,6 +163,10 @@ pub struct TuiComposerKeymap {
 #[serde(deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct TuiEditorKeymap {
+    /// Undo the most recent draft edit.
+    pub undo: Option<KeybindingsSpec>,
+    /// Redo the most recently undone draft edit.
+    pub redo: Option<KeybindingsSpec>,
     /// Insert a newline in the editor.
     pub insert_newline: Option<KeybindingsSpec>,
     /// Move cursor left by one grapheme.

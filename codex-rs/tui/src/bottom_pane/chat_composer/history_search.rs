@@ -108,9 +108,7 @@ impl ChatComposer {
     /// from replacing an empty composer with the latest prompt before the user has searched for
     /// anything.
     pub(super) fn begin_history_search(&mut self) -> (InputResult, bool) {
-        if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-            self.handle_paste(pasted);
-        }
+        self.flush_paste_burst_before_modified_input_for_undo();
         self.draft.paste_burst.clear_window_after_non_char();
 
         if self.popups.current_file_query.is_some() {
@@ -201,6 +199,7 @@ impl ChatComposer {
                     self.history.reset_search();
                     self.footer.mode = reset_mode_after_activity(self.footer.mode);
                     self.move_cursor_to_end();
+                    self.undo.reset();
                 }
                 (InputResult::None, true)
             }
@@ -333,7 +332,7 @@ impl ChatComposer {
                 if let Some(search) = self.history_search.as_mut() {
                     search.status = HistorySearchStatus::Match;
                 }
-                self.apply_history_entry(entry);
+                self.apply_history_entry_raw(entry);
             }
             HistorySearchResult::Pending => {
                 if let Some(search) = self.history_search.as_mut() {
@@ -522,6 +521,8 @@ mod tests {
     use super::HistorySearchStatus;
     use crate::app_event::AppEvent;
     use crate::app_event_sender::AppEventSender;
+    use crate::key_hint;
+    use crate::keymap::RuntimeKeymap;
     use crate::render::renderable::Renderable;
 
     #[test]
@@ -800,11 +801,11 @@ mod tests {
             .history
             .record_local_submission(HistoryEntry::new("git status".to_string()));
         composer.set_vim_enabled(/*enabled*/ true);
-        let mut keymap = crate::keymap::RuntimeKeymap::defaults();
-        keymap.vim_normal.redo.clear();
+        let mut keymap = RuntimeKeymap::defaults();
+        keymap.composer.history_search_previous = vec![key_hint::plain(KeyCode::F(2))];
         composer.set_keymap_bindings(&keymap);
 
-        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE));
         for ch in ['g', 'i', 't'] {
             let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
         }

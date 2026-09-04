@@ -445,6 +445,14 @@ impl PasteBurst {
         self.is_active_internal() || self.pending_first_char.is_some()
     }
 
+    pub fn has_buffered_paste(&self) -> bool {
+        self.is_active_internal()
+    }
+
+    pub fn has_pending_first_char(&self) -> bool {
+        self.pending_first_char.is_some()
+    }
+
     fn is_active_internal(&self) -> bool {
         self.active || !self.buffer.is_empty()
     }
