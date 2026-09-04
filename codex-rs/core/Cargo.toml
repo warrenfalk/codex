@@ -50,6 +50,7 @@ codex-guardian-context = { workspace = true }
 codex-history = { workspace = true }
 codex-hooks = { workspace = true }
 codex-http-client = { workspace = true }
+codex-inference-profiles = { workspace = true }
 codex-install-context = { workspace = true }
 codex-network-proxy = { workspace = true }
 codex-otel = { workspace = true }

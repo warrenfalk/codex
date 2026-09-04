@@ -6,6 +6,7 @@ use crate::config::ModelsManagerConfig;
 use crate::model_info;
 use chrono::Utc;
 use codex_http_client::HttpClientFactory;
+use codex_inference_profiles::KIMI_K3_MODEL_ID;
 use codex_login::AuthManager;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
@@ -443,7 +444,7 @@ impl OpenAiModelsManager {
     }
 
     /// Replace the cached remote models and rebuild the derived presets list.
-    async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
+    async fn apply_remote_models(&self, mut models: Vec<ModelInfo>) {
         // Use the remote models list as the source of truth if it contains at least one
         // non-hidden model and the user is using ChatGPT auth.
         let should_use_remote_models_only = !models.is_empty()
@@ -456,6 +457,7 @@ impl OpenAiModelsManager {
                     .is_some_and(AuthMode::has_chatgpt_account)
             });
         if should_use_remote_models_only {
+            retain_trusted_inference_profile_models(&mut models);
             *self.remote_models.write().await = models;
             return;
         }
@@ -471,6 +473,7 @@ impl OpenAiModelsManager {
                 existing_models.push(model);
             }
         }
+        retain_trusted_inference_profile_models(&mut existing_models);
         *self.remote_models.write().await = existing_models;
     }
 
@@ -592,6 +595,11 @@ impl ModelsManager for StaticModelsManager {
 
 fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
     Ok(crate::bundled_models_response()?.models)
+}
+
+fn retain_trusted_inference_profile_models(models: &mut Vec<ModelInfo>) {
+    models.retain(|model| model.slug != KIMI_K3_MODEL_ID);
+    models.push(model_info::kimi_k3_model_info());
 }
 
 fn default_model_from_available(available: Vec<ModelPreset>) -> String {

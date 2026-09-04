@@ -422,10 +422,12 @@ async fn manager_without_cache_fetches_on_every_refresh() {
             DEFAULT_HTTP_CLIENT_FACTORY,
         )
         .await;
+    let mut expected_models = remote_models;
+    expected_models.push(model_info::kimi_k3_model_info());
 
-    assert_eq!(catalog.models, remote_models);
+    assert_eq!(catalog.models, expected_models);
     assert_eq!(second_catalog, catalog);
-    assert_eq!(manager.get_remote_models().await, remote_models);
+    assert_eq!(manager.get_remote_models().await, expected_models);
     assert_eq!(endpoint.fetch_count(), 2);
 }
 
@@ -455,8 +457,10 @@ async fn injected_cache_hit_avoids_remote_fetch() {
             DEFAULT_HTTP_CLIENT_FACTORY,
         )
         .await;
+    let mut expected_models = cached_models;
+    expected_models.push(model_info::kimi_k3_model_info());
 
-    assert_eq!(catalog.models, cached_models);
+    assert_eq!(catalog.models, expected_models);
     assert_eq!(endpoint.fetch_count(), 0);
 }
 
@@ -479,8 +483,10 @@ async fn injected_cache_read_error_falls_back_and_persists_remote_models() {
             DEFAULT_HTTP_CLIENT_FACTORY,
         )
         .await;
+    let mut expected_models = remote_models.clone();
+    expected_models.push(model_info::kimi_k3_model_info());
 
-    assert_eq!(catalog.models, remote_models);
+    assert_eq!(catalog.models, expected_models);
     assert_eq!(endpoint.fetch_count(), 1);
     let stored_entries = cache.stored_entries();
     assert_eq!(
@@ -513,8 +519,10 @@ async fn injected_cache_write_error_does_not_fail_remote_refresh() {
             DEFAULT_HTTP_CLIENT_FACTORY,
         )
         .await;
+    let mut expected_models = remote_models;
+    expected_models.push(model_info::kimi_k3_model_info());
 
-    assert_eq!(catalog.models, remote_models);
+    assert_eq!(catalog.models, expected_models);
     assert_eq!(endpoint.fetch_count(), 1);
 }
 
@@ -870,6 +878,8 @@ async fn refresh_available_models_uses_remote_only_catalog_for_chatgpt_auth() {
         "ChatGPT Visible",
         /*priority*/ 0,
     )];
+    let mut expected_models = remote_models.clone();
+    retain_trusted_inference_profile_models(&mut expected_models);
     let codex_home = tempdir().expect("temp dir");
     let endpoint = TestModelsEndpoint::new(vec![remote_models.clone()]);
     let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint.clone());
@@ -882,7 +892,7 @@ async fn refresh_available_models_uses_remote_only_catalog_for_chatgpt_auth() {
         .await
         .expect("refresh succeeds");
 
-    assert_eq!(manager.get_remote_models().await, remote_models);
+    assert_eq!(manager.get_remote_models().await, expected_models);
     assert_eq!(endpoint.fetch_count(), 1, "expected a single model fetch");
 }
 
@@ -893,6 +903,8 @@ async fn refresh_available_models_uses_cached_remote_only_catalog_for_chatgpt_au
         "ChatGPT Cached",
         /*priority*/ 0,
     )];
+    let mut expected_models = remote_models.clone();
+    retain_trusted_inference_profile_models(&mut expected_models);
     let codex_home = tempdir().expect("temp dir");
     let fetch_endpoint = TestModelsEndpoint::new(vec![remote_models.clone()]);
     let fetch_manager =
@@ -918,11 +930,30 @@ async fn refresh_available_models_uses_cached_remote_only_catalog_for_chatgpt_au
         .await
         .expect("cached refresh succeeds");
 
-    assert_eq!(cache_manager.get_remote_models().await, remote_models);
+    assert_eq!(cache_manager.get_remote_models().await, expected_models);
     assert_eq!(
         cache_endpoint.fetch_count(),
         0,
         "fresh cache should avoid a model fetch"
+    );
+}
+
+#[tokio::test]
+async fn chatgpt_remote_catalog_cannot_override_trusted_kimi_metadata() {
+    let untrusted_kimi = remote_model(KIMI_K3_MODEL_ID, "Untrusted Kimi", /*priority*/ 0);
+    let other_model = remote_model("chatgpt-model", "ChatGPT Model", /*priority*/ 1);
+    let codex_home = tempdir().expect("temp dir");
+    let endpoint = TestModelsEndpoint::new(vec![vec![untrusted_kimi, other_model.clone()]]);
+    let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint);
+
+    manager
+        .refresh_available_models(RefreshStrategy::Online, &DEFAULT_HTTP_CLIENT_FACTORY)
+        .await
+        .expect("refresh succeeds");
+
+    assert_eq!(
+        manager.get_remote_models().await,
+        vec![other_model, model_info::kimi_k3_model_info()]
     );
 }
 
@@ -990,6 +1021,7 @@ async fn refresh_available_models_merges_hidden_only_chatgpt_remote_with_bundled
     let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint);
     let mut expected = load_remote_models_from_file().expect("bundled models should parse");
     expected.push(hidden_remote);
+    retain_trusted_inference_profile_models(&mut expected);
 
     manager
         .refresh_available_models(
@@ -1026,6 +1058,7 @@ async fn refresh_available_models_keeps_merging_for_api_auth() {
     );
     let mut expected = load_remote_models_from_file().expect("bundled models should parse");
     expected.extend(remote_models);
+    retain_trusted_inference_profile_models(&mut expected);
 
     manager
         .refresh_available_models(

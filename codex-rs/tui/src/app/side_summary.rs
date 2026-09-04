@@ -6,8 +6,6 @@
 
 use super::*;
 use crate::app_event::SideConversationCloseChoice;
-use codex_app_server_protocol::ItemCompletedNotification;
-use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -258,28 +256,6 @@ impl App {
                     .await;
                     return Ok(());
                 }
-                self.enqueue_thread_notification(
-                    pending.parent_thread_id,
-                    ServerNotification::ItemCompleted(
-                        Self::side_summary_item_completed_notification(
-                            pending.parent_thread_id,
-                            pending.side_thread_id,
-                            summary,
-                        ),
-                    ),
-                )
-                .await?;
-                self.enqueue_thread_notification(
-                    pending.parent_thread_id,
-                    ServerNotification::TurnCompleted(
-                        Self::side_summary_turn_completed_notification(
-                            pending.parent_thread_id,
-                            pending.side_thread_id,
-                            summary,
-                        ),
-                    ),
-                )
-                .await?;
                 self.drain_active_thread_events(tui).await?;
             }
             SideSummaryDestination::ParentNoteToSelf => {
@@ -401,51 +377,6 @@ impl App {
             internal_chat_message_metadata_passthrough: None,
         }
     }
-
-    fn side_summary_agent_message(side_thread_id: ThreadId, summary: &str) -> ThreadItem {
-        ThreadItem::AgentMessage {
-            id: format!("side-summary-{side_thread_id}"),
-            text: Self::formatted_side_summary(summary),
-            phase: None,
-            memory_citation: None,
-            delivery: None,
-            questions: None,
-        }
-    }
-
-    pub(super) fn side_summary_item_completed_notification(
-        parent_thread_id: ThreadId,
-        side_thread_id: ThreadId,
-        summary: &str,
-    ) -> ItemCompletedNotification {
-        ItemCompletedNotification {
-            item: Self::side_summary_agent_message(side_thread_id, summary),
-            thread_id: parent_thread_id.to_string(),
-            turn_id: format!("side-summary-{side_thread_id}"),
-            completed_at_ms: 0,
-        }
-    }
-
-    pub(super) fn side_summary_turn_completed_notification(
-        parent_thread_id: ThreadId,
-        side_thread_id: ThreadId,
-        summary: &str,
-    ) -> TurnCompletedNotification {
-        let summary_id = format!("side-summary-{side_thread_id}");
-        TurnCompletedNotification {
-            thread_id: parent_thread_id.to_string(),
-            turn: Turn {
-                id: summary_id,
-                items: vec![Self::side_summary_agent_message(side_thread_id, summary)],
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
-                status: TurnStatus::Completed,
-                error: None,
-                started_at: None,
-                completed_at: None,
-                duration_ms: None,
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -474,32 +405,6 @@ mod tests {
         assert_eq!(
             App::formatted_side_summary("  Findings from side chat.  "),
             "Side conversation summary\n\nFindings from side chat."
-        );
-    }
-
-    #[test]
-    fn side_summary_turn_completed_notification_contains_parent_agent_message() {
-        let parent_thread_id = ThreadId::new();
-        let side_thread_id = ThreadId::new();
-
-        let notification = App::side_summary_turn_completed_notification(
-            parent_thread_id,
-            side_thread_id,
-            "  Findings from side chat.  ",
-        );
-
-        assert_eq!(notification.thread_id, parent_thread_id.to_string());
-        assert_eq!(notification.turn.status, TurnStatus::Completed);
-        assert_eq!(
-            notification.turn.items,
-            vec![ThreadItem::AgentMessage {
-                id: format!("side-summary-{side_thread_id}"),
-                text: "Side conversation summary\n\nFindings from side chat.".to_string(),
-                phase: None,
-                memory_citation: None,
-                delivery: None,
-                questions: None,
-            }]
         );
     }
 

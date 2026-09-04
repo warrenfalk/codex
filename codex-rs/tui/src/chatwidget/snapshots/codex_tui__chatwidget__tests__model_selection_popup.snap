@@ -12,5 +12,7 @@ expression: popup
                             real-world work.
 › 5. gpt-5.2 (current)      Optimized for professional work and long-running
                             agents.
+  6. kimi-k3                Moonshot AI flagship model with deep reasoning and
+                            a 1M-token context window.
 
   Press enter to confirm or esc to go back

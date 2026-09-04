@@ -1172,7 +1172,7 @@ Provide a named `toolOutput` with an empty `input` array to start a real turn or
 
 ### Example: Inject raw history items
 
-Use `thread/inject_items` to append prebuilt Responses API items to a loaded thread’s prompt history without starting a turn. These items are persisted to the rollout and included in subsequent model requests. A standalone `function_call_output` can omit `call_id` when it has a nonempty `name`; `namespace` is optional, and the output retains tool-tier authority. Any `input_image` items must use inline data URLs; remote HTTP(S) image URLs are rejected. History-only outputs are not exposed as thread items.
+Use `thread/inject_items` to append prebuilt Responses API items to a loaded thread’s prompt history without starting a turn. These items are persisted to the rollout and included in subsequent model requests. Injected items that materialize in the visible thread transcript emit the standard `item/completed` notification to every connection subscribed to the thread, but do not emit turn lifecycle notifications. Hidden context items emit no notifications. A standalone `function_call_output` can omit `call_id` when it has a nonempty `name`; `namespace` is optional, and the output retains tool-tier authority. Any `input_image` items must use inline data URLs; remote HTTP(S) image URLs are rejected. History-only outputs are not exposed as thread items.
 
 ```json
 { "method": "thread/inject_items", "id": 37, "params": {

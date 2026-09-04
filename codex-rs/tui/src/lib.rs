@@ -53,6 +53,7 @@ use codex_config::types::ResumeCwdMode;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_features::Feature;
+use codex_inference_profiles::inference_profile_for_model;
 use codex_login::AuthConfig;
 use codex_login::default_client::originator;
 use codex_login::default_client::set_default_client_residency_requirement;
@@ -1138,7 +1139,7 @@ async fn run_ratatui_app(
     let startup_model_provider = initial_config.model_provider_id.clone();
     let (login_status, mut startup_account) = if workload_identity_selected {
         (LoginStatus::AuthMode(AuthMode::Chatgpt), None)
-    } else if initial_config.model_provider.requires_openai_auth {
+    } else if requires_openai_login(&initial_config) {
         let Some(active_app_server) = app_server.as_mut() else {
             unreachable!("app server should exist when auth is required");
         };
@@ -1953,11 +1954,20 @@ fn should_show_onboarding(
 fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool {
     // Only show the login screen for providers that actually require OpenAI auth
     // (OpenAI or equivalents). For OSS/other providers, skip login entirely.
-    if !config.model_provider.requires_openai_auth {
+    if !requires_openai_login(config) {
         return false;
     }
 
     login_status == LoginStatus::NotAuthenticated
+}
+
+fn requires_openai_login(config: &Config) -> bool {
+    config.model_provider.requires_openai_auth
+        && config
+            .model
+            .as_deref()
+            .and_then(inference_profile_for_model)
+            .is_none()
 }
 
 fn should_show_bedrock_setup_wizard(
@@ -1978,7 +1988,6 @@ fn should_show_bedrock_setup_wizard(
             .auth_config()
             .is_login_method_allowed(ForcedLoginMethod::Api)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1990,6 +1999,7 @@ mod tests {
     use codex_app_server_protocol::ThreadStartParams;
     use codex_app_server_protocol::ThreadStartResponse;
     use codex_config::config_toml::ProjectConfig;
+    use codex_inference_profiles::KIMI_K3_MODEL_ID;
     use codex_utils_absolute_path::test_support::PathExt;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -2076,6 +2086,20 @@ mod tests {
             );
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn kimi_profile_skips_openai_login() -> std::io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let mut config = build_config(&temp_dir).await?;
+        config.model = Some(KIMI_K3_MODEL_ID.to_string());
+        config.model_provider.requires_openai_auth = true;
+
+        assert!(!should_show_login_screen(
+            LoginStatus::NotAuthenticated,
+            &config
+        ));
         Ok(())
     }
 

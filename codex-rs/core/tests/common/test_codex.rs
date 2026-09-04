@@ -28,6 +28,7 @@ use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
+use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::LoadUserInstructionsFuture;
 use codex_extension_api::UserInstructionsProvider;
@@ -339,6 +340,7 @@ pub struct TestCodexBuilder {
     code_mode_host_program: Option<PathBuf>,
     history_mode: Option<ThreadHistoryMode>,
     models_manager: Option<SharedModelsManager>,
+    thread_extension_init: ExtensionDataInit,
 }
 
 impl TestCodexBuilder {
@@ -457,6 +459,14 @@ impl TestCodexBuilder {
 
     pub fn with_code_mode_host_program(mut self, host_program: PathBuf) -> Self {
         self.code_mode_host_program = Some(host_program);
+        self
+    }
+
+    pub fn with_thread_extension<T>(mut self, value: T) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        self.thread_extension_init.insert(value);
         self
     }
 
@@ -787,6 +797,7 @@ impl TestCodexBuilder {
                     history_mode: self.history_mode,
                     client_mcp_extensions: client_mcp_extensions(),
                     environments,
+                    thread_extension_init: std::mem::take(&mut self.thread_extension_init),
                     ..StartThreadOptions::new(config.clone())
                 }))
                 .await?
@@ -1355,6 +1366,7 @@ pub fn test_codex() -> TestCodexBuilder {
         code_mode_host_program: None,
         history_mode: None,
         models_manager: None,
+        thread_extension_init: ExtensionDataInit::default(),
     }
 }
 

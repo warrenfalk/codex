@@ -998,7 +998,7 @@ impl TurnRequestProcessor {
         request_id: &ConnectionRequestId,
         params: ThreadInjectItemsParams,
     ) -> Result<ThreadInjectItemsResponse, JSONRPCErrorError> {
-        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        let (thread_id, thread) = self.load_thread(&params.thread_id).await?;
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
 
@@ -1013,6 +1013,13 @@ impl TurnRequestProcessor {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(invalid_request)?;
         validate_response_item_image_urls(&items)?;
+        let visible_turns = build_legacy_api_turns_from_rollout_items(
+            &items
+                .iter()
+                .cloned()
+                .map(|item| RolloutItem::ResponseItem(item.into()))
+                .collect::<Vec<_>>(),
+        );
 
         thread
             .inject_response_items(items)
@@ -1021,6 +1028,34 @@ impl TurnRequestProcessor {
                 CodexErrorDetails::InvalidRequest(message) => invalid_request(message.clone()),
                 _ => internal_error(format!("failed to inject response items: {err}")),
             })?;
+
+        if !visible_turns.is_empty() {
+            let subscribed_connection_ids = self
+                .thread_state_manager
+                .subscribed_connection_ids(thread_id)
+                .await;
+            let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+                self.outgoing.clone(),
+                subscribed_connection_ids,
+                thread_id,
+            );
+            for turn in visible_turns {
+                let turn_id = Uuid::now_v7().to_string();
+                let completed_at_ms = chrono::Utc::now().timestamp_millis();
+                for item in turn.items {
+                    thread_outgoing
+                        .send_server_notification(ServerNotification::ItemCompleted(
+                            ItemCompletedNotification {
+                                thread_id: thread_id.to_string(),
+                                turn_id: turn_id.clone(),
+                                completed_at_ms,
+                                item,
+                            },
+                        ))
+                        .await;
+                }
+            }
+        }
         Ok(ThreadInjectItemsResponse {})
     }
 

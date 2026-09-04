@@ -1,11 +1,15 @@
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::bail;
 use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use app_test_support::to_response;
 use codex_app_server_protocol::AdditionalContextEntry;
 use codex_app_server_protocol::AdditionalContextKind;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
+use codex_app_server_protocol::JSONRPCMessage;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadInjectItemsParams;
 use codex_app_server_protocol::ThreadInjectItemsResponse;
@@ -33,14 +37,212 @@ use codex_utils_absolute_path::test_support::PathExt;
 use core_test_support::responses;
 use core_test_support::responses::strip_response_item_id;
 use core_test_support::responses::strip_response_item_ids_from_json;
+use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
 use test_case::test_case;
+use tokio::time::Duration;
 use tokio::time::timeout;
 
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+#[tokio::test]
+async fn thread_inject_items_notifies_every_subscribed_connection() -> Result<()> {
+    use super::connection_handling_websocket::assert_no_message;
+    use super::connection_handling_websocket::connect_websocket;
+    use super::connection_handling_websocket::read_jsonrpc_message;
+    use super::connection_handling_websocket::read_notification_for_method;
+    use super::connection_handling_websocket::read_response_and_notification_for_method;
+    use super::connection_handling_websocket::read_response_for_id;
+    use super::connection_handling_websocket::send_initialize_request;
+    use super::connection_handling_websocket::send_request;
+    use super::connection_handling_websocket::spawn_websocket_server;
+    use super::connection_handling_websocket::start_thread;
+
+    let server = responses::start_mock_server().await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+    let (mut process, bind_addr) = spawn_websocket_server(codex_home.path()).await?;
+
+    let mut originating_client = connect_websocket(bind_addr).await?;
+    let mut observing_client = connect_websocket(bind_addr).await?;
+    send_initialize_request(&mut originating_client, /*id*/ 1, "originating_client").await?;
+    read_response_for_id(&mut originating_client, /*id*/ 1)
+        .await
+        .context("waiting for originating client initialization")?;
+    send_initialize_request(&mut observing_client, /*id*/ 2, "observing_client").await?;
+    read_response_for_id(&mut observing_client, /*id*/ 2)
+        .await
+        .context("waiting for observing client initialization")?;
+
+    let thread_id = start_thread(&mut originating_client, /*id*/ 3)
+        .await
+        .context("starting shared thread")?;
+    send_request(
+        &mut originating_client,
+        "thread/inject_items",
+        /*id*/ 4,
+        Some(serde_json::to_value(ThreadInjectItemsParams {
+            thread_id: thread_id.clone(),
+            items: vec![serde_json::to_value(ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "Existing parent context".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            })?],
+        })?),
+    )
+    .await?;
+    let materialize_response = read_response_for_id(&mut originating_client, /*id*/ 4)
+        .await
+        .context("materializing shared thread rollout")?;
+    let _: ThreadInjectItemsResponse = to_response(materialize_response)?;
+
+    send_request(
+        &mut observing_client,
+        "thread/resume",
+        /*id*/ 5,
+        Some(serde_json::to_value(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })?),
+    )
+    .await?;
+    let resume_response = loop {
+        match read_jsonrpc_message(&mut observing_client)
+            .await
+            .context("subscribing observing client to shared thread")?
+        {
+            JSONRPCMessage::Response(response) if response.id == RequestId::Integer(5) => {
+                break response;
+            }
+            JSONRPCMessage::Error(error) if error.id == RequestId::Integer(5) => {
+                bail!(
+                    "observing client thread/resume failed: {}",
+                    error.error.message
+                );
+            }
+            _ => {}
+        }
+    };
+    let _: ThreadResumeResponse = to_response(resume_response)?;
+
+    let summary = "Side conversation summary\n\nFindings from side chat.";
+    let injected_item = ResponseItem::Message {
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: summary.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    send_request(
+        &mut originating_client,
+        "thread/inject_items",
+        /*id*/ 6,
+        Some(serde_json::to_value(ThreadInjectItemsParams {
+            thread_id: thread_id.clone(),
+            items: vec![serde_json::to_value(injected_item)?],
+        })?),
+    )
+    .await?;
+
+    let item_notification = read_notification_for_method(&mut observing_client, "item/completed")
+        .await
+        .context("waiting for observing client item/completed notification")?;
+    let item: ItemCompletedNotification = serde_json::from_value(
+        item_notification
+            .params
+            .context("item/completed notification must include params")?,
+    )?;
+    assert_no_message(&mut observing_client, Duration::from_millis(250)).await?;
+
+    let (inject_response, originating_item_notification) =
+        read_response_and_notification_for_method(
+            &mut originating_client,
+            /*id*/ 6,
+            "item/completed",
+        )
+        .await
+        .context("waiting for originating client injection response and item notification")?;
+    let _: ThreadInjectItemsResponse = to_response(inject_response)?;
+    let originating_item: ItemCompletedNotification = serde_json::from_value(
+        originating_item_notification
+            .params
+            .context("originating item/completed notification must include params")?,
+    )?;
+
+    assert_eq!(item.thread_id, thread_id);
+    assert_eq!(originating_item, item);
+    assert_eq!(
+        item.item,
+        ThreadItem::AgentMessage {
+            id: "item-1".to_string(),
+            text: summary.to_string(),
+            phase: None,
+            memory_citation: None,
+            delivery: None,
+            questions: None,
+        }
+    );
+
+    process.kill().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_inject_items_stays_silent_for_hidden_context_messages() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
+
+    let thread_req = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(thread_req)).await??;
+    mcp.clear_message_buffer();
+
+    let inject_req = mcp
+        .send_thread_inject_items_request(ThreadInjectItemsParams {
+            thread_id: thread.id,
+            items: vec![serde_json::to_value(ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "Side conversation boundary".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            })?],
+        })
+        .await?;
+    let _: ThreadInjectItemsResponse =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(inject_req)).await??;
+
+    let lifecycle_notifications = mcp
+        .pending_notification_methods()
+        .into_iter()
+        .filter(|method| method == "item/completed" || method == "turn/completed")
+        .collect::<Vec<_>>();
+    assert_eq!(lifecycle_notifications, Vec::<String>::new());
+
+    Ok(())
+}
 
 #[test_case(ThreadHistoryMode::Legacy; "legacy")]
 #[test_case(ThreadHistoryMode::Paginated; "paginated")]

@@ -43,6 +43,7 @@ codex-feedback = { workspace = true }
 codex-file-search = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-http-client = { workspace = true }
+codex-inference-profiles = { workspace = true }
 codex-login = { workspace = true }
 codex-message-history = { workspace = true }
 codex-mcp = { workspace = true }
