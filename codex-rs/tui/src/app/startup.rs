@@ -128,6 +128,11 @@ impl App {
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(app_event_tx);
         #[cfg(unix)]
+        let _focus_notification_signal_task =
+            super::focus_notification_signal::FocusNotificationSignalTask::spawn(
+                app_event_tx.clone(),
+            );
+        #[cfg(unix)]
         let _shutdown_signal_task =
             super::shutdown_signal::ShutdownSignalTask::spawn(app_event_tx.clone());
         emit_project_config_warnings(&app_event_tx, &config);

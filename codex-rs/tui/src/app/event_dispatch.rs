@@ -700,6 +700,9 @@ impl App {
             AppEvent::StopCommitAnimation => {
                 self.commit_animation = None;
             }
+            AppEvent::FocusNotificationRequested => {
+                self.chat_widget.notify(Notification::FocusRequested);
+            }
             AppEvent::Exit(mode) => {
                 if matches!(mode, ExitMode::ShutdownFirst | ExitMode::ShutdownAfterInterrupt) {
                     self.show_shutdown_feedback(tui)?;
