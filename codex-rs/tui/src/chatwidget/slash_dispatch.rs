@@ -234,6 +234,11 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../assets/prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
+            SlashCommand::InitUpdate => {
+                const INIT_UPDATE_PROMPT: &str =
+                    include_str!("../../prompt_for_init_update_command.md");
+                self.submit_user_message(INIT_UPDATE_PROMPT.to_string().into());
+            }
             SlashCommand::Compact => {
                 if self.blocks_direct_input {
                     self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
@@ -1147,6 +1152,7 @@ impl ChatWidget {
             | SlashCommand::Resume
             | SlashCommand::Fork
             | SlashCommand::Init
+            | SlashCommand::InitUpdate
             | SlashCommand::Compact
             | SlashCommand::Review
             | SlashCommand::Model
