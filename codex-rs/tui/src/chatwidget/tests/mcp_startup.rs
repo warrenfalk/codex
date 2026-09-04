@@ -429,6 +429,32 @@ async fn app_server_mcp_startup_failure_renders_warning_history() {
 }
 
 #[tokio::test]
+async fn app_server_partial_terminal_mcp_startup_does_not_keep_turn_running_after_turn_complete() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_mcp_startup_expected_servers(["alpha".to_string(), "beta".to_string()]);
+
+    notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Ready);
+
+    assert!(chat.bottom_pane.is_task_running());
+
+    handle_turn_started(&mut chat, "turn-1");
+    handle_turn_completed(&mut chat, "turn-1", Some(1));
+
+    assert!(!chat.bottom_pane.is_task_running());
+    assert!(chat.bottom_pane.status_widget().is_none());
+    let height = chat.desired_height(/*width*/ 80);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, height))
+        .expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw chat widget");
+    assert_chatwidget_snapshot!(
+        "mcp_partial_startup_clears_status_after_turn_complete",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
 async fn mcp_startup_failure_restores_running_status_header() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.show_welcome_banner = false;
