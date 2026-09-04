@@ -683,6 +683,8 @@ pub(crate) struct ChatWidget {
     #[cfg(test)]
     pet_image_support_override: Option<crate::pets::PetImageSupport>,
     thread_id: Option<ThreadId>,
+    /// Bare prompt slash-command warning dismissed for the current exact command draft.
+    dismissed_prompt_command_warning: Option<SlashCommand>,
     thread_name: Option<String>,
     pending_automatic_thread_names: HashSet<String>,
     thread_rename_block_message: Option<String>,
@@ -1218,6 +1220,7 @@ impl ChatWidget {
         if let Some(pet) = self.ambient_pet.as_ref() {
             pet.schedule_next_frame();
         }
+        self.refresh_prompt_command_warning();
         self.refresh_goal_status_indicator_for_time_tick();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();

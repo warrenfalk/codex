@@ -203,6 +203,7 @@ impl ChatWidget {
             #[cfg(test)]
             pet_image_support_override: None,
             thread_id: None,
+            dismissed_prompt_command_warning: None,
             thread_name: None,
             pending_automatic_thread_names: HashSet::new(),
             thread_rename_block_message: None,

@@ -35,6 +35,7 @@ use crate::keymap::RuntimeKeymap;
 use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
+use crate::slash_command::SlashCommand;
 use crate::terminal_palette::effective_stdout_color_level;
 use crate::tui::FrameRequester;
 pub(crate) use bottom_pane_view::BottomPaneView;
@@ -990,6 +991,17 @@ impl BottomPane {
     pub(crate) fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {
         self.composer.set_footer_hint_override(items);
         self.request_redraw();
+    }
+
+    pub(crate) fn set_prompt_command_warning(&mut self, command: Option<SlashCommand>) {
+        if self.composer.set_prompt_command_warning(command) {
+            self.request_redraw();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<SlashCommand> {
+        self.composer.prompt_command_warning()
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {

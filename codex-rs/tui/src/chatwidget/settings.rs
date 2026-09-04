@@ -388,6 +388,77 @@ impl ChatWidget {
         true
     }
 
+    /// Returns the slash command that should be suggested for the current exact draft.
+    pub(super) fn prompt_command_warning(&self) -> Option<SlashCommand> {
+        let text = self.bottom_pane.composer_text();
+        let command = match text.as_str() {
+            "exit" => SlashCommand::Exit,
+            "resume" => SlashCommand::Resume,
+            _ => return None,
+        };
+        if self.bottom_pane.composer_input_enabled()
+            && self.bottom_pane.no_modal_or_popup_active()
+            && (command.available_during_task() || !self.bottom_pane.is_task_running())
+        {
+            Some(command)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the currently visible bare-command warning, accounting for dismissal.
+    pub(super) fn visible_prompt_command_warning(&self) -> Option<SlashCommand> {
+        let command = self.prompt_command_warning()?;
+        (self.dismissed_prompt_command_warning != Some(command)).then_some(command)
+    }
+
+    /// Synchronizes the footer presentation with the current prompt-command warning policy.
+    pub(super) fn refresh_prompt_command_warning(&mut self) {
+        let prompt_command_warning = self.prompt_command_warning();
+        if prompt_command_warning.is_none() {
+            self.dismissed_prompt_command_warning = None;
+        }
+        let visible_prompt_command_warning = self.visible_prompt_command_warning();
+        self.bottom_pane
+            .set_prompt_command_warning(visible_prompt_command_warning);
+    }
+
+    pub(super) fn dismiss_prompt_command_warning(&mut self) {
+        self.dismissed_prompt_command_warning = self.prompt_command_warning();
+        self.refresh_prompt_command_warning();
+    }
+
+    pub(super) fn accept_prompt_command_warning(&mut self) {
+        let Some(command) = self.visible_prompt_command_warning() else {
+            return;
+        };
+        self.bottom_pane.set_composer_text(
+            format!("/{}", command.command()),
+            Vec::new(),
+            Vec::new(),
+        );
+        match self
+            .bottom_pane
+            .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+        {
+            InputResult::Command(cmd) => self.handle_slash_command_dispatch(cmd),
+            InputResult::CommandWithArgs(cmd, args, text_elements) => {
+                self.handle_slash_command_with_args_dispatch(cmd, args, text_elements);
+            }
+            InputResult::None => {}
+            InputResult::Queued { text, .. } | InputResult::Submitted { text, .. } => {
+                tracing::warn!("prompt command warning submitted unexpected text: {text:?}");
+            }
+            InputResult::ServiceTierCommand(command) => {
+                self.handle_service_tier_command_dispatch(command);
+            }
+            InputResult::ParentOwnedInputBlocked => {
+                self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
+            }
+        }
+        self.refresh_prompt_command_warning();
+    }
+
     pub(super) fn initial_collaboration_mask(
         _config: &Config,
         model_catalog: &ModelCatalog,

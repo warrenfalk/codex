@@ -585,6 +585,20 @@ pub(crate) struct ComposerDraftSnapshot {
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
 
+/// Builds the one-line warning for bare drafts that look like omitted slash commands.
+fn prompt_command_warning_line(command: SlashCommand) -> Line<'static> {
+    let command_name = command.command();
+    Line::from(vec![
+        format!("Did you mean /{command_name}?").magenta(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Enter).into(),
+        format!(" to {command_name}").into(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Esc).into(),
+        " to dismiss".into(),
+    ])
+}
+
 impl ChatComposer {
     fn slash_input(&self) -> SlashInput<'_> {
         SlashInput::new(
@@ -656,6 +670,7 @@ impl ChatComposer {
                 use_shift_enter_hint,
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
+                prompt_command_warning: None,
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1515,6 +1530,22 @@ impl ChatComposer {
     /// `None` restores the default shortcut footer.
     pub(crate) fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {
         self.footer.hint_override = items;
+    }
+
+    /// Updates the command warning that replaces the ambient footer row.
+    ///
+    /// Returns `true` only when the rendered footer can change.
+    pub(crate) fn set_prompt_command_warning(&mut self, command: Option<SlashCommand>) -> bool {
+        if self.footer.prompt_command_warning == command {
+            return false;
+        }
+        self.footer.prompt_command_warning = command;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<SlashCommand> {
+        self.footer.prompt_command_warning
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
@@ -4737,6 +4768,17 @@ impl ChatComposer {
                     input.render(inset_footer_hint_area(hint_rect), buf);
                 } else if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
+                } else if let Some(command) = self.footer.prompt_command_warning {
+                    let available_width =
+                        hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
+                    render_footer_line(
+                        hint_rect,
+                        buf,
+                        truncate_line_with_ellipsis_if_overflow(
+                            prompt_command_warning_line(command),
+                            available_width,
+                        ),
+                    );
                 } else {
                     let available_width =
                         hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
