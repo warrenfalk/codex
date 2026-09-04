@@ -5,6 +5,7 @@ use std::time::Duration;
 use codex_async_utils::CancelErr;
 use codex_async_utils::OrCancelExt;
 use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
+use codex_project_env::apply_overlay as apply_project_env_overlay;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -36,6 +37,7 @@ use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandSource;
+use codex_protocol::protocol::ProjectEnvMode;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_sandboxing::SandboxType;
 use codex_shell_command::parse_command::parse_command;
@@ -62,13 +64,19 @@ pub(crate) enum UserShellCommandMode {
 pub(crate) struct UserShellCommandTask {
     command: String,
     timeout_ms: Option<u64>,
+    project_env: ProjectEnvMode,
 }
 
 impl UserShellCommandTask {
-    pub(crate) fn new(command: String, timeout_ms: Option<u64>) -> Self {
+    pub(crate) fn new_with_project_env(
+        command: String,
+        timeout_ms: Option<u64>,
+        project_env: ProjectEnvMode,
+    ) -> Self {
         Self {
             command,
             timeout_ms,
+            project_env,
         }
     }
 }
@@ -94,6 +102,7 @@ impl SessionTask for UserShellCommandTask {
             turn_context,
             self.command.clone(),
             self.timeout_ms,
+            self.project_env,
             cancellation_token,
             UserShellCommandMode::StandaloneTurn,
         )
@@ -107,6 +116,7 @@ pub(crate) async fn execute_user_shell_command(
     turn_context: Arc<TurnContext>,
     command: String,
     timeout_ms: Option<u64>,
+    project_env: ProjectEnvMode,
     cancellation_token: CancellationToken,
     mode: UserShellCommandMode,
 ) {
@@ -166,21 +176,9 @@ pub(crate) async fn execute_user_shell_command(
     let shell_snapshot_location = turn_environment.shell_snapshot(&cwd);
     let shell_environment_policy = turn_environment.shell_environment_policy();
     let mut exec_env_map = create_env(shell_environment_policy, Some(session.thread_id));
-    inject_session_id_env(&mut exec_env_map, session.session_id());
-    inject_apply_patch_env(&mut exec_env_map, &turn_context.config.features);
-    if exec_env_map.contains_key(PROXY_ACTIVE_ENV_KEY) {
-        strip_managed_proxy_env(&mut exec_env_map);
-    }
-    let exec_command = prepare_user_shell_exec_command(
-        &display_command,
-        environment_shell,
-        shell_snapshot_location.as_ref(),
-        &shell_environment_policy.r#set,
-        &mut exec_env_map,
-    );
-
     let call_id = Uuid::new_v4().to_string();
     let raw_command = command;
+    let mut snapshot_env_overrides = HashMap::new();
 
     let parsed_cmd = parse_command(&display_command);
     session
@@ -206,6 +204,83 @@ pub(crate) async fn execute_user_shell_command(
             }),
         )
         .await;
+
+    if let Some(overlay) = match session
+        .services
+        .project_env_manager
+        .environment_for_command(&cwd, project_env, cancellation_token.child_token())
+        .await
+    {
+        Ok(overlay) => overlay,
+        Err(err) => {
+            let message = err.model_message();
+            let exec_output = ExecToolCallOutput {
+                exit_code: -1,
+                stdout: StreamOutput::new(String::new()),
+                stderr: StreamOutput::new(message.clone()),
+                aggregated_output: StreamOutput::new(message.clone()),
+                duration: Duration::ZERO,
+                timed_out: false,
+            };
+            session
+                .emit_turn_item_completed(
+                    turn_context.as_ref(),
+                    TurnItem::CommandExecution(CommandExecutionItem {
+                        id: call_id,
+                        plugin_id: None,
+                        script_path: None,
+                        process_id: None,
+                        command: display_command,
+                        cwd: cwd.into(),
+                        parsed_cmd,
+                        source: ExecCommandSource::UserShell,
+                        interaction_input: None,
+                        status: CommandExecutionStatus::Failed,
+                        stdout: Some(exec_output.stdout.text.clone()),
+                        stderr: Some(exec_output.stderr.text.clone()),
+                        aggregated_output: Some(exec_output.aggregated_output.text.clone()),
+                        exit_code: Some(exec_output.exit_code),
+                        duration: Some(exec_output.duration),
+                        formatted_output: Some(format_exec_output_str(
+                            &exec_output,
+                            turn_context.model_info().truncation_policy.into(),
+                        )),
+                    }),
+                )
+                .await;
+            persist_user_shell_output(
+                &session,
+                turn_context.as_ref(),
+                &raw_command,
+                &exec_output,
+                mode,
+            )
+            .await;
+            return;
+        }
+    } {
+        snapshot_env_overrides.extend(overlay.env.clone());
+        apply_project_env_overlay(
+            &mut exec_env_map,
+            overlay.as_ref(),
+            &shell_environment_policy.r#set,
+            Some(session.thread_id.to_string()),
+        );
+    }
+    snapshot_env_overrides.extend(shell_environment_policy.r#set.clone());
+    inject_session_id_env(&mut exec_env_map, session.session_id());
+    inject_apply_patch_env(&mut exec_env_map, &turn_context.config.features);
+    if exec_env_map.contains_key(PROXY_ACTIVE_ENV_KEY) {
+        strip_managed_proxy_env(&mut exec_env_map);
+    }
+
+    let exec_command = prepare_user_shell_exec_command(
+        &display_command,
+        environment_shell,
+        shell_snapshot_location.as_ref(),
+        &snapshot_env_overrides,
+        &mut exec_env_map,
+    );
 
     let permission_profile = PermissionProfile::Disabled;
     let exec_env = ExecRequest {
@@ -391,7 +466,7 @@ fn prepare_user_shell_exec_command(
     display_command: &[String],
     shell: &Shell,
     shell_snapshot: Option<&AbsolutePathBuf>,
-    shell_environment_set: &HashMap<String, String>,
+    snapshot_env_overrides: &HashMap<String, String>,
     exec_env_map: &mut HashMap<String, String>,
 ) -> Vec<String> {
     #[cfg(unix)]
@@ -400,7 +475,7 @@ fn prepare_user_shell_exec_command(
             display_command,
             shell,
             shell_snapshot,
-            shell_environment_set,
+            snapshot_env_overrides,
             exec_env_map,
             apply_package_path_prepend,
         )
@@ -412,7 +487,7 @@ fn prepare_user_shell_exec_command(
             display_command,
             shell,
             shell_snapshot,
-            shell_environment_set,
+            snapshot_env_overrides,
             exec_env_map,
             // On non-Unix targets, arg0 has already prepended the package path
             // to the process PATH before create_env() builds exec_env_map.
@@ -432,18 +507,17 @@ fn prepare_user_shell_exec_command_with_path_prepend(
     display_command: &[String],
     shell: &Shell,
     shell_snapshot: Option<&AbsolutePathBuf>,
-    shell_environment_set: &HashMap<String, String>,
+    snapshot_env_overrides: &HashMap<String, String>,
     exec_env_map: &mut HashMap<String, String>,
     prepend_runtime_path: impl FnOnce(&mut HashMap<String, String>, &mut RuntimePathPrepends),
 ) -> Vec<String> {
-    let explicit_env_overrides = shell_environment_set.clone();
     let mut runtime_path_prepends = RuntimePathPrepends::default();
     prepend_runtime_path(exec_env_map, &mut runtime_path_prepends);
     maybe_wrap_shell_lc_with_snapshot(
         display_command,
         shell,
         shell_snapshot,
-        &explicit_env_overrides,
+        snapshot_env_overrides,
         exec_env_map,
         &runtime_path_prepends,
     )

@@ -289,6 +289,7 @@ impl ExecCommandHandler {
             additional_permissions,
             justification,
             prefix_rule,
+            project_env,
             ..
         } = args;
         let completion_timeout = match self.lifetime {
@@ -421,6 +422,8 @@ impl ExecCommandHandler {
                 .permissions_preapproved,
             justification,
             prefix_rule,
+            project_env,
+            cancellation_token: context.cancellation_token.child_token(),
         };
         let result = match completion_timeout {
             Some(timeout) => {

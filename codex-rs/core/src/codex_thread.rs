@@ -17,6 +17,7 @@ use codex_features::Feature;
 use codex_history::RolloutItem;
 use codex_otel::SessionTelemetry;
 use codex_otel::current_span_w3c_trace_context;
+use codex_project_env::ProjectEnvStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -70,6 +71,7 @@ use rmcp::model::ReadResourceRequestParams;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -586,8 +588,20 @@ impl CodexThread {
         self.session.list_background_terminals().await
     }
 
+    pub async fn project_env_status(&self) -> ProjectEnvStatus {
+        self.session.project_env_status().await
+    }
+
+    pub fn subscribe_project_env_status(&self) -> broadcast::Receiver<ProjectEnvStatus> {
+        self.session.subscribe_project_env_status()
+    }
+
     pub async fn terminate_background_terminal(&self, process_id: i32) -> bool {
         self.session.terminate_background_terminal(process_id).await
+    }
+
+    pub async fn cancel_project_env_build(&self, process_id: &str) -> bool {
+        self.session.cancel_project_env_build(process_id).await
     }
 
     pub(crate) fn subscribe_status(&self) -> watch::Receiver<AgentStatus> {

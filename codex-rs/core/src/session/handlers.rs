@@ -103,6 +103,7 @@ pub async fn run_user_shell_command(
     sub_id: String,
     command: String,
     timeout_ms: Option<u64>,
+    project_env: codex_protocol::protocol::ProjectEnvMode,
 ) {
     if let Some((turn_context, cancellation_token)) =
         sess.active_turn_context_and_cancellation_token().await
@@ -114,6 +115,7 @@ pub async fn run_user_shell_command(
                 turn_context,
                 command,
                 timeout_ms,
+                project_env,
                 cancellation_token,
                 UserShellCommandMode::ActiveTurnAuxiliary,
             )
@@ -128,7 +130,7 @@ pub async fn run_user_shell_command(
     sess.spawn_task(
         turn_context,
         Vec::new(),
-        UserShellCommandTask::new(command, timeout_ms),
+        UserShellCommandTask::new_with_project_env(command, timeout_ms, project_env),
     )
     .await;
 }
@@ -771,8 +773,10 @@ pub(super) async fn submission_loop(
                 Op::RunUserShellCommand {
                     command,
                     timeout_ms,
+                    project_env,
                 } => {
-                    run_user_shell_command(&sess, sub.id.clone(), command, timeout_ms).await;
+                    run_user_shell_command(&sess, sub.id.clone(), command, timeout_ms, project_env)
+                        .await;
                     false
                 }
                 Op::ResolveElicitation {

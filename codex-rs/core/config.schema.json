@@ -5913,6 +5913,10 @@
       "description": "Legacy fallback for `tui.disable_paste_burst`. Prefer the setting under `[tui]`.",
       "type": "boolean"
     },
+    "disable_project_env": {
+      "description": "Disable automatic direnv/nix-direnv project environment loading.",
+      "type": "boolean"
+    },
     "experimental_compact_prompt_file": {
       "$ref": "#/definitions/AbsolutePathBuf"
     },

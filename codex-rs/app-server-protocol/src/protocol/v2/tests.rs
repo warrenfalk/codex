@@ -1313,6 +1313,7 @@ fn thread_shell_command_params_round_trip() {
             thread_id: "thr_123".to_string(),
             command: "printf 'hello world\\n'".to_string(),
             timeout_ms,
+            project_env: None,
         };
 
         let value = serde_json::to_value(&params).expect("serialize thread/shellCommand params");
@@ -1322,6 +1323,7 @@ fn thread_shell_command_params_round_trip() {
                 "threadId": "thr_123",
                 "command": "printf 'hello world\\n'",
                 "timeoutMs": timeout_ms,
+                "projectEnv": null,
             })
         );
 
@@ -1344,6 +1346,7 @@ fn thread_shell_command_params_without_timeout_remain_valid() {
             thread_id: "thr_123".to_string(),
             command: "echo hello".to_string(),
             timeout_ms: None,
+            project_env: None,
         }
     );
 }

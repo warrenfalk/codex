@@ -72,6 +72,7 @@ use codex_core_plugins::PluginMetricsSidecar;
 use codex_core_plugins::strip_output_env;
 use codex_network_proxy::NetworkPolicyDecider;
 use codex_network_proxy::NetworkProxy;
+use codex_project_env::apply_overlay as apply_project_env_overlay;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::CodexErrorDetails;
@@ -84,6 +85,7 @@ use codex_sandboxing::SandboxCommand;
 use codex_shell_command::is_dangerous_command::DangerousCommandPlatform;
 use codex_tools::ToolName;
 use codex_utils_output_truncation::approx_tokens_from_byte_count;
+use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 
 const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
@@ -1350,6 +1352,41 @@ impl UnifiedExecProcessManager {
         let shell_environment_policy = request.turn_environment.shell_environment_policy();
         let local_policy_env = create_env(shell_environment_policy, /*thread_id*/ None);
         let mut env = local_policy_env.clone();
+        let mut snapshot_env_overrides = HashMap::new();
+        let project_env_cwd = if !request.turn_environment.environment.is_remote()
+            && request.cwd.infer_path_convention() == Some(PathConvention::native())
+        {
+            Some(
+                request
+                    .cwd
+                    .to_abs_path()
+                    .map_err(|err| UnifiedExecError::process_failed(err.to_string()))?,
+            )
+        } else {
+            None
+        };
+        if let Some(project_env_cwd) = project_env_cwd.as_ref()
+            && let Some(overlay) = context
+                .session
+                .services
+                .project_env_manager
+                .environment_for_command(
+                    project_env_cwd,
+                    request.project_env,
+                    request.cancellation_token.child_token(),
+                )
+                .await
+                .map_err(|err| UnifiedExecError::process_failed(err.model_message()))?
+        {
+            snapshot_env_overrides.extend(overlay.env.clone());
+            apply_project_env_overlay(
+                &mut env,
+                overlay.as_ref(),
+                &shell_environment_policy.r#set,
+                Some(context.session.thread_id.to_string()),
+            );
+        }
+        snapshot_env_overrides.extend(shell_environment_policy.r#set.clone());
         env.insert(
             CODEX_THREAD_ID_ENV_VAR.to_string(),
             context.session.thread_id.to_string(),
@@ -1360,8 +1397,7 @@ impl UnifiedExecProcessManager {
         inject_permission_profile_env(&mut env, active_permission_profile.as_ref());
         let mut env = apply_unified_exec_env(env);
         strip_output_env(&mut env);
-        let mut explicit_env_overrides = shell_environment_policy.r#set.clone();
-        strip_output_env(&mut explicit_env_overrides);
+        strip_output_env(&mut snapshot_env_overrides);
         let exec_server_env_config = ExecServerEnvConfig {
             policy: exec_env_policy_from_shell_policy(shell_environment_policy),
             local_policy_env,
@@ -1417,7 +1453,7 @@ impl UnifiedExecProcessManager {
             env,
             exec_server_env_config: Some(exec_server_env_config),
             shell_snapshot,
-            explicit_env_overrides,
+            snapshot_env_overrides,
             network: request.network.clone(),
             tty: request.tty,
             sandbox_permissions: request.sandbox_permissions,

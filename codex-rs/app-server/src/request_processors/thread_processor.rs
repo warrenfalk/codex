@@ -929,6 +929,15 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
+    pub(crate) async fn thread_project_env_read(
+        &self,
+        params: ThreadProjectEnvReadParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_project_env_read_inner(params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_approve_guardian_denied_action(
         &self,
         request_id: &ConnectionRequestId,
@@ -2414,12 +2423,15 @@ impl ThreadRequestProcessor {
             thread_id,
             process_id,
         } = params;
-        let process_id = process_id.parse::<i32>().map_err(|err| {
-            invalid_request(format!("invalid background terminal process id: {err}"))
-        })?;
-
         let (_, thread) = self.load_thread(&thread_id).await?;
-        let terminated = thread.terminate_background_terminal(process_id).await;
+        let terminated = if process_id.starts_with("project-env:") {
+            thread.cancel_project_env_build(&process_id).await
+        } else {
+            let process_id = process_id.parse::<i32>().map_err(|err| {
+                invalid_request(format!("invalid background terminal process id: {err}"))
+            })?;
+            thread.terminate_background_terminal(process_id).await
+        };
         Ok(ThreadBackgroundTerminalsTerminateResponse { terminated })
     }
 
@@ -2432,6 +2444,7 @@ impl ThreadRequestProcessor {
             thread_id,
             command,
             timeout_ms,
+            project_env,
         } = params;
         let command = command.trim().to_string();
         if command.is_empty() {
@@ -2468,11 +2481,24 @@ impl ThreadRequestProcessor {
             Op::RunUserShellCommand {
                 command,
                 timeout_ms,
+                project_env: project_env.unwrap_or_default(),
             },
         )
         .await
         .map_err(|err| internal_error(format!("failed to start shell command: {err}")))?;
         Ok(ThreadShellCommandResponse {})
+    }
+
+    async fn thread_project_env_read_inner(
+        &self,
+        params: ThreadProjectEnvReadParams,
+    ) -> Result<ThreadProjectEnvReadResponse, JSONRPCErrorError> {
+        let ThreadProjectEnvReadParams { thread_id } = params;
+        let (_, thread) = self.load_thread(&thread_id).await?;
+        let status = thread.project_env_status().await;
+        Ok(ThreadProjectEnvReadResponse {
+            project_env: map_project_env_status(thread_id, status),
+        })
     }
 
     async fn thread_approve_guardian_denied_action_inner(
@@ -6142,27 +6168,55 @@ fn paginate_background_terminals(
     cursor: Option<String>,
     limit: Option<u32>,
 ) -> Result<(Vec<ThreadBackgroundTerminal>, Option<String>), JSONRPCErrorError> {
-    let start = match cursor {
-        Some(cursor) => {
-            let cursor = cursor
-                .parse::<i32>()
-                .map_err(|err| invalid_request(format!("invalid cursor: {err}")))?;
-            terminals
-                .iter()
-                .position(|terminal| {
-                    terminal
-                        .process_id
-                        .parse::<i32>()
-                        .is_ok_and(|process_id| process_id > cursor)
-                })
-                .unwrap_or(terminals.len())
-        }
+    let start = match cursor.as_ref() {
+        Some(cursor) => match terminals
+            .iter()
+            .position(|terminal| &terminal.process_id == cursor)
+        {
+            Some(index) => index + 1,
+            None => {
+                let cursor_process_id = cursor.parse::<i32>().map_err(|err| {
+                    invalid_params(format!("invalid background terminal cursor: {err}"))
+                })?;
+                terminals
+                    .iter()
+                    .position(|terminal| {
+                        terminal
+                            .process_id
+                            .parse::<i32>()
+                            .is_ok_and(|process_id| process_id > cursor_process_id)
+                    })
+                    .unwrap_or(terminals.len())
+            }
+        },
         None => 0,
     };
     let effective_limit = limit.unwrap_or(terminals.len() as u32).max(1) as usize;
     let end = start.saturating_add(effective_limit).min(terminals.len());
     let next_cursor = (end < terminals.len()).then(|| terminals[end - 1].process_id.clone());
     Ok((terminals[start..end].to_vec(), next_cursor))
+}
+
+pub(super) fn map_project_env_status(
+    thread_id: String,
+    status: codex_project_env::ProjectEnvStatus,
+) -> ThreadProjectEnvStatus {
+    let api_status = match status.state {
+        codex_project_env::ProjectEnvState::Disabled => ThreadProjectEnvState::Disabled,
+        codex_project_env::ProjectEnvState::None => ThreadProjectEnvState::None,
+        codex_project_env::ProjectEnvState::Building => ThreadProjectEnvState::Building,
+        codex_project_env::ProjectEnvState::Ready => ThreadProjectEnvState::Ready,
+        codex_project_env::ProjectEnvState::Failed => ThreadProjectEnvState::Failed,
+    };
+    ThreadProjectEnvStatus {
+        thread_id,
+        status: api_status,
+        cwd: status.cwd,
+        envrc_path: status.envrc_path,
+        message: status.message,
+        updated_at: status.updated_at,
+        watched_input_count: status.watched_input_count,
+    }
 }
 
 fn build_thread_from_loaded_snapshot(

@@ -1460,6 +1460,7 @@ impl AppServerSession {
                     thread_id: thread_id.to_string(),
                     command,
                     timeout_ms: None,
+                    project_env: None,
                 },
             })
             .await

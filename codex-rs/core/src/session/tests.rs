@@ -1564,6 +1564,7 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
         turn_context,
         command,
         /*timeout_ms*/ None,
+        codex_protocol::protocol::ProjectEnvMode::Auto,
         CancellationToken::new(),
         UserShellCommandMode::StandaloneTurn,
     )
@@ -1599,6 +1600,7 @@ async fn user_shell_commands_remain_login_shells_when_model_login_shells_are_dis
         turn_context,
         command,
         /*timeout_ms*/ None,
+        codex_protocol::protocol::ProjectEnvMode::Auto,
         CancellationToken::new(),
         UserShellCommandMode::StandaloneTurn,
     )
@@ -6525,6 +6527,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.background_terminal_max_timeout,
         ),
         elicitations: crate::elicitation::ElicitationService::new(),
+        project_env_manager: codex_project_env::ProjectEnvManager::disabled_for_tests(),
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
@@ -8916,6 +8919,7 @@ where
             config.background_terminal_max_timeout,
         ),
         elicitations: crate::elicitation::ElicitationService::new(),
+        project_env_manager: codex_project_env::ProjectEnvManager::disabled_for_tests(),
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
@@ -10953,6 +10957,7 @@ async fn run_user_shell_command_does_not_set_reference_context_item() {
         "sub-id".to_string(),
         "echo shell".to_string(),
         /*timeout_ms*/ None,
+        codex_protocol::protocol::ProjectEnvMode::Auto,
     )
     .await;
 

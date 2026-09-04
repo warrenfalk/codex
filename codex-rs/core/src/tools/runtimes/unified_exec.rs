@@ -74,7 +74,7 @@ pub struct UnifiedExecRequest {
     pub env: HashMap<String, String>,
     pub exec_server_env_config: Option<ExecServerEnvConfig>,
     pub shell_snapshot: Option<codex_exec_server::ShellSnapshotRequest>,
-    pub explicit_env_overrides: HashMap<String, String>,
+    pub snapshot_env_overrides: HashMap<String, String>,
     pub network: Option<NetworkProxy>,
     pub tty: bool,
     pub sandbox_permissions: SandboxPermissions,
@@ -349,7 +349,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             }
             None => (env, None, None),
         };
-        let explicit_env_overrides = req.explicit_env_overrides.clone();
+        let snapshot_env_overrides = req.snapshot_env_overrides.clone();
         let metrics_sidecar = sidecar_for_command(
             ctx,
             &req.command,
@@ -387,14 +387,14 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
                 base_command,
                 shell,
                 shell_snapshot_location.as_ref(),
-                &explicit_env_overrides,
+                &snapshot_env_overrides,
                 &env,
                 &runtime_path_prepends,
             )
         };
         if req.shell_snapshot.is_some() {
             let exports =
-                runtime_path_prepends.shell_exports_after_snapshot(&explicit_env_overrides);
+                runtime_path_prepends.shell_exports_after_snapshot(&snapshot_env_overrides);
             if !exports.is_empty()
                 && let Some(script) = command.get_mut(2)
             {
@@ -663,7 +663,7 @@ mod tests {
             env: HashMap::new(),
             exec_server_env_config: None,
             shell_snapshot: None,
-            explicit_env_overrides: HashMap::new(),
+            snapshot_env_overrides: HashMap::new(),
             network: None,
             tty: false,
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -768,7 +768,7 @@ mod tests {
             env: HashMap::new(),
             exec_server_env_config: None,
             shell_snapshot: None,
-            explicit_env_overrides: HashMap::new(),
+            snapshot_env_overrides: HashMap::new(),
             network: None,
             tty: false,
             sandbox_permissions,
