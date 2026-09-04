@@ -830,6 +830,7 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
+        summary_hint: PreviousSessionSummaryHint,
         session_start_source: Option<ThreadStartSource>,
         initial_user_message: Option<crate::chatwidget::UserMessage>,
         new_thread_name: Option<String>,
@@ -847,12 +848,15 @@ impl App {
             &self.cli_kv_overrides,
             &self.harness_overrides,
         );
-        let summary = session_summary(
-            self.chat_widget.token_usage(),
-            self.chat_widget.thread_id(),
-            self.chat_widget.thread_name(),
-            self.chat_widget.rollout_path().as_deref(),
-        );
+        let summary = match summary_hint {
+            PreviousSessionSummaryHint::Show => session_summary(
+                self.chat_widget.token_usage(),
+                self.chat_widget.thread_id(),
+                self.chat_widget.thread_name(),
+                self.chat_widget.rollout_path().as_deref(),
+            ),
+            PreviousSessionSummaryHint::Suppress => None,
+        };
         self.shutdown_current_thread(app_server).await;
         let tracked_thread_ids: Vec<ThreadId> =
             self.thread_event_channels.keys().copied().collect();

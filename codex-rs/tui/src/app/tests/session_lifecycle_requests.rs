@@ -388,69 +388,57 @@ async fn make_history_test_app() -> Result<(App, tempfile::TempDir)> {
 }
 
 #[tokio::test]
-async fn removing_remote_thread_omits_disconnect_guidance() -> Result<()> {
-    for event in [
-        AppEvent::ArchiveCurrentThread,
-        AppEvent::DeleteCurrentThread,
-    ] {
-        let (mut app, codex_home) = make_history_test_app().await?;
-        let thread_id = ThreadId::from_string(
-            &create_fake_rollout(
-                codex_home.path(),
-                "2026-01-01T00-00-00",
-                "2026-01-01T00:00:00Z",
-                "Saved user message",
-                Some(app.config.model_provider_id.as_str()),
-                /*git_info*/ None,
-            )
-            .expect("create rollout"),
-        )?;
-        let (mut server, _, proxy) = start_recording_app_server(
-            &app.config,
-            /*blocked_thread_list*/ None,
-            /*failed_thread_name*/ None,
+async fn deleting_remote_thread_omits_disconnect_guidance() -> Result<()> {
+    let (mut app, codex_home) = make_history_test_app().await?;
+    let thread_id = ThreadId::from_string(
+        &create_fake_rollout(
+            codex_home.path(),
+            "2026-01-01T00-00-00",
+            "2026-01-01T00:00:00Z",
+            "Saved user message",
+            Some(app.config.model_provider_id.as_str()),
+            /*git_info*/ None,
+        )
+        .expect("create rollout"),
+    )?;
+    let (mut server, _, proxy) = start_recording_app_server(
+        &app.config,
+        /*blocked_thread_list*/ None,
+        /*failed_thread_name*/ None,
+    )
+    .await?;
+    let resumed = server
+        .resume_thread(
+            app.config.clone(),
+            thread_id,
+            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
         )
         .await?;
-        let resumed = server
-            .resume_thread(
-                app.config.clone(),
-                thread_id,
-                crate::app_server_session::ResumeModelSettings::RestoreFromThread,
-            )
-            .await?;
-        app.app_server_target = AppServerTarget::Remote {
-            endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
-        };
-        app.active_thread_id = Some(thread_id);
-        app.chat_widget.handle_thread_session(resumed.session);
-        let mut tui = crate::tui::test_support::make_test_tui()?;
-        let archived = matches!(&event, AppEvent::ArchiveCurrentThread);
-        let AppRunControl::Exit(reason) = app.handle_event(&mut tui, &mut server, event).await?
-        else {
-            panic!("removing the current thread must exit");
-        };
-        if archived {
-            assert_matches!(reason, ExitReason::Archived(id) if id == thread_id);
-        } else {
-            assert_matches!(reason, ExitReason::ThreadRemoved);
-        }
-        let mut exit_info = app.exit_info(reason);
-        exit_info.token_usage = TokenUsage {
-            output_tokens: 2,
-            total_tokens: 2,
-            ..Default::default()
-        };
-        let mut expected = vec!["Token usage: total=2 input=0 output=2".to_string()];
-        if archived {
-            expected.push(format!("Session archived: {thread_id}"));
-        }
-        assert_eq!(
-            exit_info.format_exit_messages(/*color_enabled*/ false),
-            expected
-        );
-        server.shutdown().await?;
-        proxy.await??;
-    }
+    app.app_server_target = AppServerTarget::Remote {
+        endpoint: crate::resolve_remote_addr("ws://127.0.0.1:4500")?,
+    };
+    app.active_thread_id = Some(thread_id);
+    app.chat_widget.handle_thread_session(resumed.session);
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let AppRunControl::Exit(reason) = app
+        .handle_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)
+        .await?
+    else {
+        panic!("deleting the current thread must exit");
+    };
+    assert_matches!(reason, ExitReason::ThreadRemoved);
+    let mut exit_info = app.exit_info(reason);
+    exit_info.token_usage = TokenUsage {
+        output_tokens: 2,
+        total_tokens: 2,
+        ..Default::default()
+    };
+    assert_eq!(
+        exit_info.format_exit_messages(/*color_enabled*/ false),
+        vec!["Token usage: total=2 input=0 output=2".to_string()]
+    );
+    server.shutdown().await?;
+    proxy.await??;
     Ok(())
 }
 
@@ -596,7 +584,7 @@ async fn external_transport_registers_dynamic_tools_and_finds_task_mentions() ->
 }
 
 #[tokio::test]
-async fn archive_current_thread_reports_success_only_after_archiving() -> Result<()> {
+async fn archive_current_session_starts_fresh_only_after_archiving() -> Result<()> {
     let (mut app, _codex_home) = make_history_test_app().await?;
     let thread_id = ThreadId::from_string(
         &create_fake_rollout(
@@ -610,18 +598,29 @@ async fn archive_current_thread_reports_success_only_after_archiving() -> Result
         .expect("create rollout"),
     )?;
     let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
 
-    app.active_thread_id = Some(ThreadId::new());
+    let missing_thread_id = ThreadId::new();
+    app.active_thread_id = Some(missing_thread_id);
     assert_matches!(
-        app.archive_current_thread(&mut app_server).await,
+        app.handle_event(&mut tui, &mut app_server, AppEvent::ArchiveCurrentSession)
+            .await?,
         AppRunControl::Continue
     );
+    assert_eq!(app.active_thread_id, Some(missing_thread_id));
 
     app.active_thread_id = Some(thread_id);
     assert_matches!(
-        app.archive_current_thread(&mut app_server).await,
-        AppRunControl::Exit(ExitReason::Archived(archived_id)) if archived_id == thread_id
+        app.handle_event(&mut tui, &mut app_server, AppEvent::ArchiveCurrentSession)
+            .await?,
+        AppRunControl::Continue
     );
+    let fresh_thread_id = app
+        .chat_widget
+        .thread_id()
+        .expect("successful archive should start a fresh thread");
+    assert_ne!(fresh_thread_id, thread_id);
+    assert_eq!(app.active_thread_id, Some(fresh_thread_id));
 
     app_server.shutdown().await?;
     Ok(())
@@ -2777,8 +2776,15 @@ async fn changing_directory_preserves_project_trust_permissions_history_and_hook
     let (rec, plain, req) = (recorded_params, crate::key_hint::plain, &requests);
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let (source, message, name) = (None, None, Some("Previous project".to_string()));
-    app.start_fresh_session_with_summary_hint(&mut tui, &mut server, source, message, name)
-        .await;
+    app.start_fresh_session_with_summary_hint(
+        &mut tui,
+        &mut server,
+        PreviousSessionSummaryHint::Show,
+        source,
+        message,
+        name,
+    )
+    .await;
     let original = app.chat_widget.thread_id().expect("original thread");
     let rollout = app.chat_widget.rollout_path().expect("original rollout");
     let json = r#"{"type":"message","role":"assistant","content":[{"type":"output_text","text":"saved history"}]}"#;
@@ -3066,6 +3072,7 @@ fn fresh_session_applies_requested_name() -> Result<()> {
                 app.start_fresh_session_with_summary_hint(
                     &mut tui,
                     &mut app_server,
+                    PreviousSessionSummaryHint::Show,
                     /*session_start_source*/ None,
                     /*initial_user_message*/ None,
                     /*new_thread_name*/ Some("Add User".to_string()),
@@ -3242,6 +3249,7 @@ fn session_lifecycle_avoids_redundant_subagent_metadata_reads() -> Result<()> {
                 app.start_fresh_session_with_summary_hint(
                     &mut tui,
                     &mut app_server,
+                    PreviousSessionSummaryHint::Show,
                     /*session_start_source*/ None,
                     /*initial_user_message*/ None,
                     /*new_thread_name*/ None,

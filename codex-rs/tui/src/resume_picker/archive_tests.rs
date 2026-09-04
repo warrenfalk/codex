@@ -100,7 +100,7 @@ fn archive_request_rejects_current_session() {
     assert_eq!(state.archive_state, ArchiveState::Idle);
     assert_eq!(
         state.inline_error.as_deref(),
-        Some("Use /archive to archive the current session and exit.")
+        Some("Use /archive to archive the current session and start a new chat.")
     );
     assert!(requests.lock().unwrap().is_empty());
 }
@@ -158,7 +158,7 @@ fn archive_footer_shows_shortcut_for_resume_sessions() {
         .join("\n");
 
     insta::assert_snapshot!(footer, @r"
-     enter resume   ctrl+a archive   esc start new   ctrl+c quit   tab focus sort/filter   ←/→ change option
+     enter resume   ctrl+a archive   esc start new   ctrl+c quit   tab focus controls   ←/→ change option
      ctrl+o dense view   ctrl+t transcript   ctrl+e expand   ↑/↓ browse
     ");
 }
@@ -206,7 +206,7 @@ fn archived_status_preserves_directory_filter_and_hides_archive_shortcut() {
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(footer, @r"
-     enter restore   esc start new   ctrl+c quit   tab focus sort/filter   ←/→ change option
+     enter restore   esc start new   ctrl+c quit   tab focus controls   ←/→ change option
      ctrl+o dense view   ctrl+t transcript   ctrl+e expand   ↑/↓ browse
     ");
     insta::assert_snapshot!(
@@ -269,6 +269,41 @@ async fn archived_session_restore_resumes_after_completion() {
         })) if resumed_thread_id == thread_id
     ));
     assert_eq!(state.archive_state, ArchiveState::Idle);
+}
+
+#[tokio::test]
+async fn archived_session_fork_keeps_the_original_archived() {
+    let picker_loader: PickerLoader =
+        Arc::new(|_| panic!("archived fork should not mutate the source session"));
+    let mut state = PickerState::new(
+        FrameRequester::test_dummy(),
+        picker_loader,
+        ProviderFilter::Any,
+        /*show_all*/ true,
+        /*filter_cwd*/ None,
+        SessionPickerAction::Fork,
+    );
+    let thread_id = ThreadId::new();
+    state.status = SessionStatus::Archived;
+    set_selected_session(&mut state, thread_id);
+
+    let selection = state
+        .handle_key(KeyEvent::from(KeyCode::Enter))
+        .await
+        .expect("archived fork selection should not fail");
+
+    assert!(matches!(
+        selection,
+        Some(SessionSelection::Fork(SessionTarget {
+            path: None,
+            thread_id: forked_thread_id,
+            history_mode: None,
+        })) if forked_thread_id == thread_id
+    ));
+    insta::assert_snapshot!(
+        super::super::toolbar_line(&state, /*compact*/ false).to_string(),
+        @"Filter:[All]   Status:  Active [Archived]   Sort: [Updated] Created "
+    );
 }
 
 #[test]

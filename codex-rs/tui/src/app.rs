@@ -455,6 +455,12 @@ pub(crate) enum AppRunControl {
     Exit(ExitReason),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviousSessionSummaryHint {
+    Show,
+    Suppress,
+}
+
 #[derive(Debug, Clone)]
 pub enum ExitReason {
     UserRequested,
