@@ -617,11 +617,15 @@ impl Session {
             .turn_metadata_state
             .cancel_git_enrichment_task();
 
+        let mut finished_task_guard = None;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {
                 let task = active_turn.task.take()?;
-                task.handle.detach();
+                // Keep the task handle alive until after terminal event delivery. Dropping the
+                // `AbortOnDropHandle` from within the running task aborts the current task at the
+                // next suspension point, which would otherwise kill `TurnComplete` delivery.
+                finished_task_guard = Some(task);
                 Some(Arc::clone(&active_turn.turn_state))
             })
         };
@@ -865,6 +869,7 @@ impl Session {
         if cleared_active_turn {
             self.maybe_start_turn_for_pending_work().await;
         }
+        drop(finished_task_guard);
     }
 
     async fn take_active_turn(&self, reason: &TurnAbortReason) -> Option<ActiveTurn> {

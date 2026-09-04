@@ -937,22 +937,94 @@ async fn persist_reports_filesystem_error_and_retries_buffered_items() -> std::i
 }
 
 #[tokio::test]
+async fn recorder_background_retries_after_materialize_failure() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let sessions_root = home.path().join("sessions");
+    fs::write(&sessions_root, "blocked").expect("sessions root should be a file");
+
+    let config = test_config(home.path());
+    let thread_id = ThreadId::new();
+    let recorder = RolloutRecorder::new(
+        &config,
+        RolloutRecorderParams::new(
+            thread_id,
+            /*forked_from_id*/ None,
+            /*parent_thread_id*/ None,
+            SessionSource::Exec,
+            /*thread_source*/ None,
+            "test_originator".to_string(),
+            BaseInstructions::default(),
+            Vec::new(),
+        ),
+    )
+    .await?;
+
+    let rollout_path = recorder.rollout_path().to_path_buf();
+    recorder
+        .record_canonical_items(&[RolloutItem::EventMsg(EventMsg::UserMessage(
+            UserMessageEvent {
+                message: "first-user-message".to_string(),
+                images: None,
+                local_images: Vec::new(),
+                text_elements: Vec::new(),
+                ..Default::default()
+            },
+        ))])
+        .await?;
+    assert!(
+        recorder.persist().await.is_err(),
+        "persist should surface the initial materialization failure"
+    );
+    recorder
+        .record_canonical_items(&[RolloutItem::EventMsg(EventMsg::AgentMessage(
+            AgentMessageEvent {
+                message: "queued-after-failure".to_string(),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            },
+        ))])
+        .await?;
+
+    fs::remove_file(&sessions_root)?;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&rollout_path)
+                && text.contains("first-user-message")
+                && text.contains("queued-after-failure")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("background retry should persist queued rollout items");
+
+    recorder.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn writer_state_retries_write_error_before_reporting_flush_success() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let rollout_path = home.path().join("rollout.jsonl");
     File::create(&rollout_path)?;
     let read_only_file = std::fs::OpenOptions::new().read(true).open(&rollout_path)?;
     let mut state = RolloutWriterState {
-        writer: Some(JsonlWriter {
-            file: tokio::fs::File::from_std(read_only_file),
-        }),
+        writer: Some(JsonlWriter::from_tokio_file(tokio::fs::File::from_std(
+            read_only_file,
+        ))),
         deferred_creation: false,
-        pending_items: Vec::new(),
+        pending_items: VecDeque::new(),
+        pending_bytes: 0,
         meta: None,
         cwd: home.path().to_path_buf(),
         rollout_path: rollout_path.clone(),
         ordinal_state: RolloutOrdinalState::Legacy,
-        last_logged_error: None,
+        materialize_requested: true,
+        degraded: None,
     };
     state.add_items(vec![RolloutItem::EventMsg(EventMsg::AgentMessage(
         AgentMessageEvent {
@@ -962,7 +1034,7 @@ async fn writer_state_retries_write_error_before_reporting_flush_success() -> st
             delivery: None,
             questions: None,
         },
-    ))]);
+    ))])?;
 
     state.flush().await?;
     let text_after_retry = std::fs::read_to_string(&rollout_path)?;
