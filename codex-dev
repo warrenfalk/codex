@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+if [[ "$SOURCE" != */* ]]; then
+  SOURCE="$(command -v -- "$SOURCE")"
+fi
+
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P -- "$(dirname -- "$SOURCE")" && pwd)"
+  TARGET="$(readlink -- "$SOURCE")"
+  if [[ "$TARGET" = /* ]]; then
+    SOURCE="$TARGET"
+  else
+    SOURCE="$SOURCE_DIR/$TARGET"
+  fi
+done
+
+HERE="$(cd -P -- "$(dirname -- "$SOURCE")" && pwd)"
+
+exec nix develop "${HERE}" --command cargo run --manifest-path "${HERE}/codex-rs/Cargo.toml" -p codex-cli -- -c "tui.local_app_server_url=unix://${HOME}/codex-dev.sock"  "$@"
