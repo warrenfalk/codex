@@ -970,10 +970,16 @@ struct FeatureToggles {
 
 #[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
+    /// Connect the TUI to a shared local app server endpoint.
+    ///
+    /// Accepted forms: `ws://host:port`, `wss://host:port`, `unix://`, or `unix://PATH`.
+    #[arg(long = "local", value_name = "ADDR", conflicts_with = "remote")]
+    local: Option<String>,
+
     /// Connect the TUI to a remote app server endpoint.
     ///
     /// Accepted forms: `ws://host:port`, `wss://host:port`, `unix://`, or `unix://PATH`.
-    #[arg(long = "remote", value_name = "ADDR")]
+    #[arg(long = "remote", value_name = "ADDR", conflicts_with = "local")]
     remote: Option<String>,
 
     /// Name of the environment variable containing the bearer token to send to
@@ -1064,12 +1070,22 @@ async fn cli_main(
         _ => None,
     };
     if let Some(options) = agents_options
+        && let Some(root_endpoint) = &remote.local
+        && let Some(agents_endpoint) = &options.remote.local
+        && root_endpoint != agents_endpoint
+    {
+        anyhow::bail!("`codex agents` received conflicting local server endpoints");
+    }
+    if let Some(options) = agents_options
         && let Some(root_endpoint) = &remote.remote
         && let Some(agents_endpoint) = &options.remote.remote
         && root_endpoint != agents_endpoint
     {
         anyhow::bail!("`codex agents` received conflicting remote server endpoints");
     }
+    let root_local = agents_options
+        .and_then(|options| options.remote.local.clone())
+        .or(remote.local);
     let root_remote = agents_options
         .and_then(|options| options.remote.remote.clone())
         .or(remote.remote);
@@ -1088,6 +1104,7 @@ async fn cli_main(
     if let Some(subcommand) = subcommand.as_ref() {
         profile_v2_for_subcommand(&interactive, subcommand)?;
     }
+    reject_local_mode_for_subcommand(root_local.as_deref(), &subcommand)?;
 
     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
     match subcommand {
@@ -1124,7 +1141,7 @@ async fn cli_main(
                         "`codex agents` is unavailable while workload identity is active"
                     );
                 }
-                if root_remote.is_none() {
+                if root_local.is_none() && root_remote.is_none() {
                     resolve_remote_endpoint(
                         /*remote*/ None,
                         root_remote_auth_token_env.clone(),
@@ -1136,6 +1153,7 @@ async fn cli_main(
             }
             let exit_info = run_interactive_tui(
                 interactive,
+                root_local.clone(),
                 root_remote.clone(),
                 root_remote_auth_token_env.clone(),
                 arg0_paths.clone(),
@@ -1418,6 +1436,7 @@ async fn cli_main(
             );
             let exit_info = run_interactive_tui(
                 interactive,
+                remote.local.or(root_local.clone()),
                 remote.remote.or(root_remote.clone()),
                 remote
                     .remote_auth_token_env
@@ -1505,6 +1524,7 @@ async fn cli_main(
             );
             let exit_info = run_interactive_tui(
                 interactive,
+                remote.local.or(root_local.clone()),
                 remote.remote.or(root_remote.clone()),
                 remote
                     .remote_auth_token_env
@@ -2396,6 +2416,60 @@ fn reject_root_strict_config_for_subcommand(
     }
 }
 
+fn reject_local_mode_for_subcommand(
+    local: Option<&str>,
+    subcommand: &Option<Subcommand>,
+) -> anyhow::Result<()> {
+    if local.is_none() {
+        return Ok(());
+    }
+    let Some(subcommand_name) = subcommand_name_for_local_mode_reject(subcommand) else {
+        return Ok(());
+    };
+    anyhow::bail!(
+        "`--local` is only supported for interactive TUI sessions; it cannot be used with `codex {subcommand_name}`"
+    );
+}
+
+fn subcommand_name_for_local_mode_reject(subcommand: &Option<Subcommand>) -> Option<&'static str> {
+    match subcommand {
+        None
+        | Some(Subcommand::Agents(_))
+        | Some(Subcommand::Resume(_))
+        | Some(Subcommand::Fork(_)) => None,
+        Some(Subcommand::Exec(_)) => Some("exec"),
+        Some(Subcommand::Review(_)) => Some("review"),
+        Some(Subcommand::McpServer(_)) => Some("mcp-server"),
+        Some(Subcommand::ExecServer(_)) => Some("exec-server"),
+        Some(Subcommand::Doctor(_)) => Some("doctor"),
+        Some(Subcommand::AppServer(app_server)) => {
+            Some(app_server_subcommand_name(app_server.subcommand.as_ref()))
+        }
+        Some(Subcommand::RemoteControl(remote_control)) => Some(remote_control.subcommand_name()),
+        Some(Subcommand::Mcp(_)) => Some("mcp"),
+        Some(Subcommand::Plugin(_)) => Some("plugin"),
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        Some(Subcommand::App(_)) => Some("app"),
+        Some(Subcommand::Login(_)) => Some("login"),
+        Some(Subcommand::Logout(_)) => Some("logout"),
+        Some(Subcommand::Archive(_)) => Some("archive"),
+        Some(Subcommand::Delete(_)) => Some("delete"),
+        Some(Subcommand::Unarchive(_)) => Some("unarchive"),
+        Some(Subcommand::Queue(_)) => Some("queue"),
+        Some(Subcommand::MigrateRollouts(_)) => Some("migrate-rollouts"),
+        Some(Subcommand::Completion(_)) => Some("completion"),
+        Some(Subcommand::Update) => Some("update"),
+        Some(Subcommand::Cloud(_)) => Some("cloud"),
+        Some(Subcommand::Sandbox(_)) => Some("sandbox"),
+        Some(Subcommand::Debug(_)) => Some("debug"),
+        Some(Subcommand::Execpolicy(_)) => Some("execpolicy"),
+        Some(Subcommand::Apply(_)) => Some("apply"),
+        Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
+        Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
+        Some(Subcommand::Features(_)) => Some("features"),
+    }
+}
+
 /// Return the selected subcommand name when a root-level `--strict-config`
 /// flag should be rejected after parsing.
 ///
@@ -2558,6 +2632,7 @@ fn read_remote_auth_token_from_env_var(env_var_name: &str) -> anyhow::Result<Str
 
 async fn run_interactive_tui(
     mut interactive: TuiCli,
+    local: Option<String>,
     remote: Option<String>,
     remote_auth_token_env: Option<String>,
     arg0_paths: Arg0DispatchPaths,
@@ -2586,7 +2661,7 @@ async fn run_interactive_tui(
     }
 
     #[cfg(unix)]
-    if interactive.agents_overview && remote.is_none() {
+    if interactive.agents_overview && local.is_none() && remote.is_none() {
         if !std::io::stdin().is_terminal() {
             return Ok(AppExitInfo::fatal("stdin is not a terminal"));
         }
@@ -2601,6 +2676,11 @@ async fn run_interactive_tui(
             .map_err(std::io::Error::other)?;
     }
 
+    let local_endpoint = local
+        .as_deref()
+        .map(codex_tui::resolve_remote_addr)
+        .transpose()
+        .map_err(std::io::Error::other)?;
     let remote_endpoint = match resolve_remote_endpoint(remote, remote_auth_token_env.clone()) {
         Ok(remote_endpoint) => remote_endpoint,
         Err(err) if is_remote_auth_usage_error(&err) => {
@@ -2613,6 +2693,7 @@ async fn run_interactive_tui(
             interactive.clone(),
             arg0_paths.clone(),
             codex_config::LoaderOverrides::default(),
+            local_endpoint.clone(),
             remote_endpoint.clone(),
         )
     };
@@ -2873,6 +2954,7 @@ mod tests {
     fn interactive_tui_future_stays_bounded() {
         let future = run_interactive_tui(
             TuiCli::parse_from(["codex"]),
+            /*local*/ None,
             /*remote*/ None,
             /*remote_auth_token_env*/ None,
             Arg0DispatchPaths::default(),
@@ -4391,6 +4473,13 @@ mod tests {
     }
 
     #[test]
+    fn local_flag_parses_for_interactive_root() {
+        let cli = MultitoolCli::try_parse_from(["codex", "--local", "ws://127.0.0.1:4500"])
+            .expect("parse");
+        assert_eq!(cli.remote.local.as_deref(), Some("ws://127.0.0.1:4500"));
+    }
+
+    #[test]
     fn remote_auth_token_env_flag_parses_for_interactive_root() {
         let cli = MultitoolCli::try_parse_from([
             "codex",
@@ -4450,6 +4539,28 @@ mod tests {
             Some(std::path::Path::new("/workspace"))
         );
         assert!(options.no_alt_screen);
+    }
+
+    #[test]
+    fn local_flag_parses_for_resume_subcommand() {
+        let cli =
+            MultitoolCli::try_parse_from(["codex", "resume", "--local", "ws://127.0.0.1:4500"])
+                .expect("parse");
+        let Subcommand::Resume(ResumeCommand { remote, .. }) =
+            cli.subcommand.expect("resume present")
+        else {
+            panic!("expected resume subcommand");
+        };
+        assert_eq!(remote.local.as_deref(), Some("ws://127.0.0.1:4500"));
+    }
+
+    #[test]
+    fn reject_local_mode_for_non_interactive_subcommands() {
+        let cli = MultitoolCli::try_parse_from(["codex", "--local", "127.0.0.1:4500", "exec"])
+            .expect("parse");
+        let err = reject_local_mode_for_subcommand(cli.remote.local.as_deref(), &cli.subcommand)
+            .expect_err("non-interactive subcommands should reject --local");
+        assert!(err.to_string().contains("codex exec"));
     }
 
     #[test]

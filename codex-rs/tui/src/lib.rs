@@ -8,6 +8,7 @@ use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::ConfigTomlLoadResult;
 use crate::legacy_core::config::bootstrap_auth_config;
+use crate::legacy_core::config::load_config_as_toml_with_cli_and_load_options;
 use crate::legacy_core::config::load_config_toml_with_layer_stack;
 #[cfg(test)]
 use crate::legacy_core::config::resolve_bootstrap_http_client_factory;
@@ -24,6 +25,7 @@ pub use app::AppExitInfo;
 pub use app::DisconnectInfo;
 pub use app::ExitReason;
 pub use app::ResumableThread;
+use app_server_mode::ResolvedAppServerMode;
 use app_server_session::AppServerSession;
 use app_server_session::ThreadParamsMode;
 use codex_app_server_client::AppServerClient;
@@ -104,6 +106,7 @@ mod app_event;
 mod app_event_sender;
 mod app_info;
 mod app_server_approval_conversions;
+mod app_server_mode;
 mod app_server_session;
 mod approval_events;
 mod ascii_animation;
@@ -942,12 +945,14 @@ pub async fn run_main(
     cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     match startup_orchestration::run_main_inner(
         cli,
         arg0_paths,
         loader_overrides,
+        local_endpoint,
         explicit_remote_endpoint,
     )
     .await
@@ -970,7 +975,7 @@ async fn run_ratatui_app(
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    app_server_target: AppServerTarget,
+    app_server_mode: ResolvedAppServerMode,
     remote_cwd_override: Option<PathBuf>,
     initial_config: Config,
     manually_selected_oss_provider: Option<String>,
@@ -983,6 +988,9 @@ async fn run_ratatui_app(
     environment_manager: Arc<EnvironmentManager>,
     startup_draft: startup_draft::StartupDraft,
 ) -> color_eyre::Result<AppExitInfo> {
+    let app_server_target = app_server_mode.target().clone();
+    let initial_app_server_footer_state = app_server_mode.footer_state();
+    let initial_app_server = app_server_mode.into_initial_app_server();
     let uses_remote_workspace = app_server_target.uses_remote_workspace();
     let workload_identity_selected = is_workload_identity_selected();
     color_eyre::install()?;
@@ -1028,41 +1036,46 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
-    let startup_app_server = startup_draft
-        .run_until(
-            &mut tui,
-            start_app_server(
-                &app_server_target,
-                arg0_paths.clone(),
-                initial_config.clone(),
-                cli_kv_overrides.clone(),
-                loader_overrides.clone(),
-                strict_config,
-                cloud_config_bundle.clone(),
-                feedback.clone(),
-                log_db.clone(),
-                state_db.clone(),
-                environment_manager.clone(),
-            ),
-        )
-        .await;
-    let app_server_session = match startup_app_server {
-        Ok(Ok(app_server)) => {
-            AppServerSession::new(app_server, app_server_target.thread_params_mode())
-                .with_startup_config(&initial_config)
+    let app_server = match initial_app_server {
+        Some(app_server) => app_server,
+        None => {
+            let startup_app_server = startup_draft
+                .run_until(
+                    &mut tui,
+                    start_app_server(
+                        &app_server_target,
+                        arg0_paths.clone(),
+                        initial_config.clone(),
+                        cli_kv_overrides.clone(),
+                        loader_overrides.clone(),
+                        strict_config,
+                        cloud_config_bundle.clone(),
+                        feedback.clone(),
+                        log_db.clone(),
+                        state_db.clone(),
+                        environment_manager.clone(),
+                    ),
+                )
+                .await;
+            match startup_app_server {
+                Ok(Ok(app_server)) => app_server,
+                Ok(Err(err)) => {
+                    terminal_restore_guard.restore_silently();
+                    session_log::log_session_end();
+                    return Err(err);
+                }
+                Err(err) => {
+                    terminal_restore_guard.restore_silently();
+                    session_log::log_session_end();
+                    return Err(err.into());
+                }
+            }
         }
-        Ok(Err(err)) => {
-            terminal_restore_guard.restore_silently();
-            session_log::log_session_end();
-            return Err(err);
-        }
-        Err(err) => {
-            terminal_restore_guard.restore_silently();
-            session_log::log_session_end();
-            return Err(err.into());
-        }
-    }
-    .with_remote_cwd_override(remote_cwd_override.clone());
+    };
+    let app_server_session =
+        AppServerSession::new(app_server, app_server_target.thread_params_mode())
+            .with_startup_config(&initial_config)
+            .with_remote_cwd_override(remote_cwd_override.clone());
     if let Some(provider) = manually_selected_oss_provider.as_deref() {
         match startup_draft
             .run_until(
@@ -1737,6 +1750,7 @@ async fn run_ratatui_app(
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
+        initial_app_server_footer_state,
         state_db,
         environment_manager,
         startup_elapsed_before_app,

@@ -192,6 +192,8 @@ impl App {
         if !self.reconnect.offline {
             self.reconnect.offline = true;
             self.reconnect.failed = false;
+            self.app_server_footer_state =
+                Some(crate::chatwidget::ConnectedModeFooterState::Disconnected);
             self.chat_widget.show_disconnected_mode_footer();
             self.cancel_pending_key_chord();
             self.overlay = None;
@@ -409,6 +411,7 @@ impl App {
             server.reconnect(app_server.request_handle(), self.app_event_tx.clone());
         }
         self.reconnect.offline = false;
+        self.app_server_footer_state = Some(crate::chatwidget::ConnectedModeFooterState::Connected);
         self.chat_widget.show_connected_mode_footer();
         self.chat_widget.update_account_state(
             bootstrap.status_account_display,

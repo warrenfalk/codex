@@ -9,6 +9,7 @@ pub(super) async fn run_main_inner(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     let strict_config = cli.strict_config;
@@ -66,6 +67,20 @@ pub(super) async fn run_main_inner(
         launch_loader_overrides.user_config_profile = Some(profile_v2.clone());
     }
     let workload_identity_selected = is_workload_identity_selected();
+    if workload_identity_selected {
+        app_server_target_for_launch(
+            explicit_remote_endpoint.clone(),
+            /*default_daemon_socket*/ None,
+            /*can_reuse_implicit_local_daemon*/ false,
+            /*workload_identity_selected*/ true,
+        )?;
+        if local_endpoint.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "workload identity requires an embedded app server",
+            ));
+        }
+    }
 
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         let validation_target = app_server_target_for_launch(
@@ -175,19 +190,73 @@ pub(super) async fn run_main_inner(
     };
     let mut startup_draft = startup_draft::StartupDraft::new(initial_screen, session_action)?;
 
-    let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
-        startup_draft
-            .run_until(maybe_probe_default_daemon_socket(&codex_home))
-            .await?
-    } else {
+    let has_explicit_app_server = local_endpoint.is_some() || explicit_remote_endpoint.is_some();
+    let configured_local = if has_explicit_app_server || workload_identity_selected {
         None
+    } else {
+        let discovery_environment_manager = if should_load_configured_environments(
+            &launch_loader_overrides,
+            &AppServerTarget::Embedded,
+        ) {
+            startup_draft
+                .run_until(EnvironmentManager::prepare_from_codex_home(&codex_home))
+                .await?
+        } else {
+            startup_draft
+                .run_until(EnvironmentManager::prepare_from_env())
+                .await?
+        }
+        .map_err(std::io::Error::other)?;
+        let discovery_config_cwd = config_cwd_for_app_server_target(
+            cli.cwd.as_deref(),
+            &AppServerTarget::Embedded,
+            discovery_environment_manager.default_environment_is_remote(),
+        )?;
+        let discovery_config_toml = startup_draft
+            .run_until(load_config_as_toml_with_cli_and_load_options(
+                &codex_home,
+                discovery_config_cwd.as_ref(),
+                cli_kv_overrides.clone(),
+                codex_config::ConfigLoadOptions {
+                    loader_overrides: launch_loader_overrides.clone(),
+                    strict_config,
+                    cloud_config_bundle: CloudConfigBundleLoader::default(),
+                },
+            ))
+            .await??;
+        discovery_config_toml
+            .tui
+            .as_ref()
+            .and_then(|tui| tui.local_app_server_url.clone())
     };
-    let app_server_target = app_server_target_for_launch(
-        explicit_remote_endpoint,
-        default_daemon,
-        reuse_implicit_local_daemon,
-        workload_identity_selected,
-    )?;
+    let app_server_mode = if has_explicit_app_server || configured_local.is_some() {
+        startup_draft
+            .run_until(app_server_mode::resolve_app_server_mode(
+                local_endpoint,
+                explicit_remote_endpoint,
+                configured_local,
+            ))
+            .await?
+            .map_err(|err| std::io::Error::other(err.to_string()))?
+    } else {
+        let default_daemon = if reuse_implicit_local_daemon {
+            startup_draft
+                .run_until(maybe_probe_default_daemon_socket(&codex_home))
+                .await?
+        } else {
+            None
+        };
+        let target = app_server_target_for_launch(
+            /*explicit_remote_endpoint*/ None,
+            default_daemon,
+            reuse_implicit_local_daemon,
+            workload_identity_selected,
+        )?;
+        let footer_state = matches!(target, AppServerTarget::LocalDaemon { .. })
+            .then_some(crate::chatwidget::ConnectedModeFooterState::Connected);
+        ResolvedAppServerMode::for_unconnected_target(target, footer_state)
+    };
+    let app_server_target = app_server_mode.target().clone();
     let remote_cwd_override = cli
         .cwd
         .clone()
@@ -198,7 +267,7 @@ pub(super) async fn run_main_inner(
         arg0_paths.codex_linux_sandbox_exe.clone(),
     )?;
     let prepared_environment_manager =
-        if should_load_configured_environments(&loader_overrides, &app_server_target) {
+        if should_load_configured_environments(&launch_loader_overrides, &app_server_target) {
             startup_draft
                 .run_until(EnvironmentManager::prepare_from_codex_home(&codex_home))
                 .await?
@@ -214,12 +283,7 @@ pub(super) async fn run_main_inner(
         &app_server_target,
         prepared_environment_manager.default_environment_is_remote(),
     )?;
-    let mut loader_overrides = loader_overrides;
-    if let Some(profile_v2) = cli.config_profile_v2.as_ref() {
-        let user_config_path = resolve_profile_v2_config_path(&codex_home, profile_v2);
-        loader_overrides.user_config_path = Some(user_config_path);
-        loader_overrides.user_config_profile = Some(profile_v2.clone());
-    }
+    let mut loader_overrides = launch_loader_overrides;
     loader_overrides.ignore_login_requirements = app_server_target.uses_remote_workspace();
 
     let bootstrap_config = startup_draft
@@ -544,7 +608,7 @@ pub(super) async fn run_main_inner(
         arg0_paths,
         loader_overrides,
         strict_config,
-        app_server_target,
+        app_server_mode,
         remote_cwd_override,
         config,
         manually_selected_oss_provider,

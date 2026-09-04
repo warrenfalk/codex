@@ -495,12 +495,26 @@ impl App {
             );
         }
         self.chat_widget = chat_widget;
-        if !matches!(self.app_server_target, crate::AppServerTarget::Embedded) {
-            if self.reconnect.offline {
-                self.chat_widget.show_disconnected_mode_footer();
-            } else {
+        let app_server_footer_state = self.app_server_footer_state.or_else(|| {
+            (!matches!(self.app_server_target, crate::AppServerTarget::Embedded)).then_some(
+                if self.reconnect.offline {
+                    crate::chatwidget::ConnectedModeFooterState::Disconnected
+                } else {
+                    crate::chatwidget::ConnectedModeFooterState::Connected
+                },
+            )
+        });
+        match app_server_footer_state {
+            Some(crate::chatwidget::ConnectedModeFooterState::Connected) => {
                 self.chat_widget.show_connected_mode_footer();
             }
+            Some(crate::chatwidget::ConnectedModeFooterState::Disconnected) => {
+                self.chat_widget.show_disconnected_mode_footer();
+            }
+            Some(crate::chatwidget::ConnectedModeFooterState::LocalFallback) => {
+                self.chat_widget.show_local_fallback_mode_footer();
+            }
+            None => {}
         }
         self.sync_active_agent_label();
     }
