@@ -200,6 +200,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
                         "thread/list" => Some(json!({"result": {"data": [], "nextCursor": null}})),
                         "thread/turns/list" => Some(json!({"result": {"data": [], "nextCursor": null}})),
                         "thread/goal/get" => Some(json!({"result": {"goal": null}})),
+                        "command/exec" => Some(json!({"result": {"exitCode": 0, "stdout": "", "stderr": ""}})),
                         "thread/read" if request.params.as_ref().unwrap()["threadId"] == child.to_string() => Some(json!({"result": {"thread": child_thread}})),
                         "thread/read" if previous_thread.is_some_and(|id| request.params.as_ref().unwrap()["threadId"] == id.to_string()) => Some(if changed_child_permissions && child_opened {
                             let mut thread = restored_previous.clone().unwrap();

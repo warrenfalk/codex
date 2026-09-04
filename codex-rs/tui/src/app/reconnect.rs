@@ -24,6 +24,7 @@ pub(super) struct Reconnected {
     session: AppServerSession,
     bootstrap: AppServerBootstrap,
     thread: Option<AppServerStartedThread>,
+    replaced_unmaterialized_thread: Option<ThreadId>,
 }
 
 pub(super) async fn reconnect(
@@ -63,6 +64,7 @@ pub(super) async fn reconnect(
                 .with_remote_cwd_override(remote_cwd.clone())
                 .with_thread_tool_transport(task_tools.clone());
             let bootstrap = session.bootstrap(&config).await?;
+            let mut replaced_unmaterialized_thread = None;
             let thread = if let Some(thread_id) = thread_id {
                 match session
                     .resume_thread(
@@ -82,6 +84,28 @@ pub(super) async fn reconnect(
                         return Err(error);
                     }
                     Err(error)
+                        if presentation == ReconnectPresentation::Conversation
+                            && error.chain().any(|cause| {
+                                matches!(
+                                    cause.downcast_ref::<TypedRequestError>(),
+                                    Some(TypedRequestError::Server { source, .. })
+                                        if source.message
+                                            == format!("no rollout found for thread id {thread_id}")
+                                            || source.message.contains("is not materialized yet")
+                                )
+                            }) =>
+                    {
+                        replaced_unmaterialized_thread = Some(thread_id);
+                        Some(
+                            session
+                                .start_thread_with_session_start_source(
+                                    &config, /*session_start_source*/ None,
+                                    /*remote_cwd_override*/ None,
+                                )
+                                .await?,
+                        )
+                    }
+                    Err(error)
                         if matches!(
                             error.downcast_ref::<TypedRequestError>(),
                             Some(TypedRequestError::Server { source, .. }) if source.code == -32600
@@ -98,6 +122,7 @@ pub(super) async fn reconnect(
                 session,
                 bootstrap,
                 thread,
+                replaced_unmaterialized_thread,
             })
         };
         let result = tokio::time::timeout_at(deadline, attempt).await;
@@ -212,12 +237,22 @@ impl App {
             mut session,
             bootstrap,
             thread,
+            replaced_unmaterialized_thread,
         } = connected;
         let selected = self
             .chat_widget
             .selected_index_for_present_view(agents_overview::AGENTS_OVERVIEW_VIEW_ID)
             .and_then(|index| self.agents_overview.visible_thread_ids.get(index).copied());
-        let displayed = self.current_displayed_thread_id();
+        let displayed = match (
+            replaced_unmaterialized_thread,
+            thread.as_ref().map(|started| started.session.thread_id),
+            self.current_displayed_thread_id(),
+        ) {
+            (Some(replaced), Some(replacement), Some(displayed)) if displayed == replaced => {
+                Some(replacement)
+            }
+            (_, _, displayed) => displayed,
+        };
         let mut input = self.chat_widget.capture_thread_input_state();
         if let Some(input) = input.as_mut() {
             input.recovered_queue = true;
@@ -300,7 +335,12 @@ impl App {
             } else {
                 self.agent_navigation.mark_stopped(id);
             }
-            if self.primary_thread_id == Some(id) {
+            if replaced_unmaterialized_thread
+                .is_some_and(|replaced| self.primary_thread_id == Some(replaced))
+            {
+                self.primary_thread_id = Some(id);
+                self.primary_session_configured = Some(started.session.clone());
+            } else if self.primary_thread_id == Some(id) {
                 self.primary_session_configured = Some(started.session.clone());
             }
             if started.blocks_direct_input {
@@ -375,9 +415,13 @@ impl App {
             matches!(bootstrap.auth_mode, Some(TelemetryAuthMode::Chatgpt)),
         );
         self.feedback_audience = bootstrap.feedback_audience;
-        self.chat_widget.add_info_message(
-            "Reconnected. No input was resent. Review uncertain submissions before retrying; recovered queues remain paused.".into(), /*hint*/ None,
-        );
+        let message = if replaced_unmaterialized_thread.is_some() {
+            "Connected to a new app-server session because the previous session was not yet saved. No input was resent; review the retained draft before submitting."
+        } else {
+            "Reconnected. No input was resent. Review uncertain submissions before retrying; recovered queues remain paused."
+        };
+        self.chat_widget
+            .add_info_message(message.into(), /*hint*/ None);
         Ok(())
     }
 }
