@@ -16,7 +16,6 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
-#[cfg(windows)]
 use codex_utils_path_uri::PathUri;
 
 use crate::common::exec_server::ExecServerHarness;
@@ -166,4 +165,31 @@ fn sandbox_context(mut entries: Vec<FileSystemSandboxEntry>) -> FileSystemSandbo
         sandbox.windows_sandbox_level = WindowsSandboxLevel::RestrictedToken;
     }
     sandbox
+}
+
+pub(crate) fn sandbox_context_with_policy(
+    file_system_policy: FileSystemSandboxPolicy,
+    network_access: bool,
+    cwd: AbsolutePathBuf,
+) -> FileSystemSandboxContext {
+    let network_policy = if network_access {
+        NetworkSandboxPolicy::Enabled
+    } else {
+        NetworkSandboxPolicy::Restricted
+    };
+    FileSystemSandboxContext::from_permission_profile_with_cwd(
+        PermissionProfile::from_runtime_permissions(&file_system_policy, network_policy),
+        PathUri::from_abs_path(&cwd),
+    )
+}
+
+pub(crate) fn workspace_write_cwd_sandbox(
+    cwd: std::path::PathBuf,
+    network_access: bool,
+    exclude_tmpdir_env_var: bool,
+    exclude_slash_tmp: bool,
+) -> FileSystemSandboxContext {
+    let file_system_policy =
+        FileSystemSandboxPolicy::workspace_write(&[], exclude_tmpdir_env_var, exclude_slash_tmp);
+    sandbox_context_with_policy(file_system_policy, network_access, absolute_path(cwd))
 }

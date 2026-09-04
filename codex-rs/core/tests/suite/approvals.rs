@@ -842,7 +842,9 @@ async fn wait_for_completion_without_approval(test: &TestCodex) {
     let event = wait_for_event(&test.codex, |event| {
         matches!(
             event,
-            EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
+            EventMsg::ExecApprovalRequest(_)
+                | EventMsg::ApplyPatchApprovalRequest(_)
+                | EventMsg::TurnComplete(_)
         )
     })
     .await;
@@ -851,6 +853,12 @@ async fn wait_for_completion_without_approval(test: &TestCodex) {
         EventMsg::TurnComplete(_) => {}
         EventMsg::ExecApprovalRequest(event) => {
             panic!("unexpected approval request: {:?}", event.command)
+        }
+        EventMsg::ApplyPatchApprovalRequest(event) => {
+            panic!(
+                "unexpected patch approval request: reason={:?} changes={:?}",
+                event.reason, event.changes
+            )
         }
         other => panic!("unexpected event: {other:?}"),
     }
@@ -1459,6 +1467,40 @@ fn scenarios() -> Vec<ScenarioSpec> {
             expectation: Expectation::PatchApplied {
                 target: TargetPath::Workspace("apply_patch_freeform.txt"),
                 content: "freeform-apply-patch",
+            },
+        },
+        ScenarioSpec {
+            name: "apply_patch_freeform_workspace_write_inside_auto",
+            approval_policy: OnRequest,
+            sandbox_policy: workspace_write(false),
+            action: ActionKind::ApplyPatchFreeform {
+                target: TargetPath::Workspace("apply_patch_freeform_workspace_write.txt"),
+                content: "freeform-patch-workspace-write",
+            },
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            features: vec![],
+            model_override: Some("gpt-5.4"),
+            outcome: Outcome::Auto,
+            expectation: Expectation::PatchApplied {
+                target: TargetPath::Workspace("apply_patch_freeform_workspace_write.txt"),
+                content: "freeform-patch-workspace-write",
+            },
+        },
+        ScenarioSpec {
+            name: "apply_patch_freeform_workspace_write_network_inside_auto",
+            approval_policy: OnRequest,
+            sandbox_policy: workspace_write(true),
+            action: ActionKind::ApplyPatchFreeform {
+                target: TargetPath::Workspace("apply_patch_freeform_workspace_write_network.txt"),
+                content: "freeform-patch-workspace-write-network",
+            },
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            features: vec![],
+            model_override: Some("gpt-5.4"),
+            outcome: Outcome::Auto,
+            expectation: Expectation::PatchApplied {
+                target: TargetPath::Workspace("apply_patch_freeform_workspace_write_network.txt"),
+                content: "freeform-patch-workspace-write-network",
             },
         },
         ScenarioSpec {
