@@ -35,6 +35,7 @@ function errorNotification(willRetry: boolean): ServerNotification {
         additionalDetails: null,
         codexErrorInfo: null,
         message: "Reconnecting... 1/5",
+        misalignment: null,
       },
       threadId: "thread-1",
       turnId: "turn-1",
@@ -53,6 +54,7 @@ describe("push notification payloads", () => {
             id: "agent-1",
             memoryCitation: null,
             phase: "commentary",
+            questions: null,
             text: "I am still working on it.",
             type: "agentMessage",
           },
@@ -61,6 +63,7 @@ describe("push notification payloads", () => {
             id: "agent-2",
             memoryCitation: null,
             phase: "final_answer",
+            questions: null,
             text: "Finished the notification payload change.\n\nTests pass.",
             type: "agentMessage",
           },
@@ -118,6 +121,26 @@ describe("push notification payloads", () => {
     expect(pushMessageForServerRequest(request)).toMatchObject({
       body: "Needs network access. Command: curl https://example.com",
       title: "Codex needs command approval",
+      url: "/threads/thread-1",
+    });
+  });
+
+  it("distinguishes terminal-input approvals from commands", () => {
+    const request: JsonRpcRequestMessage = {
+      id: "request-stdin",
+      method: "item/commandExecution/requestApproval",
+      params: {
+        command: "write_stdin --session-id 42 confirm",
+        itemId: "item-1",
+        kind: "writeStdin",
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    };
+
+    expect(pushMessageForServerRequest(request)).toMatchObject({
+      body: "Terminal input: write_stdin --session-id 42 confirm",
+      title: "Codex needs terminal input approval",
       url: "/threads/thread-1",
     });
   });

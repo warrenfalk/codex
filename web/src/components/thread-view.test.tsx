@@ -116,7 +116,10 @@ function buildThread(turns: Turn[] = []): Thread {
     ephemeral: false,
     section: null,
     sectionEnteredAt: null,
+    historyMode: "paginated",
+    model: null,
     modelProvider: "openai",
+    reasoningEffort: null,
     createdAt: 1,
     updatedAt: 2,
     recencyAt: 2,
@@ -145,6 +148,7 @@ function buildTurn(id = "turn-1"): Turn {
         text: "Working on it.",
         phase: null,
         memoryCitation: null,
+        questions: null,
       },
     ],
     itemsView: "full",
@@ -257,6 +261,7 @@ describe("ThreadView", () => {
         itemId: "item-1",
         startedAtMs: 1,
         environmentId: null,
+        kind: "command",
         command: "printf test",
       },
     };
@@ -298,6 +303,65 @@ describe("ThreadView", () => {
 
     expect(screen.getByText("Input requested")).toBeInTheDocument();
     expect(screen.getByLabelText("Prompt")).toBeInTheDocument();
+  });
+
+  it("places an async question option in the composer without submitting it", () => {
+    const onSendPrompt = vi.fn().mockResolvedValue(undefined);
+    renderThreadView({
+      onSendPrompt,
+      thread: buildThread([
+        buildTurnWithItems("turn-question", [
+          {
+            type: "agentMessage",
+            delivery: "async",
+            id: "agent-question",
+            text: "Which environment?\n\n- Staging\n- Production",
+            phase: "commentary",
+            memoryCitation: null,
+            questions: [
+              {
+                title: "Which environment?",
+                options: ["Staging", "Production"],
+              },
+            ],
+          },
+        ]),
+      ]),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Production" }));
+
+    expect(screen.getByLabelText("Prompt")).toHaveValue("Production");
+    expect(onSendPrompt).not.toHaveBeenCalled();
+  });
+
+  it("renders public misalignment details without exposing the steer", () => {
+    renderThreadView({
+      thread: buildThread([
+        {
+          ...buildTurnWithItems("turn-failed", []),
+          status: "failed",
+          error: {
+            message: "The response was blocked.",
+            codexErrorInfo: null,
+            additionalDetails: null,
+            misalignment: {
+              errorType: "policy",
+              detailedExplanation:
+                "This request cannot be completed as written.",
+              steer: { message: "Internal continuation instruction" },
+            },
+          },
+        },
+      ]),
+    });
+
+    expect(screen.getByText("Turn failed")).toBeInTheDocument();
+    expect(screen.getByText("The response was blocked.")).toBeInTheDocument();
+    expect(
+      screen.getByText("This request cannot be completed as written."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Internal continuation instruction")).toBeNull();
   });
 
   it("shows file paths for file change approval prompts", () => {
@@ -595,6 +659,7 @@ describe("ThreadView", () => {
             text: "Finished earlier work.",
             phase: null,
             memoryCitation: null,
+            questions: null,
           },
           {
             type: "reasoning",

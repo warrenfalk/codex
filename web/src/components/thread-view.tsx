@@ -138,6 +138,7 @@ function isCondensableThreadItem(item: ThreadItem): boolean {
     case "fileChange":
     case "mcpToolCall":
     case "dynamicToolCall":
+    case "functionCallOutput":
     case "collabAgentToolCall":
     case "subAgentActivity":
     case "webSearch":
@@ -183,8 +184,26 @@ function turnsForCondensedMode(turns: Turn[], condensedMode: boolean): Turn[] {
       return isVisible;
     });
 
-    return items.length > 0 ? [{ ...turn, items }] : [];
+    return items.length > 0 || turn.error ? [{ ...turn, items }] : [];
   });
+}
+
+function TurnErrorView({ turn }: { turn: Turn }) {
+  if (!turn.error) {
+    return null;
+  }
+
+  const details =
+    turn.error.misalignment?.detailedExplanation ??
+    turn.error.additionalDetails;
+
+  return (
+    <article className="turn-error" role="alert">
+      <header>Turn failed</header>
+      <p>{turn.error.message}</p>
+      {details && details !== turn.error.message && <p>{details}</p>}
+    </article>
+  );
 }
 
 function ButtonIcon({ children }: { children: ReactNode }) {
@@ -465,6 +484,20 @@ export function ThreadView({
     scrollThreadToBottomAfterLayout();
   };
 
+  const useSuggestedReply = (reply: string) => {
+    const currentPrompt = prompt.trimEnd();
+    const nextPrompt = currentPrompt ? `${currentPrompt}\n${reply}` : reply;
+    const cursor = nextPrompt.length;
+
+    setPrompt(nextPrompt);
+    setPromptSelection({ start: cursor, end: cursor });
+    window.requestAnimationFrame(() => {
+      const input = promptInputRef.current;
+      input?.focus();
+      input?.setSelectionRange(cursor, cursor);
+    });
+  };
+
   const startThreadRename = () => {
     if (!thread) {
       return;
@@ -647,6 +680,7 @@ export function ThreadView({
                             )
                         : undefined
                     }
+                    onUseSuggestedReply={useSuggestedReply}
                     sourceFileLinks={{
                       onNavigate: onOpenSourceFile,
                       root: thread.cwd,
@@ -655,6 +689,7 @@ export function ThreadView({
                     runtimeText={runtimeText[item.id]}
                   />
                 ))}
+                <TurnErrorView turn={turn} />
               </div>
             </section>
           )}

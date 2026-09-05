@@ -68,6 +68,7 @@ describe("ThreadItemView", () => {
       text: "Use `codex` with [docs](https://example.test).",
       phase: null,
       memoryCitation: null,
+      questions: null,
     };
 
     render(<ThreadItemView item={item} />);
@@ -79,6 +80,57 @@ describe("ThreadItemView", () => {
         "codex",
       ),
     ).toHaveAttribute("data-streamdown", "inline-code");
+  });
+
+  it("renders async questions as selectable reply suggestions", () => {
+    const item: ThreadItem = {
+      type: "agentMessage",
+      delivery: "async",
+      id: "agent-question-1",
+      text: "Which environment?\n\n- Staging\n- Production",
+      phase: "commentary",
+      memoryCitation: null,
+      questions: [
+        {
+          title: "Which environment?",
+          options: ["Staging", "Production"],
+        },
+      ],
+    };
+    const onUseSuggestedReply = vi.fn();
+
+    render(
+      <ThreadItemView item={item} onUseSuggestedReply={onUseSuggestedReply} />,
+    );
+
+    expect(screen.getByText("Which environment?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Staging" }));
+
+    expect(onUseSuggestedReply).toHaveBeenCalledWith("Staging");
+  });
+
+  it("renders function call outputs collapsed without exposing encrypted content", () => {
+    const item: ThreadItem = {
+      type: "functionCallOutput",
+      id: "function-output-1",
+      name: "read_document",
+      namespace: "drive",
+      output: [
+        { type: "input_text", text: "Document contents" },
+        { type: "encrypted_content", encrypted_content: "ciphertext" },
+      ],
+    };
+
+    render(<ThreadItemView item={item} />);
+
+    const details = screen
+      .getByText("Tool output")
+      .closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(screen.getByText("drive.read_document")).toBeInTheDocument();
+    expect(screen.getByText("Document contents")).toBeInTheDocument();
+    expect(screen.getByText("Encrypted output")).toBeInTheDocument();
+    expect(screen.queryByText("ciphertext")).toBeNull();
   });
 
   it("renders note-to-self items as markdown", () => {
@@ -105,6 +157,7 @@ describe("ThreadItemView", () => {
       text: "Open [the component](src/components/thread-item-view.tsx:42).",
       phase: null,
       memoryCitation: null,
+      questions: null,
     };
     const onNavigate = vi.fn();
 
@@ -146,6 +199,7 @@ describe("ThreadItemView", () => {
       ].join("\n"),
       phase: null,
       memoryCitation: null,
+      questions: null,
     };
 
     const { container } = render(<ThreadItemView item={item} />);

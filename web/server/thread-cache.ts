@@ -248,6 +248,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
         text: "",
         phase: null,
         memoryCitation: null,
+        questions: null,
       };
     case "plan":
       return { type: "plan", id: itemId, text: "" };
@@ -261,6 +262,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
         text: "",
         phase: null,
         memoryCitation: null,
+        questions: null,
       };
   }
 }

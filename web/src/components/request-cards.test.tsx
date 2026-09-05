@@ -23,6 +23,7 @@ describe("RequestCard", () => {
         itemId: "item_1",
         startedAtMs: 1,
         environmentId: null,
+        kind: "command",
         command: "pnpm build",
       },
     };
@@ -34,6 +35,42 @@ describe("RequestCard", () => {
     await user.click(acceptButton);
 
     expect(onRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), {
+      decision: "accept",
+    });
+  });
+
+  it("uses terminal-input approval copy and decisions for writeStdin", async () => {
+    const user = userEvent.setup();
+    const onRespond = vi.fn();
+    const request: ServerRequest = {
+      method: "item/commandExecution/requestApproval",
+      id: 4,
+      params: {
+        threadId: "thr_1",
+        turnId: "turn_1",
+        itemId: "item_1",
+        startedAtMs: 1,
+        environmentId: null,
+        kind: "writeStdin",
+        command: "write_stdin --session-id 42 confirm",
+      },
+    };
+
+    render(<RequestCard onRespond={onRespond} request={request} />);
+
+    expect(screen.getByText("Terminal input approval")).toBeInTheDocument();
+    expect(screen.getByLabelText("Terminal input request")).toHaveTextContent(
+      "write_stdin --session-id 42 confirm",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "Yes, and don't ask again for this command in this session",
+      }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Yes, send input" }));
+
+    expect(onRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 4 }), {
       decision: "accept",
     });
   });
@@ -275,56 +312,59 @@ describe("RequestCard", () => {
     });
   });
 
-  it("submits OpenAI form elicitations through the JSON fallback", async () => {
-    const user = userEvent.setup();
-    const onRespond = vi.fn();
-    const request: ServerRequest = {
-      method: "mcpServer/elicitation/request",
-      id: 10,
-      params: {
-        threadId: "thr_1",
-        turnId: "turn_1",
-        serverName: "apps",
-        mode: "openai/form",
-        _meta: null,
-        message: "Choose a template",
-        requestedSchema: {
-          type: "object",
-          properties: {
-            template: {
-              type: "openai/imagePicker",
-              title: "Template",
-              items: [
-                {
-                  id: "monthly-review",
-                  title: "Monthly review",
-                  image: "data:image/png;base64,abc",
-                },
-              ],
+  it.each(["openai/form", "openaiForm"] as const)(
+    "submits %s elicitations through the JSON fallback",
+    async (mode) => {
+      const user = userEvent.setup();
+      const onRespond = vi.fn();
+      const request: ServerRequest = {
+        method: "mcpServer/elicitation/request",
+        id: 10,
+        params: {
+          threadId: "thr_1",
+          turnId: "turn_1",
+          serverName: "apps",
+          mode,
+          _meta: null,
+          message: "Choose a template",
+          requestedSchema: {
+            type: "object",
+            properties: {
+              template: {
+                type: "openai/imagePicker",
+                title: "Template",
+                items: [
+                  {
+                    id: "monthly-review",
+                    title: "Monthly review",
+                    image: "data:image/png;base64,abc",
+                  },
+                ],
+              },
             },
+            required: ["template"],
           },
-          required: ["template"],
         },
-      },
-    };
+      };
 
-    render(<RequestCard onRespond={onRespond} request={request} />);
+      render(<RequestCard onRespond={onRespond} request={request} />);
 
-    expect(screen.getByLabelText("Response content JSON")).toHaveValue(
-      JSON.stringify({ template: "monthly-review" }, null, 2),
-    );
+      expect(screen.getByLabelText("Response content JSON")).toHaveValue(
+        JSON.stringify({ template: "monthly-review" }, null, 2),
+      );
 
-    await user.click(screen.getByRole("button", { name: "Accept" }));
+      await user.click(screen.getByRole("button", { name: "Accept" }));
 
-    expect(onRespond).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 10 }),
-      {
-        action: "accept",
-        content: {
-          template: "monthly-review",
+      expect(onRespond).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 10 }),
+        {
+          action: "accept",
+          content: {
+            template: "monthly-review",
+          },
+          _meta: null,
         },
-        _meta: null,
-      },
-    );
-  });
+      );
+    },
+  );
 });

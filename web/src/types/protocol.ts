@@ -3,7 +3,7 @@ export type { ClientRequest } from "../../../codex-rs/app-server-protocol/schema
 export type { InitializeCapabilities } from "../../../codex-rs/app-server-protocol/schema/typescript/InitializeCapabilities";
 export type { InitializeResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/InitializeResponse";
 export type { RequestId } from "../../../codex-rs/app-server-protocol/schema/typescript/RequestId";
-export type { ServerNotification } from "../../../codex-rs/app-server-protocol/schema/typescript/ServerNotification";
+export type { ServerNotificationEnvelope as ServerNotification } from "../../../codex-rs/app-server-protocol/schema/typescript/ServerNotificationEnvelope";
 export type { ServerRequest } from "../../../codex-rs/app-server-protocol/schema/typescript/ServerRequest";
 export type { JsonValue } from "../../../codex-rs/app-server-protocol/schema/typescript/serde_json/JsonValue";
 export type {
@@ -48,6 +48,8 @@ export type {
   ThreadStartedNotification,
   ThreadStatus,
   ThreadStatusChangedNotification,
+  ThreadTurnsListParams,
+  ThreadTurnsListResponse,
   ThreadUnarchivedNotification,
   TurnItemsView,
   ToolRequestUserInputParams,
@@ -97,24 +99,10 @@ export type ExperimentalThreadResumeParams =
 
 export type ExperimentalThreadResumeResponse =
   import("../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeResponse").ThreadResumeResponse & {
-    initialTurnsPage?: ThreadTurnsListResponse | null;
+    initialTurnsPage?:
+      | import("../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadTurnsListResponse").ThreadTurnsListResponse
+      | null;
   };
-
-export type ExperimentalThreadTurnsListParams = {
-  cursor?: string | null;
-  itemsView?:
-    | import("../../../codex-rs/app-server-protocol/schema/typescript/v2/TurnItemsView").TurnItemsView
-    | null;
-  limit?: number | null;
-  sortDirection?: "asc" | "desc" | null;
-  threadId: string;
-};
-
-export type ThreadTurnsListResponse = {
-  backwardsCursor: string | null;
-  data: import("../../../codex-rs/app-server-protocol/schema/typescript/v2/Turn").Turn[];
-  nextCursor: string | null;
-};
 
 export type AnyServerRequest =
   | import("../../../codex-rs/app-server-protocol/schema/typescript/ServerRequest").ServerRequest

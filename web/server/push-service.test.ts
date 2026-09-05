@@ -62,6 +62,7 @@ function turnCompletedNotification(
                 additionalDetails: null,
                 codexErrorInfo: null,
                 message: "The command failed.",
+                misalignment: null,
               }
             : null,
         id: "turn-1",

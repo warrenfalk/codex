@@ -160,6 +160,13 @@ function requestBody(request: AnyServerRequest): string {
   switch (request.method) {
     case "item/commandExecution/requestApproval": {
       const command = stringParam(request.params, "command");
+      if (stringParam(request.params, "kind") === "writeStdin") {
+        return approvalBody(
+          command ? `Terminal input: ${command}` : null,
+          stringParam(request.params, "reason"),
+          "Review input before it is sent to the terminal.",
+        );
+      }
       return approvalBody(
         command ? `Command: ${command}` : null,
         stringParam(request.params, "reason"),
@@ -205,6 +212,9 @@ function requestBody(request: AnyServerRequest): string {
 function requestTitle(request: AnyServerRequest): string {
   switch (request.method) {
     case "item/commandExecution/requestApproval":
+      return stringParam(request.params, "kind") === "writeStdin"
+        ? "Codex needs terminal input approval"
+        : "Codex needs command approval";
     case "execCommandApproval":
       return "Codex needs command approval";
     case "item/fileChange/requestApproval":

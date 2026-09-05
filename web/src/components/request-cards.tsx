@@ -37,6 +37,22 @@ type CommandApprovalRequest = Extract<
   { method: "item/commandExecution/requestApproval" }
 >;
 
+type McpElicitationRequest = Extract<
+  AnyServerRequest,
+  { method: "mcpServer/elicitation/request" }
+>;
+type McpElicitationParams = McpElicitationRequest["params"];
+type OpenAiFormParams = Extract<
+  McpElicitationParams,
+  { mode: "openai/form" | "openaiForm" }
+>;
+
+function isOpenAiFormParams(
+  params: McpElicitationParams,
+): params is OpenAiFormParams {
+  return params.mode === "openai/form" || params.mode === "openaiForm";
+}
+
 type CommandApprovalParamsCompat = CommandApprovalRequest["params"] & {
   additionalPermissions?: unknown;
   availableDecisions?: CommandExecutionApprovalDecision[] | null;
@@ -172,6 +188,18 @@ function commandDecisionLabel(
   params: CommandApprovalParamsCompat,
 ): string {
   if (typeof decision === "string") {
+    if (params.kind === "writeStdin") {
+      switch (decision) {
+        case "accept":
+          return "Yes, send input";
+        case "acceptForSession":
+          return "Yes, send input for this session";
+        case "decline":
+        case "cancel":
+          return "No, don't send input";
+      }
+    }
+
     switch (decision) {
       case "accept":
         return params.networkApprovalContext
@@ -291,17 +319,36 @@ function CommandApprovalCard({
   >;
 }) {
   const params = request.params as CommandApprovalParamsCompat;
-  const decisions = params.availableDecisions ?? [
-    "accept",
-    "acceptForSession",
-    "decline",
-    "cancel",
-  ];
+  const decisions =
+    params.availableDecisions ??
+    (params.kind === "writeStdin"
+      ? (["accept", "cancel"] satisfies CommandExecutionApprovalDecision[])
+      : ([
+          "accept",
+          "acceptForSession",
+          "decline",
+          "cancel",
+        ] satisfies CommandExecutionApprovalDecision[]));
 
   return (
-    <CardShell title="Command approval">
+    <CardShell
+      title={
+        params.kind === "writeStdin"
+          ? "Terminal input approval"
+          : "Command approval"
+      }
+    >
       {params.reason && <p>{params.reason}</p>}
-      {params.command && <pre className="output-block">{params.command}</pre>}
+      {params.command && (
+        <pre
+          aria-label={
+            params.kind === "writeStdin" ? "Terminal input request" : undefined
+          }
+          className="output-block"
+        >
+          {params.command}
+        </pre>
+      )}
       {params.cwd && <p className="detail-meta">cwd: {params.cwd}</p>}
       {params.commandActions && params.commandActions.length > 0 && (
         <JsonPreview value={params.commandActions} />
@@ -896,7 +943,7 @@ function McpElicitationCard({
       );
     }
 
-    if (request.params.mode === "openai/form") {
+    if (isOpenAiFormParams(request.params)) {
       return defaultValueForOpenAiFormSchema(request.params.requestedSchema);
     }
 
@@ -922,8 +969,9 @@ function McpElicitationCard({
     [contentText],
   );
 
-  const acceptContent =
-    request.params.mode === "openai/form" ? parsedContent : content;
+  const acceptContent = isOpenAiFormParams(request.params)
+    ? parsedContent
+    : content;
 
   const respond = (action: "accept" | "decline" | "cancel") => {
     const response: McpServerElicitationRequestResponse = {
@@ -971,7 +1019,7 @@ function McpElicitationCard({
       <div className="button-row">
         <button
           disabled={
-            request.params.mode === "openai/form" && parsedContent === null
+            isOpenAiFormParams(request.params) && parsedContent === null
           }
           type="button"
           onClick={() => respond("accept")}

@@ -3,7 +3,6 @@ import type {
   ClientInfo,
   ExperimentalThreadResumeParams,
   ExperimentalThreadResumeResponse,
-  ExperimentalThreadTurnsListParams,
   InitializeCapabilities,
   InitializeResponse,
   RequestId,
@@ -12,6 +11,7 @@ import type {
   ThreadArchiveResponse,
   ThreadListResponse,
   ThreadSetNameResponse,
+  ThreadTurnsListParams,
   ThreadTurnsListResponse,
   Turn,
   TurnInterruptResponse,
@@ -53,6 +53,7 @@ export type ThreadTurnsPage = {
 export type ThreadResumeResult = {
   initialTurnsPage: ThreadTurnsPage | null;
   thread: Thread;
+  turnsBackwardsCursor: string | null;
 };
 
 const CLIENT_INFO: ClientInfo = {
@@ -188,7 +189,7 @@ export class CodexClient {
     { cursor, limit = 100, sortDirection }: ThreadTurnsPageRequest,
   ): Promise<ThreadTurnsPage> {
     try {
-      const params: ExperimentalThreadTurnsListParams = {
+      const params: ThreadTurnsListParams = {
         cursor,
         itemsView: "full",
         limit,
@@ -231,6 +232,7 @@ export class CodexClient {
         ? normalizeThreadTurnsPage(response.initialTurnsPage, "desc")
         : null,
       thread: response.thread,
+      turnsBackwardsCursor: response.turnsBackwardsCursor,
     };
   }
 

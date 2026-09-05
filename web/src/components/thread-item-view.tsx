@@ -8,12 +8,21 @@ type Props = {
   anchorId?: string;
   item: ThreadItem;
   onJumpToPreviousUserTurn?: () => void;
+  onUseSuggestedReply?: (reply: string) => void;
   sourceFileLinks?: SourceFileLinkOptions;
   runtimeText?: string;
 };
 
 type FileChangeItem = Extract<ThreadItem, { type: "fileChange" }>;
 type FileChange = FileChangeItem["changes"][number];
+type FunctionCallOutputItem = Extract<
+  ThreadItem,
+  { type: "functionCallOutput" }
+>;
+type FunctionCallOutputContent = Exclude<
+  FunctionCallOutputItem["output"],
+  string
+>[number];
 
 function JsonBlock({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
@@ -75,10 +84,47 @@ function DisclosureSummary({ children }: { children: ReactNode }) {
   );
 }
 
+function functionCallName(item: FunctionCallOutputItem): string {
+  return item.namespace ? `${item.namespace}.${item.name}` : item.name;
+}
+
+function FunctionCallOutputContentView({
+  content,
+  label,
+}: {
+  content: FunctionCallOutputContent;
+  label: string;
+}) {
+  switch (content.type) {
+    case "input_text":
+      return <pre className="output-block">{content.text}</pre>;
+    case "input_image":
+      return (
+        <img
+          alt={`${label} output`}
+          className="function-output-image"
+          src={content.image_url}
+        />
+      );
+    case "input_audio":
+      return (
+        <audio
+          aria-label={`${label} output`}
+          className="function-output-audio"
+          controls
+          src={content.audio_url}
+        />
+      );
+    case "encrypted_content":
+      return <p className="detail-meta">Encrypted output</p>;
+  }
+}
+
 export function ThreadItemView({
   anchorId,
   item,
   onJumpToPreviousUserTurn,
+  onUseSuggestedReply,
   sourceFileLinks,
   runtimeText,
 }: Props) {
@@ -128,12 +174,74 @@ export function ThreadItemView({
       return (
         <article className="message-card agent-card">
           <header>Codex</header>
-          <MarkdownBlock
-            sourceFileLinks={sourceFileLinks}
-            text={item.text || "Waiting for output..."}
-          />
+          {item.questions && item.questions.length > 0 ? (
+            <div className="async-question-list">
+              {item.questions.map((question, questionIndex) => (
+                <section
+                  className="async-question"
+                  key={`${item.id}-question-${questionIndex}`}
+                >
+                  <p className="async-question-title">{question.title}</p>
+                  {question.options && question.options.length > 0 && (
+                    <div className="async-question-options">
+                      {question.options.map((option, optionIndex) =>
+                        onUseSuggestedReply ? (
+                          <button
+                            className="async-question-option"
+                            key={`${item.id}-question-${questionIndex}-option-${optionIndex}`}
+                            type="button"
+                            onClick={() => onUseSuggestedReply(option)}
+                          >
+                            {option}
+                          </button>
+                        ) : (
+                          <span
+                            className="async-question-option-text"
+                            key={`${item.id}-question-${questionIndex}-option-${optionIndex}`}
+                          >
+                            {option}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <MarkdownBlock
+              sourceFileLinks={sourceFileLinks}
+              text={item.text || "Waiting for output..."}
+            />
+          )}
         </article>
       );
+    case "functionCallOutput": {
+      const label = functionCallName(item);
+      return (
+        <details className="detail-card collapsible-card">
+          <DisclosureSummary>
+            <span className="collapsible-summary-row">
+              <span className="collapsible-card-label">Tool output</span>
+              <span className="collapsible-card-preview mono" title={label}>
+                {label}
+              </span>
+            </span>
+          </DisclosureSummary>
+          {typeof item.output === "string" ? (
+            <pre className="output-block">{item.output}</pre>
+          ) : (
+            item.output.map((content, index) => (
+              <FunctionCallOutputContentView
+                content={content}
+                key={`${item.id}-output-${index}`}
+                label={label}
+              />
+            ))
+          )}
+        </details>
+      );
+    }
     case "noteToSelf":
       return (
         <article className="detail-card" id={anchorId}>

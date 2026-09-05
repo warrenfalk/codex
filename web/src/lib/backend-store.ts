@@ -188,6 +188,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
         text: "",
         phase: null,
         memoryCitation: null,
+        questions: null,
       };
     case "plan":
       return { type: "plan", id: itemId, text: "" };
@@ -201,6 +202,7 @@ function placeholderItem(kind: string, itemId: string): ThreadItem {
         text: "",
         phase: null,
         memoryCitation: null,
+        questions: null,
       };
   }
 }
@@ -1021,7 +1023,7 @@ export class BackendStateStore {
             const initialTurnsPage = await this.client.listThreadTurnsPage(
               threadId,
               {
-                cursor: null,
+                cursor: resumeResult.turnsBackwardsCursor,
                 limit: 1,
                 sortDirection: "desc",
               },

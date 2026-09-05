@@ -752,6 +752,81 @@ a {
   padding: 14px 0.95rem;
 }
 
+.async-question-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.async-question {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.async-question-title {
+  font-weight: 650;
+  margin: 0;
+}
+
+.async-question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.async-question-option,
+.async-question-option-text {
+  background: rgba(245, 245, 245, 0.08);
+  border: 1px solid rgba(245, 245, 245, 0.18);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+  padding: 0.45rem 0.65rem;
+}
+
+.async-question-option {
+  cursor: pointer;
+}
+
+.async-question-option:hover {
+  border-color: rgba(110, 231, 255, 0.5);
+}
+
+.function-output-image {
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+.function-output-audio {
+  max-width: 100%;
+  width: 100%;
+}
+
+.turn-error {
+  background: rgba(255, 133, 133, 0.1);
+  border-left: 3px solid var(--danger);
+  padding: 0.75rem 0.9rem;
+}
+
+.turn-error header {
+  color: var(--danger);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.turn-error p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.turn-error p + p {
+  color: var(--muted-strong);
+  margin-top: 0.45rem;
+}
+
 .user-card > header,
 .agent-card > header {
   display: none;

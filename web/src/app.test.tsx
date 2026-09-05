@@ -89,7 +89,10 @@ function makeThread(id: string): Thread {
     ephemeral: false,
     section: null,
     sectionEnteredAt: null,
+    historyMode: "paginated",
+    model: null,
     modelProvider: "openai",
+    reasoningEffort: null,
     createdAt: 1,
     updatedAt: 2,
     recencyAt: 2,
@@ -253,6 +256,7 @@ describe("App routing", () => {
         itemId: "item-1",
         startedAtMs: 1,
         environmentId: null,
+        kind: "command",
         command: "pnpm test",
       },
     };

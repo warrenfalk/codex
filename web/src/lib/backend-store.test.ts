@@ -32,7 +32,10 @@ function makeThread(id: string, name = id): Thread {
     ephemeral: false,
     section: null,
     sectionEnteredAt: null,
+    historyMode: "paginated",
+    model: null,
     modelProvider: "openai",
+    reasoningEffort: null,
     createdAt: 1,
     updatedAt: 1,
     recencyAt: 1,
@@ -80,6 +83,7 @@ class FakeTransport implements BackendTransport {
   listThreadTurnsPageGate: Promise<void> | null = null;
   resumeThreadGate: Promise<void> | null = null;
   resumeCalls = new Map<string, number>();
+  turnsBackwardsCursorsByThread = new Map<string, string | null>();
   renameThreadCalls: Array<{ name: string; threadId: string }> = [];
   foregroundThreadIdUpdates: Array<string | null> = [];
   pushSubscriptionEndpointUpdates: Array<string | null> = [];
@@ -156,11 +160,13 @@ class FakeTransport implements BackendTransport {
 
   async resumeThread(threadId: string): Promise<ThreadResumeResult> {
     this.resumeCalls.set(threadId, (this.resumeCalls.get(threadId) ?? 0) + 1);
-    const result = {
+    const result: ThreadResumeResult = {
       initialTurnsPage: this.initialTurnPagesByThread.get(threadId) ?? null,
       thread: {
         ...(this.detailedThreads.get(threadId) ?? makeThread(threadId)),
       },
+      turnsBackwardsCursor:
+        this.turnsBackwardsCursorsByThread.get(threadId) ?? null,
     };
     await this.resumeThreadGate;
     return result;
@@ -479,6 +485,7 @@ describe("BackendStateStore", () => {
         ],
       ]),
     );
+    transport.turnsBackwardsCursorsByThread.set("thr_1", "resume-anchor");
     const store = new BackendStateStore(transport);
     const first = vi.fn();
     const second = vi.fn();
@@ -490,7 +497,11 @@ describe("BackendStateStore", () => {
       expect(transport.resumeCalls.get("thr_1")).toBe(1);
       expect(transport.listTurnsPageCalls).toEqual([
         {
-          request: { cursor: null, limit: 1, sortDirection: "desc" },
+          request: {
+            cursor: "resume-anchor",
+            limit: 1,
+            sortDirection: "desc",
+          },
           threadId: "thr_1",
         },
       ]);
@@ -827,6 +838,7 @@ describe("BackendStateStore", () => {
           text: "Full response text",
           phase: null,
           memoryCitation: null,
+          questions: null,
         },
       ],
       itemsView: "full",
