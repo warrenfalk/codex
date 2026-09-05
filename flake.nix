@@ -146,7 +146,7 @@
           };
         in
         {
-          default = pkgs.mkShell {
+          default = pkgs.mkShell ({
             buildInputs = [
               rust
               # Bazel is intentionally not included in the default dev shell for
@@ -170,7 +170,18 @@
               export CXX=clang++
               export UV_CACHE_DIR="''${UV_CACHE_DIR:-$PWD/.cache/uv}"
             '';
-          };
+          } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            # Resolve Ruff after uv has selected the project's locked environment.
+            # Invoke its ELF interpreter explicitly; PyPI wheels use an FHS path
+            # that points to NixOS's stub loader instead of glibc.
+            CODEX_RUFF_WRAPPER = pkgs.writeShellScript "codex-ruff" ''
+              set -euo pipefail
+              ruff="$(command -v ruff)"
+              exec ${pkgs.stdenv.cc.bintools.dynamicLinker} \
+                --library-path "${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}" \
+                "$ruff" "$@"
+            '';
+          });
         }
       );
     };

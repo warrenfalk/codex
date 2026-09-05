@@ -82,6 +82,8 @@ def buildifier_formatter_group(*, check: bool) -> FormatterGroup:
 
 def python_sdk_formatter_group(*, check: bool) -> FormatterGroup:
     # Each `--project` retains its local dependency and Ruff configuration context.
+    # The Nix dev shell supplies a launcher for uv's locked Ruff binary on Linux.
+    ruff = os.environ.get("CODEX_RUFF_WRAPPER") or "ruff"
     uv_run_args = [
         "uv",
         "run",
@@ -93,18 +95,18 @@ def python_sdk_formatter_group(*, check: bool) -> FormatterGroup:
     ]
     format_args = [
         *uv_run_args,
-        "ruff",
+        ruff,
         "format",
     ]
     if check:
         format_args.append("--check")
         # `ruff check --diff` reports lint-driven rewrites without changing files.
         # It is the check-mode counterpart of `--fix --fix-only`, not a full lint gate.
-        lint_args = ["ruff", "check", "--diff"]
+        lint_args = [ruff, "check", "--diff"]
     else:
         # Ruff's lint fixer and formatter are separate passes: the first applies
         # fixable lint rewrites, while the second formats source layout.
-        lint_args = ["ruff", "check", "--fix", "--fix-only"]
+        lint_args = [ruff, "check", "--fix", "--fix-only"]
 
     return FormatterGroup(
         "Python SDK",
@@ -116,7 +118,8 @@ def python_sdk_formatter_group(*, check: bool) -> FormatterGroup:
 
 
 def python_scripts_formatter_group(*, check: bool) -> FormatterGroup:
-    args = ["uv", "run", "--frozen", "--project", "scripts", "ruff", "format"]
+    ruff = os.environ.get("CODEX_RUFF_WRAPPER") or "ruff"
+    args = ["uv", "run", "--frozen", "--project", "scripts", ruff, "format"]
     if check:
         args.append("--check")
     args.append(".")
