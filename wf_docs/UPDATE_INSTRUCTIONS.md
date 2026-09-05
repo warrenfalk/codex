@@ -89,17 +89,34 @@ List the source commits you intend to replay:
 git log --reverse --oneline rust-v0.115.0..main
 ```
 
-Track progress explicitly. A simple checklist in a scratch buffer is enough.
+Track progress in a durable replay ledger under ignored `personal/`, for example
+`personal/update-rust-v0.116.0-ledger.md`. Do not rely only on a scratch buffer.
+Treat the captured `git log --reverse --oneline <old-base>..main` output as a fixed
+replay queue. Generate queue entries from Git instead of transcribing them.
+Record:
 
-Treat the `git log --reverse --oneline <old-base>..main` output as a fixed replay queue, not as a rough guide. Keep a simple replay ledger while you work, for example:
-
-- source sha
-- replay sha
-- validation run
+- source SHA, replay SHA, and status (pending, replayed, or skipped with a reason)
+- each validation attempt's exact command and working directory
+- elapsed time, command exit status, result summary, and complete log path
 - replay note / known deviation
 - recurring upstream drift to remember for later commits
 
-This makes interruptions and handoffs much cheaper.
+Record shared validation configuration once: toolchain/dev shell, Cargo target
+and target directory, profile, feature flags, and relevant environment variables.
+Reference that configuration from each attempt and record any deviations.
+
+Save complete stdout and stderr for every formatter, test, and build attempt to
+a distinct log file, for example
+`personal/replay-v0.116.0/logs/<source-sha>-<check>-<attempt>.log`. Preserve earlier
+attempts. Capture elapsed time and exit status mechanically; if using `tee`,
+preserve the wrapped command's exit status rather than reporting `tee`'s status.
+Reuse a logging/status helper if one exists; keep compatibility explanations and
+keep/skip decisions explicit rather than inferring them from exit codes.
+
+Return concise diagnostics to the session: exit status, test summary when
+applicable, relevant error or warning lines, and the log path. Read the saved log
+when more detail is needed instead of rerunning a command to recover truncated
+output. Update the ledger after each attempt and replay decision.
 
 After any interruption, long conflict, or cluster of similar commits, audit the
 ledger against the fixed queue before continuing. Do not rely on memory or the
@@ -111,7 +128,10 @@ Before spending time on the first commit, note any environment-only failures you
 - repo-level lint commands that currently fail because Bazel crashes during startup
 - tests that are known to fail on this machine because `/bin/bash` or other expected host paths are absent
 
-Record those once in the replay ledger so you do not keep re-discovering them.
+Record their commands, error signatures, and log paths once in the replay ledger
+using the [failure-classification rules](#6-validate-the-replayed-commit). Reuse
+that evidence while the relevant environment is unchanged; do not treat a known
+limitation as a blanket explanation for a different failure.
 
 If you are working in a sandboxed worktree, check early whether the `.git` metadata for this worktree is writable from your environment and whether commit hooks will run successfully. It is better to discover any needed escalation or `--no-verify` exception before the final commit than at the very end of a validated replay.
 
@@ -302,7 +322,18 @@ the replayed commit specifically owns those files.
 
 ### 6. Validate the replayed commit
 
-Run the narrowest cargo validation that actually covers the touched behavior.
+Validate the replayed behavior before moving to the next source commit. Preserve
+the failing-probe-then-passing-fix sequence for `[bug test]` / `[bug fix]` pairs.
+Use `just test`, not direct `cargo test`, for Rust tests so the repo's runner and
+defaults remain in effect.
+
+Choose the narrowest validation that covers both the feature and existing
+behavior it affects. For example, an event-subscription change needs relevant
+existing websocket/subscription tests, not only tests named after the new
+feature. Use the source commit's `Validation:` notes as a starting point, but
+verify that the test names and crate locations are still current and that the
+intended tests actually execute. A successful exit with zero relevant tests
+executed is not behavioral validation.
 
 Read the compiler output, not only the exit status. Pre-existing warnings from the upstream base can remain, but a replayed commit must not introduce any new warnings in touched crates. If a validation command emits a new warning, treat that command as failed and fix the warning before committing.
 
@@ -311,25 +342,25 @@ Examples:
 - TUI-only changes:
 
 ```bash
-cargo test -p codex-tui
+just test -p codex-tui
 ```
 
 - protocol changes:
 
 ```bash
-cargo test -p codex-app-server-protocol
+just test -p codex-app-server-protocol
 ```
 
 - app-server turn handling:
 
 ```bash
-cargo test -p codex-app-server turn_start
+just test -p codex-app-server turn_start
 ```
 
 - core execution-environment changes:
 
 ```bash
-cargo test -p codex-core execution_context
+just test -p codex-core execution_context
 ```
 
 - pure docs-only changes with no code, schema, snapshot, or generated artifact updates:
@@ -352,9 +383,43 @@ cargo build
 nix build
 ```
 
-`nix build` takes a long time. Do not use it as the default smoke test for every replayed commit. Run it when the replayed commit actually changes the Nix packaging/build path, or when a `!instruct` commit explicitly tells you to decide whether a Nix-specific failure has been fixed upstream. In other cases, prefer the narrowest targeted cargo test or `cargo build`.
+`nix build` takes a long time. Do not use it as the default smoke test for every replayed commit. Run it when the replayed commit actually changes the Nix packaging/build path, or when a `!instruct` commit explicitly tells you to decide whether a Nix-specific failure has been fixed upstream. In other cases, prefer the narrowest targeted `just test` or `cargo build`.
 
 If the broader targeted test fails on one obvious snapshot or one focused test case, switch to the narrowest reproducer until you have fixed that problem, then rerun the broader target once at the end. Do not keep paying the cost of a full crate test loop while debugging a single snapshot body.
+
+When narrowing, change only the test filter where possible. Preserve package
+selection, feature flags (including default-feature settings), profile, target
+and target directory, toolchain/dev shell, and relevant environment. For example:
+
+```bash
+just test -p codex-v8-poc --features sandbox
+just test -p codex-v8-poc --features sandbox sandbox_feature_matches_linked_v8
+```
+
+If another setting must change, record why and treat it as a different validation
+configuration. Even changing package selection can change Cargo's unified feature
+set. A pass in the narrower configuration does not replace rerunning the original
+broader target with its original configuration.
+
+Classify failures from evidence, not from an assumption that an unfamiliar test
+must be broken upstream:
+
+- **Upstream baseline:** the same failing test/check and failure signature
+  reproduce on the target upstream base under equivalent validation configuration.
+- **Earlier replay failure:** the failure reproduces before the current replayed
+  commit. This alone does not establish that it exists on the upstream base.
+- **Environment-blocked:** a concrete toolchain, loader, filesystem, or dependency
+  failure prevents the check from running. Record the diagnostic and any required
+  remedy; this is not evidence that the feature works or that upstream is broken.
+- **Unresolved:** the cause has not been established. Record the open question
+  rather than relabeling it as baseline.
+
+For comparisons, record the tested SHAs, exact commands/configurations, failure
+signatures, and log paths in the ledger. Run only the targeted comparison needed
+to establish the cause, not a full baseline suite before every commit. Use a
+separate worktree if another checkout is needed; preserve the active replay.
+Keep remaining validation gaps explicit. A classified failure is not a passing
+check, and an unrelated blocker is not evidence that a feature is obsolete.
 
 Do not run repo-level lint, Bazel, or lock-maintenance steps from `AGENTS.md`, such as
 `just argument-comment-lint`, `just bazel-lock-update`, `just bazel-lock-check`, `just bazel-test`, or ad hoc `bazel build` / `bazel test`, as part of this manual replay/update workflow. They are intentionally out of scope for replay validation unless the source commit itself is an explicit `!exec` replay of one of those commands.
@@ -400,7 +465,7 @@ Examples:
 
 ```text
 Replay note: v0.120.0 already had the newer app-server session builder, so this replay only threaded the branch-specific cwd override through the upstream path.
-Validation: cargo test -p codex-tui connected_app_server
+Validation: just test -p codex-tui connected_app_server
 ```
 
 ```text
@@ -419,7 +484,7 @@ paired fix, make that explicit instead of pretending the commit is healthy by
 itself:
 
 ```text
-Validation: cargo test -p codex-app-server-protocol thread_rollback_drops_user_boundaries_inside_explicit_turn
+Validation: just test -p codex-app-server-protocol thread_rollback_drops_user_boundaries_inside_explicit_turn
 Expected failure: this bug probe fails without the paired [bug fix] commit.
 ```
 
@@ -435,15 +500,17 @@ do not leave a failing `[bug test]` without its passing `[bug fix]`.
 
 Use the changed area to choose the first test:
 
-- `codex-rs/tui`: `cargo test -p codex-tui`
-- `codex-rs/app-server-protocol`: `cargo test -p codex-app-server-protocol`
-- `codex-rs/app-server`: `cargo test -p codex-app-server <targeted test>`
-- `codex-rs/core`: `cargo test -p codex-core <targeted test>`
+- `codex-rs/tui`: `just test -p codex-tui`
+- `codex-rs/app-server-protocol`: `just test -p codex-app-server-protocol`
+- `codex-rs/app-server`: `just test -p codex-app-server <targeted test>`
+- `codex-rs/core`: `just test -p codex-core <targeted test>`
 - pure docs-only changes: no Cargo validation required
 - Nix-related changes outside the repo-root package build path: `cargo build`
 - changes to the Nix packaging/build path itself: `nix build` and expect it to take a while
 
-Do not jump straight to a full workspace test unless the change actually warrants it and you have approval if repo instructions require approval first.
+Follow `AGENTS.md` for required broader coverage and ask before running the
+complete `just test` suite. Do not run a full workspace test after every commit
+by default.
 
 ## Lessons From The `v0.116.0` Replay
 
@@ -503,7 +570,9 @@ If a replayed commit introduces a field, request type, or behavior that breaks i
 
 Do not infer “what is next” from memory or recent history once the replay is underway.
 
-Use the `git log --reverse --oneline <old-base>..main` output as the source of truth, and keep a scratch ledger mapping source SHAs to replay SHAs and validation notes. This saves time after interruptions and makes it obvious whether the replay is actually complete.
+Use the captured `git log --reverse --oneline <old-base>..main` output as the source
+of truth, and keep the durable ledger described in Setup. This saves time after
+interruptions and makes it obvious whether the replay is actually complete.
 
 ### 8. Compare sides directly when conflicts get large
 
@@ -590,7 +659,10 @@ That short note in the ledger is cheaper than solving the same structural mismat
 
 Some failures are about the replayed code. Others are just properties of the current machine or sandbox.
 
-When you confirm an environment-only failure, record it once and stop re-learning it every few commits.
+When you confirm an environment-only failure using the
+[validation evidence rules](#6-validate-the-replayed-commit), record it once and
+stop re-learning it every few commits. Recheck when the relevant environment
+changes or a new failure has a different signature.
 
 ### 16. Anticipate hook and worktree constraints
 
@@ -599,6 +671,9 @@ If the repo uses commit hooks that run heavy lint or Bazel steps, or if the work
 The replay itself may validate cleanly while the default `git commit` path still fails for reasons that are unrelated to the replayed patch. Knowing that early helps you choose the right commit path without losing momentum.
 
 ## Suggested Command Sequence
+
+Apply the logging and ledger rules from Setup to formatter and validation
+commands below; redirection is omitted here for readability.
 
 For one commit:
 
@@ -610,7 +685,7 @@ git diff --cached --stat
 git diff --cached -- <interesting paths>
 cd codex-rs
 just fmt
-cargo test -p <targeted-crate> <targeted-test>
+just test -p <targeted-crate> <targeted-test>
 cd ..
 git commit -m "<intent subject>" -m "<optional replay note>"
 ```
@@ -633,6 +708,7 @@ Repeat until `git log --reverse --oneline <old-base>..main` has been fully repla
 The replay is complete when:
 
 - every commit in the source range has been replayed
+- the ledger records replay decisions and validation evidence, including log paths
 - each replayed commit has the correct message shape for its type
 - replay-specific compatibility fixes were folded into the appropriate replayed commits
 - every kept `[bug test]` commit either passes on the new base by itself or is immediately followed by the `[bug fix]` commit whose validation makes it pass
