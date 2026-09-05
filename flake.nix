@@ -161,7 +161,7 @@
               pkgs.llvmPackages.libclang.lib
               pkgs.python3
               pkgs.uv
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.libcap ];
+            ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libcap ];
             PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             # Use clang for BoringSSL compilation (avoids GCC 15 warnings-as-errors)
