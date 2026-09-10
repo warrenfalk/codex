@@ -39,17 +39,65 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-          codex-rs = pkgs.callPackage ./codex-rs {
+          bundledShellToolManifest =
+            builtins.fromJSON (builtins.readFile ./nix/bundled-shell-tools.json);
+          popplerUtils = pkgs."poppler-utils";
+          pythonExecutable = "${pkgs.python3}/bin/${pkgs.python3.meta.mainProgram or "python3"}";
+          rustToolchain = pkgs.rust-bin.stable.latest.minimal;
+          codex-rs-unwrapped = pkgs.callPackage ./codex-rs {
             inherit version;
             rustPlatform = pkgs.makeRustPlatform {
-              cargo = pkgs.rust-bin.stable.latest.minimal;
-              rustc = pkgs.rust-bin.stable.latest.minimal;
+              cargo = rustToolchain;
+              rustc = rustToolchain;
             };
+          };
+          # Keep a deliberately small, manifest-driven toolbelt in the package
+          # closure so the packaged CLI has a predictable baseline PATH.
+          bundledShellToolNames =
+            bundledShellToolManifest.generalPurpose
+            ++ bundledShellToolManifest.pdf;
+          bundledShellToolSources = {
+            file = "${pkgs.file}/bin/file";
+            git = "${pkgs.git}/bin/git";
+            gs = "${pkgs.ghostscript_headless}/bin/gs";
+            mutool = "${pkgs.mupdf}/bin/mutool";
+            pdfgrep = "${pkgs.pdfgrep}/bin/pdfgrep";
+            pdfimages = "${popplerUtils}/bin/pdfimages";
+            pdfinfo = "${popplerUtils}/bin/pdfinfo";
+            pdftocairo = "${popplerUtils}/bin/pdftocairo";
+            pdftohtml = "${popplerUtils}/bin/pdftohtml";
+            pdftoppm = "${popplerUtils}/bin/pdftoppm";
+            pdftotext = "${popplerUtils}/bin/pdftotext";
+            python = pythonExecutable;
+            python3 = pythonExecutable;
+            qpdf = "${pkgs.qpdf}/bin/qpdf";
+            rg = "${pkgs.ripgrep}/bin/rg";
+            ruby = "${pkgs.ruby}/bin/ruby";
+            sqlite3 = "${pkgs.sqlite}/bin/sqlite3";
+            strings = "${pkgs.binutils}/bin/strings";
+            xxd = "${pkgs.xxd}/bin/xxd";
+          };
+          bundledShellToolbelt = pkgs.runCommand "codex-bundled-shell-toolbelt" {} ''
+            mkdir -p "$out/bin"
+            ${pkgs.lib.concatMapStringsSep "\n" (name: ''
+              ln -s "${bundledShellToolSources.${name}}" "$out/bin/${name}"
+            '') bundledShellToolNames}
+          '';
+          codex = pkgs.symlinkJoin {
+            name = "codex-${version}";
+            paths = [ codex-rs-unwrapped ];
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram "$out/bin/codex" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [ bundledShellToolbelt ]}"
+            '';
           };
         in
         {
-          codex-rs = codex-rs;
-          default = codex-rs;
+          codex = codex;
+          codex-rs = codex;
+          codex-rs-unwrapped = codex-rs-unwrapped;
+          default = codex;
         }
       );
 

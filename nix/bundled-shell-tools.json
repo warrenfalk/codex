@@ -1,0 +1,26 @@
+{
+  "promptBlurb": "In the packaged Nix install, you can normally assume a curated baseline toolbelt is on `PATH`. If a command still is not available, fall back gracefully to available alternatives.",
+  "generalPurpose": [
+    "file",
+    "git",
+    "python",
+    "python3",
+    "rg",
+    "ruby",
+    "sqlite3",
+    "strings",
+    "xxd"
+  ],
+  "pdf": [
+    "gs",
+    "mutool",
+    "pdfgrep",
+    "pdfimages",
+    "pdfinfo",
+    "pdftocairo",
+    "pdftohtml",
+    "pdftoppm",
+    "pdftotext",
+    "qpdf"
+  ]
+}
