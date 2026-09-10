@@ -1,7 +1,11 @@
 {
+  alsa-lib ? null,
   cmake,
   curl,
   git,
+  glib,
+  gst_all_1,
+  libopus,
   llvmPackages,
   openssl,
   python3,
@@ -13,11 +17,19 @@
   version ? "0.0.0",
   ...
 }:
+let
+  nativeAudioLibraries = [
+    glib
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
+    libopus
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [ alsa-lib ];
+in
 rustPlatform.buildRustPackage (_: {
   env = {
     PKG_CONFIG_PATH =
       lib.makeSearchPathOutput "dev" "lib/pkgconfig"
-        ([ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]);
+        ([ openssl ] ++ nativeAudioLibraries ++ lib.optionals stdenv.isLinux [ libcap ]);
 
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
@@ -31,6 +43,7 @@ rustPlatform.buildRustPackage (_: {
   cargoLock.lockFile = ./Cargo.lock;
   doCheck = false;
   src = ./.;
+  buildInputs = nativeAudioLibraries;
 
   # Patch the workspace Cargo.toml so that cargo embeds the correct version in
   # CARGO_PKG_VERSION (which the binary reads via env!("CARGO_PKG_VERSION")).
