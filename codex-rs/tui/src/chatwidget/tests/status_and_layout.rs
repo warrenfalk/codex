@@ -707,7 +707,7 @@ async fn status_line_uses_secondary_fallback_for_unsupported_window() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("secondary usage 50% left".to_string())
+        Some("secondary usage limit 50%".to_string())
     );
 }
 
@@ -738,11 +738,11 @@ async fn status_line_legacy_limit_items_prefer_matching_windows() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("5h 60% left".to_string())
+        Some("5h 60%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 6% left".to_string())
+        Some("limit 6%".to_string())
     );
 }
 
@@ -773,11 +773,11 @@ async fn status_line_shows_secondary_non_weekly_when_primary_is_weekly() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 6% left".to_string())
+        Some("limit 6%".to_string())
     );
 }
 
@@ -808,7 +808,7 @@ async fn status_line_five_hour_item_omits_weekly_only_limit() {
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("weekly 91% left".to_string())
+        Some("limit 91%".to_string())
     );
 }
 
@@ -835,7 +835,7 @@ async fn status_line_single_monthly_primary_omits_weekly_limit_item() {
 
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly 65%".to_string())
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
@@ -870,7 +870,7 @@ async fn status_line_secondary_only_non_weekly_limit_omits_primary_limit_item() 
     );
     assert_eq!(
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
-        Some("monthly 65% left".to_string())
+        Some("monthly limit 65%".to_string())
     );
 }
 
@@ -3932,6 +3932,42 @@ async fn status_line_fast_mode_updates_visibility_on_model_change() {
 }
 
 #[tokio::test]
+async fn status_line_weekly_limit_shows_usage_and_time_remaining() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.local_settings.tui.status_line = Some(vec!["weekly-limit".to_string()]);
+    chat.rate_limit_snapshots_by_limit_id.insert(
+        "codex".to_string(),
+        RateLimitSnapshotDisplay {
+            limit_name: "codex".to_string(),
+            normal_model_slug: None,
+            captured_at: chrono::Local::now(),
+            primary: None,
+            secondary: Some(RateLimitWindowDisplay {
+                used_percent: 30.0,
+                time_remaining: Some("2d 2h".to_string()),
+                time_remaining_percent: Some(30.0),
+                resets_at: Some("later".to_string()),
+                window_minutes: Some(10_080),
+            }),
+            credits: None,
+            individual_limit: None,
+        },
+    );
+
+    chat.refresh_status_line();
+
+    assert_eq!(
+        status_line_text(&chat),
+        Some("limit 70%, time 30%".to_string())
+    );
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "weekly-limit should remain a valid status line item"
+    );
+}
+
+#[tokio::test]
 async fn status_line_fast_mode_footer_snapshot() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -3954,6 +3990,46 @@ async fn status_line_fast_mode_footer_snapshot() {
         .expect("draw fast-mode footer");
     assert_chatwidget_snapshot!(
         "status_line_fast_mode_footer",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn status_line_weekly_limit_pace_footer_snapshot() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.local_settings.tui.status_line = Some(vec!["weekly-limit".to_string()]);
+    chat.rate_limit_snapshots_by_limit_id.insert(
+        "codex".to_string(),
+        RateLimitSnapshotDisplay {
+            limit_name: "codex".to_string(),
+            normal_model_slug: None,
+            captured_at: chrono::Local::now(),
+            primary: None,
+            secondary: Some(RateLimitWindowDisplay {
+                used_percent: 30.0,
+                time_remaining: Some("2d 2h".to_string()),
+                time_remaining_percent: Some(30.0),
+                resets_at: Some("later".to_string()),
+                window_minutes: Some(10_080),
+            }),
+            credits: None,
+            individual_limit: None,
+        },
+    );
+    chat.refresh_status_line();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw weekly-limit footer");
+    assert_chatwidget_snapshot!(
+        "status_line_weekly_limit_pace_footer",
         normalized_backend_snapshot(terminal.backend())
     );
 }

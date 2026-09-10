@@ -273,6 +273,8 @@ mod status_command_tests;
 mod status_surface_previews;
 mod terminal_title;
 mod usage;
+#[path = "tests/weekly_limit_tests.rs"]
+mod weekly_limit;
 #[path = "tests/worktree_picker_tests.rs"]
 mod worktree_picker;
 

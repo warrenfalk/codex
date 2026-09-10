@@ -13,6 +13,7 @@ use crate::model_catalog::LUNA_RESERVE_MODEL;
 use crate::status::format_credit_micros;
 use crate::status::format_estimated_usd_micros;
 use crate::status::format_tokens_compact;
+use crate::status::render_status_limit_progress_bar;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::ConfigLayerSource;
 use codex_config::os_host_name;
@@ -754,13 +755,30 @@ impl ChatWidget {
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
                 self.status_line_limit_display(Some(window), &label)
             }
-            StatusLineItem::WeeklyLimit => {
+            StatusLineItem::WeeklyLimit | StatusLineItem::WeeklyLimitBar => {
                 let (window, is_secondary) = self
                     .rate_limit_snapshots_by_limit_id
                     .get("codex")
                     .and_then(weekly_status_window)?;
+                let remaining = (100.0 - window.used_percent).clamp(0.0, 100.0);
+                if item == StatusLineItem::WeeklyLimitBar {
+                    return Some(render_status_limit_progress_bar(
+                        remaining,
+                        window.time_remaining_percent,
+                    ));
+                }
                 let label = limit_label_for_window(window.window_minutes, is_secondary);
-                self.status_line_limit_display(Some(window), &label)
+                let label = if label == "weekly" {
+                    "limit".to_string()
+                } else {
+                    format!("{label} limit")
+                };
+                let mut value = format!("{label} {remaining:.0}%");
+                if let Some(time_remaining) = window.time_remaining_percent {
+                    let time_remaining = time_remaining.clamp(0.0, 100.0);
+                    value.push_str(&format!(", time {time_remaining:.0}%"));
+                }
+                Some(value)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
@@ -848,6 +866,7 @@ impl ChatWidget {
             StatusSurfacePreviewItem::ContextUsed => StatusLineItem::ContextUsed,
             StatusSurfacePreviewItem::FiveHourLimit => StatusLineItem::FiveHourLimit,
             StatusSurfacePreviewItem::WeeklyLimit => StatusLineItem::WeeklyLimit,
+            StatusSurfacePreviewItem::WeeklyLimitBar => StatusLineItem::WeeklyLimitBar,
             StatusSurfacePreviewItem::CodexVersion => StatusLineItem::CodexVersion,
             StatusSurfacePreviewItem::ContextWindowSize => StatusLineItem::ContextWindowSize,
             StatusSurfacePreviewItem::UsedTokens => StatusLineItem::UsedTokens,
