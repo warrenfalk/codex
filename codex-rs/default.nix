@@ -64,7 +64,7 @@ rustPlatform.buildRustPackage (_: {
   env = {
     PKG_CONFIG_PATH =
       lib.makeSearchPathOutput "dev" "lib/pkgconfig"
-        ([ openssl ] ++ nativeAudioLibraries ++ lib.optionals stdenv.isLinux [ libcap ]);
+        ([ openssl ] ++ nativeAudioLibraries ++ lib.optionals stdenv.hostPlatform.isLinux [ libcap ]);
 
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
     RUSTY_V8_ARCHIVE = rustyV8Archive;
@@ -96,7 +96,7 @@ rustPlatform.buildRustPackage (_: {
     llvmPackages.libclang.lib
     openssl
     pkg-config
-  ] ++ lib.optionals stdenv.isLinux [
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [
     libcap
   ];
 
