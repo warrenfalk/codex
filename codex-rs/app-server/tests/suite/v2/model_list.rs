@@ -157,7 +157,7 @@ async fn list_models_includes_hidden_models() -> Result<()> {
 }
 
 #[tokio::test]
-async fn list_models_uses_chatgpt_remote_catalog_as_source_of_truth() -> Result<()> {
+async fn list_models_uses_chatgpt_remote_catalog_plus_trusted_profiles() -> Result<()> {
     let server = MockServer::start().await;
     let remote_models = [json!("2030-01-01T00:00:00Z"), serde_json::Value::Null]
         .into_iter()
@@ -253,6 +253,7 @@ openai_base_url = "{server_uri}/v1"
     } = serde_json::from_value(response.result)?;
     let mut expected_presets: Vec<ModelPreset> =
         remote_models.into_iter().map(Into::into).collect();
+    expected_presets.push(codex_models_manager::model_info::kimi_k3_model_info().into());
     ModelPreset::mark_default_by_picker_visibility(&mut expected_presets);
     let mut expected_items = expected_presets
         .iter()

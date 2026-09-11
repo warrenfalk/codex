@@ -208,7 +208,14 @@ impl Session {
         }
 
         let session_telemetry = self.services.session_telemetry.clone();
-        let websocket_connect_timeout = self.provider().await.websocket_connect_timeout();
+        let provider = match self.provider().await {
+            Ok(provider) => provider,
+            Err(error) => {
+                warn!("startup prewarm could not resolve the active inference profile: {error}");
+                return;
+            }
+        };
+        let websocket_connect_timeout = provider.websocket_connect_timeout();
         let started_at = Instant::now();
         let startup_prewarm_session = Arc::clone(self);
         let startup_prewarm = tokio::spawn(
@@ -316,7 +323,11 @@ async fn schedule_startup_prewarm_inner(
     let responses_metadata = session
         .responses_metadata(&startup_turn_context, CodexResponsesRequestKind::Prewarm)
         .await;
-    let mut client_session = session.services.model_client.new_session();
+    let mut client_session = session
+        .services
+        .model_client
+        .for_provider(startup_turn_context.provider.clone())
+        .new_session();
     let websocket_warmup_started_at = Instant::now();
     client_session
         .prewarm_websocket(

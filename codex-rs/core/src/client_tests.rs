@@ -123,6 +123,25 @@ fn test_model_client_with_thread_id(
     )
 }
 
+#[test]
+fn model_client_session_tracks_its_provider() {
+    let client = test_model_client(SessionSource::Exec);
+    let original_provider = Arc::clone(&client.state.provider);
+    let alternate_provider = create_model_provider(
+        create_oss_provider_with_base_url("https://alternate.example.com/v1", WireApi::Responses),
+        /*auth_manager*/ None,
+    );
+
+    let original_session = client.new_session();
+    let alternate_session = client
+        .for_provider(Arc::clone(&alternate_provider))
+        .new_session();
+
+    assert!(original_session.uses_provider(&original_provider));
+    assert!(!original_session.uses_provider(&alternate_provider));
+    assert!(alternate_session.uses_provider(&alternate_provider));
+}
+
 #[tokio::test]
 async fn compact_uses_bearer_after_agent_identity_session_fallback() -> anyhow::Result<()> {
     let server = MockServer::start().await;

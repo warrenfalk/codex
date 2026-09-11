@@ -1,16 +1,21 @@
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::openai_models::ApplyPatchToolType;
 use codex_protocol::openai_models::ConfigShellToolType;
+use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::openai_models::TruncationMode;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::WebSearchToolType;
 use codex_protocol::openai_models::default_input_modalities;
 
 use crate::config::ModelsManagerConfig;
+use codex_inference_profiles::KIMI_K3_MODEL_ID;
 use codex_utils_output_truncation::approx_bytes_for_tokens;
 use tracing::warn;
 
@@ -142,6 +147,37 @@ fn is_h1_heading(line: &str) -> bool {
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
+    base_model_info(slug)
+}
+
+pub fn kimi_k3_model_info() -> ModelInfo {
+    let mut model = base_model_info(KIMI_K3_MODEL_ID);
+    model.display_name = "Kimi K3".to_string();
+    model.description = Some(
+        "Moonshot AI flagship model with deep reasoning and a 1M-token context window.".to_string(),
+    );
+    model.default_reasoning_level = Some(ReasoningEffort::Max);
+    model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Max,
+        description: "Kimi K3's supported reasoning level".to_string(),
+    }];
+    model.shell_type = ConfigShellToolType::UnifiedExec;
+    model.visibility = ModelVisibility::List;
+    model.supported_in_api = true;
+    model.priority = 50;
+    model.supports_reasoning_summary_parameter = true;
+    model.default_reasoning_summary = ReasoningSummary::None;
+    model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+    model.truncation_policy = TruncationPolicyConfig::tokens(/*limit*/ 10_000);
+    model.context_window = Some(1_048_576);
+    model.max_context_window = Some(1_048_576);
+    model.comp_hash = Some("kimi-k3".to_string());
+    model.input_modalities = vec![InputModality::Text, InputModality::Image];
+    model.used_fallback_model_metadata = false;
+    model
+}
+
+fn base_model_info(slug: &str) -> ModelInfo {
     ModelInfo {
         slug: slug.to_string(),
         display_name: slug.to_string(),

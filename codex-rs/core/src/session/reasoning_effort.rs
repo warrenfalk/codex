@@ -70,7 +70,7 @@ impl Session {
     ) -> Option<ReasoningEffort> {
         if !self.enabled(Feature::ReasoningEffortOverride)
             || !settings.model_info.use_responses_lite
-            || !self.provider().await.is_openai()
+            || !self.provider().await.ok()?.is_openai()
         {
             return None;
         }

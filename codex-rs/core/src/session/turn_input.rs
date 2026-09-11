@@ -97,6 +97,10 @@ impl PreparedTurnInputSettings {
         } else {
             let updates = thread_settings::prepare_update(thread_settings);
             session
+                .validate_inference_profile_settings(&updates)
+                .await
+                .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+            session
                 .preview_settings(&updates)
                 .await
                 .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;

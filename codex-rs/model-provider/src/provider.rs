@@ -328,11 +328,25 @@ pub fn create_model_provider(
     }
 }
 
+/// Creates a configured provider with explicit runtime capability bounds.
+pub fn create_model_provider_with_capabilities(
+    provider_info: ModelProviderInfo,
+    auth_manager: Option<Arc<AuthManager>>,
+    capabilities: ProviderCapabilities,
+) -> SharedModelProvider {
+    Arc::new(ConfiguredModelProvider::new_with_capabilities(
+        provider_info,
+        auth_manager,
+        capabilities,
+    ))
+}
+
 /// Runtime model provider backed by configured `ModelProviderInfo`.
 #[derive(Clone, Debug)]
 struct ConfiguredModelProvider {
     info: ModelProviderInfo,
     auth_manager: Option<Arc<AuthManager>>,
+    capabilities: Option<ProviderCapabilities>,
 }
 
 impl ConfiguredModelProvider {
@@ -341,6 +355,20 @@ impl ConfiguredModelProvider {
         Self {
             info: provider_info,
             auth_manager,
+            capabilities: None,
+        }
+    }
+
+    fn new_with_capabilities(
+        provider_info: ModelProviderInfo,
+        auth_manager: Option<Arc<AuthManager>>,
+        capabilities: ProviderCapabilities,
+    ) -> Self {
+        let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
+        Self {
+            info: provider_info,
+            auth_manager,
+            capabilities: Some(capabilities),
         }
     }
 }
@@ -351,6 +379,10 @@ impl ModelProvider for ConfiguredModelProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
+        if let Some(capabilities) = self.capabilities {
+            return capabilities;
+        }
+
         let remote_compaction = if self.info.is_openai()
             || is_azure_responses_provider(&self.info.name, self.info.base_url.as_deref())
         {
@@ -688,6 +720,24 @@ mod tests {
             let provider = create_model_provider(provider_info, /*auth_manager*/ None);
             assert_eq!(provider.capabilities().remote_compaction, expected);
         }
+    }
+
+    #[test]
+    fn configured_provider_uses_explicit_capabilities() {
+        let capabilities = ProviderCapabilities {
+            namespace_tools: true,
+            image_generation: false,
+            web_search: false,
+            external_web_access: false,
+            remote_compaction: RemoteCompactionSupport::Unsupported,
+        };
+        let provider = create_model_provider_with_capabilities(
+            ModelProviderInfo::default(),
+            /*auth_manager*/ None,
+            capabilities,
+        );
+
+        assert_eq!(provider.capabilities(), capabilities);
     }
 
     #[test]

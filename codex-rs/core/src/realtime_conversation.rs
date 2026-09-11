@@ -1178,7 +1178,10 @@ async fn prepare_realtime_start(
     sess: &Arc<Session>,
     params: ConversationStartParams,
 ) -> CodexResult<PreparedRealtimeConversationStart> {
-    let provider = sess.provider().await;
+    let provider = sess
+        .provider()
+        .await
+        .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
     let auth_manager = sess
         .services
         .model_client

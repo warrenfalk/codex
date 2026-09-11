@@ -56,6 +56,7 @@ use codex_config::types::ResumeCwdMode;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_features::Feature;
+use codex_inference_profiles::inference_profile_for_model;
 use codex_login::AuthConfig;
 use codex_login::default_client::originator;
 use codex_login::default_client::set_default_client_residency_requirement;
@@ -1239,7 +1240,7 @@ async fn run_ratatui_app(
     // Workload identity bypasses interactive login; every other provider uses account/read.
     let requires_openai_auth = startup_account
         .as_ref()
-        .is_some_and(|account| account.requires_openai_auth);
+        .is_some_and(|account| requires_openai_login(&initial_config, account));
     let should_show_onboarding = should_show_onboarding(
         login_status,
         requires_openai_auth,
@@ -2104,6 +2105,15 @@ fn should_show_login_screen(login_status: LoginStatus, requires_openai_auth: boo
     login_status == LoginStatus::NotAuthenticated
 }
 
+fn requires_openai_login(config: &Config, account: &GetAccountResponse) -> bool {
+    account.requires_openai_auth
+        && config
+            .model
+            .as_deref()
+            .and_then(inference_profile_for_model)
+            .is_none()
+}
+
 fn should_show_bedrock_setup_wizard(
     login_status: LoginStatus,
     requires_openai_auth: bool,
@@ -2123,7 +2133,6 @@ fn should_show_bedrock_setup_wizard(
             .auth_config()
             .is_login_method_allowed(ForcedLoginMethod::Api)
 }
-
 #[cfg(test)]
 #[path = "daemon_startup_tests.rs"]
 mod daemon_startup_tests;
@@ -2139,6 +2148,7 @@ pub(crate) mod tests {
     use codex_app_server_protocol::ThreadStartParams;
     use codex_app_server_protocol::ThreadStartResponse;
     use codex_config::config_toml::ProjectConfig;
+    use codex_inference_profiles::KIMI_K3_MODEL_ID;
     use codex_utils_absolute_path::test_support::PathExt;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -2170,18 +2180,23 @@ requires_openai_auth = {requires_openai_auth}
             )?;
             let server_config = build_config(&home).await?;
             let mut server = AppServerSession::new(
-                AppServerClient::InProcess(start_test_embedded_app_server(server_config).await?),
+                AppServerClient::InProcess(
+                    start_test_embedded_app_server(server_config.clone()).await?,
+                ),
                 ThreadParamsMode::Embedded,
             );
             let (login_status, account) = get_login_status(&mut server).await?;
             assert_eq!(account.requires_openai_auth, requires_openai_auth);
             assert_eq!(
-                should_show_login_screen(login_status, account.requires_openai_auth),
+                should_show_login_screen(
+                    login_status,
+                    requires_openai_login(&server_config, &account)
+                ),
                 requires_openai_auth
             );
             assert!(!should_show_login_screen(
                 LoginStatus::AuthMode(AuthMode::Chatgpt),
-                account.requires_openai_auth
+                requires_openai_login(&server_config, &account)
             ));
             server.shutdown().await?;
         }
@@ -2267,6 +2282,23 @@ requires_openai_auth = {requires_openai_auth}
             );
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn kimi_profile_skips_openai_login() -> std::io::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let mut config = build_config(&temp_dir).await?;
+        config.model = Some(KIMI_K3_MODEL_ID.to_string());
+        let account = GetAccountResponse {
+            account: None,
+            requires_openai_auth: true,
+        };
+
+        assert!(!should_show_login_screen(
+            LoginStatus::NotAuthenticated,
+            requires_openai_login(&config, &account)
+        ));
         Ok(())
     }
 

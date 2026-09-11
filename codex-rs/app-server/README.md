@@ -54,3 +54,7 @@ During an active turn, the note is appended to that turn and emits `item/complet
 Experimental `turn/startModelOnly` starts an idle turn using the target thread's model-visible history with no tools, hooks, skill/plugin injection, memory startup, or automatic title generation. It accepts `threadId`, `input`, `model`, optional `effort`, and optional `outputSchema`, and returns the initial `turn` with the usual turn/item notifications. Parent-owned Multi-Agent V2 subagents reject direct turns.
 
 The input and output become ordinary history on the target thread. Clients needing a hidden transformation must use a separate ephemeral thread, as the TUI's [prompt rewrite shortcut](../../wf_features/prompt-rewrite-shortcut.md) does.
+
+## Injected history notifications
+
+`thread/inject_items` appends Responses items to a loaded thread's durable model history without starting a turn. Items that also appear in the visible transcript emit standard `item/completed` notifications to all thread subscribers, without turn lifecycle notifications. Hidden context and history-only tool outputs emit no visible item notifications. The TUI uses these server notifications for side-conversation summaries.
