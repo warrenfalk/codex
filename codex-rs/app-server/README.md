@@ -26,3 +26,9 @@ See [the feature contract](../../wf_features/app-server-firehose-subscription.md
 ## Trust sandbox approval policies
 
 `approvalPolicy` also accepts `"trust-sandbox"` and `"trust-sandbox-timeout"`. Both trust managed restricted sandbox enforcement for dangerous command-shape fallback heuristics while still prompting for sandbox overrides and explicit exec-policy prompt rules. `"trust-sandbox-timeout"` additionally auto-approves sandbox-override command prompts after 300 seconds without persisting session approval or policy amendments.
+
+## Project environment loading
+
+Local `thread/shellCommand` calls accept `projectEnv: "auto" | "bypass"`, defaulting to `"auto"`. Auto mode loads the cwd's direnv environment and fails before launch if loading fails; bypass skips loading for that command. The top-level `disable_project_env` config key disables loading entirely.
+
+`thread/projectEnv/read` accepts `{ "threadId": "..." }` and returns the canonical local cwd's current status. `thread/projectEnv/statusChanged` reports changes separately from thread lifecycle notifications, using `disabled`, `none`, `building`, `ready`, or `failed` states. Standalone `command/exec` is unaffected. See [the feature contract](../../wf_features/project-environment-loading.md) for environment precedence, cancellation, and status payload expectations.

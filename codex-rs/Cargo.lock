@@ -2214,6 +2214,7 @@ dependencies = [
  "codex-models-manager",
  "codex-otel",
  "codex-plugin",
+ "codex-project-env",
  "codex-protocol",
  "codex-queue-extension",
  "codex-rmcp-client",
@@ -3004,6 +3005,7 @@ dependencies = [
  "codex-network-proxy",
  "codex-otel",
  "codex-plugin",
+ "codex-project-env",
  "codex-prompts",
  "codex-protocol",
  "codex-response-debug-context",
@@ -4164,6 +4166,23 @@ version = "0.154.0"
 dependencies = [
  "libc",
  "pretty_assertions",
+]
+
+[[package]]
+name = "codex-project-env"
+version = "0.154.0"
+dependencies = [
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "futures",
+ "pretty_assertions",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
