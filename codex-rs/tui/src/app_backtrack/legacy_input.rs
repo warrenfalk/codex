@@ -53,6 +53,19 @@ impl App {
     ) -> Result<bool> {
         match event {
             TuiEvent::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            }) if modifiers.contains(KeyModifiers::CONTROL) && c.eq_ignore_ascii_case(&'i') => {
+                self.copy_selected_backtrack_prompt_with(|text| {
+                    crate::clipboard_copy::copy_to_clipboard(
+                        text,
+                        crate::clipboard_copy::CopyFormat::PlainText,
+                    )
+                });
+            }
+            TuiEvent::Key(KeyEvent {
                 code: KeyCode::Esc | KeyCode::Left,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
