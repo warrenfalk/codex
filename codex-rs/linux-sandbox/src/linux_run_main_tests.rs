@@ -383,6 +383,27 @@ fn cleanup_synthetic_mount_targets_removes_transient_file_after_concurrent_owner
 }
 
 #[test]
+fn cleanup_synthetic_mount_targets_reclaims_file_from_stale_synthetic_owner() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let empty_file = temp_dir.path().join("config.lock");
+    std::fs::write(&empty_file, "").expect("write orphaned synthetic file");
+    let marker_dir = synthetic_mount_marker_dir(&empty_file);
+    std::fs::create_dir_all(&marker_dir).expect("create marker directory");
+    std::fs::write(
+        marker_dir.join(libc::pid_t::MAX.to_string()),
+        SYNTHETIC_MOUNT_MARKER_SYNTHETIC,
+    )
+    .expect("write stale synthetic marker");
+    let metadata = std::fs::symlink_metadata(&empty_file).expect("stat empty file");
+    let target = crate::bwrap::SyntheticMountTarget::existing_empty_file(&empty_file, &metadata);
+
+    let registrations = register_synthetic_mount_targets(&[target]);
+    cleanup_synthetic_mount_targets(&registrations);
+
+    assert!(!empty_file.exists());
+}
+
+#[test]
 fn cleanup_synthetic_mount_targets_preserves_real_pre_existing_empty_file() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let empty_file = temp_dir.path().join(".git");
