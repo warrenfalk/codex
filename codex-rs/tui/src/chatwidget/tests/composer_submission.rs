@@ -467,6 +467,7 @@ async fn submission_includes_configured_active_permission_profile() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let expected_permission_profile: PermissionProfile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![
@@ -541,6 +542,7 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let expected_permission_profile: PermissionProfile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Unrestricted,
     };

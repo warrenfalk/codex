@@ -29,6 +29,10 @@ use tokio::process::Child;
 mod device_access;
 
 #[cfg(target_os = "linux")]
+#[path = "sandbox_pid_namespace_tests.rs"]
+mod pid_namespace;
+
+#[cfg(target_os = "linux")]
 #[path = "sandbox_git_config_tests.rs"]
 mod git_config;
 

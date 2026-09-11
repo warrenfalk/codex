@@ -137,8 +137,7 @@ pub(crate) async fn with_git_metadata_write_access(
         }
     }
 
-    PermissionProfile::from_runtime_permissions_with_enforcement(
-        permission_profile.enforcement(),
+    permission_profile.with_runtime_permissions(
         &file_system_policy,
         permission_profile.network_sandbox_policy(),
     )

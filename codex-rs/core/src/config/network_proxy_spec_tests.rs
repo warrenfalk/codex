@@ -300,6 +300,7 @@ fn managed_unrestricted_profile_allows_domain_expansion() {
         ..Default::default()
     };
     let permission_profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         file_system: ManagedFileSystemPermissions::Unrestricted,
         network: NetworkSandboxPolicy::Restricted,
     };

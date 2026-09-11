@@ -39,6 +39,8 @@ pub mod openai_models;
 pub mod parse_command;
 mod permission_profile_intersection;
 mod permission_profile_snapshot;
+mod pid_namespace;
+pub use pid_namespace::PidNamespace;
 pub mod permissions;
 pub mod plan_tool;
 pub mod protocol;

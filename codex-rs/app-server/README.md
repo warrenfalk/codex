@@ -58,3 +58,7 @@ The input and output become ordinary history on the target thread. Clients needi
 ## Injected history notifications
 
 `thread/inject_items` appends Responses items to a loaded thread's durable model history without starting a turn. Items that also appear in the visible transcript emit standard `item/completed` notifications to all thread subscribers, without turn lifecycle notifications. Hidden context and history-only tool outputs emit no visible item notifications. The TUI uses these server notifications for side-conversation summaries.
+
+## Linux PID namespaces
+
+Permission profiles can configure Linux bubblewrap process visibility with `pid_namespace = "host"` or `"isolated"` (the default). The setting inherits through `extends` and is applied by the executor when the profile is selected. Host process visibility retains the profile's filesystem and network restrictions; see [the feature contract](../../wf_features/linux-pid-namespace.md).

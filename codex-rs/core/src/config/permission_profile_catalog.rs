@@ -78,9 +78,6 @@ pub(super) fn permission_profile_catalog_from_permissions(
                 /*workspace_write*/ None,
                 &mut warnings,
             )
-            .map(|(file_system, network)| {
-                PermissionProfile::from_runtime_permissions(&file_system, network)
-            })
             .is_ok_and(|permission_profile| {
                 permission_profile_is_allowed(config_layer_stack, id, &permission_profile)
             });

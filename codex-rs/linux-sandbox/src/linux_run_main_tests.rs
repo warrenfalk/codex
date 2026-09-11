@@ -213,6 +213,37 @@ fn proxy_only_mode_takes_precedence_over_full_network_policy() {
 }
 
 #[test]
+fn host_pid_namespace_preserves_other_bubblewrap_flags() {
+    use codex_protocol::PidNamespace;
+
+    for policy in [
+        read_only_file_system_policy(),
+        FileSystemSandboxPolicy::unrestricted(),
+    ] {
+        for network_mode in [BwrapNetworkMode::Isolated, BwrapNetworkMode::ProxyOnly] {
+            let args = |pid_namespace| {
+                build_bwrap_argv(
+                    vec!["/bin/true".to_string()],
+                    &policy,
+                    Path::new("/"),
+                    Path::new("/"),
+                    BwrapOptions {
+                        pid_namespace,
+                        network_mode,
+                        ..Default::default()
+                    },
+                )
+                .expect("build bubblewrap arguments")
+                .args
+            };
+            let mut expected = args(PidNamespace::Isolated);
+            expected.retain(|arg| arg != "--unshare-pid");
+            assert_eq!(args(PidNamespace::Host), expected);
+        }
+    }
+}
+
+#[test]
 fn split_only_filesystem_policy_requires_direct_runtime_enforcement() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");

@@ -66,6 +66,7 @@ fn permission_profile_sandbox_tag(
         PermissionProfile::Managed {
             file_system,
             network,
+            ..
         } => {
             let file_system_policy = file_system.to_sandbox_policy();
             if !should_require_platform_sandbox(

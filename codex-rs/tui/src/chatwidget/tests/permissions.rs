@@ -137,6 +137,7 @@ async fn permission_discovery_failure_can_retry_and_empty_catalog_keeps_current_
 
 fn app_server_workspace_write_profile(extra_root: AbsolutePathBuf) -> PermissionProfile {
     PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![
@@ -483,6 +484,7 @@ async fn preset_matching_does_not_treat_non_cwd_writable_profile_as_read_only() 
         .find(|p| p.id == "read-only")
         .expect("read-only preset exists");
     let current_profile: PermissionProfile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![

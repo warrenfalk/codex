@@ -261,6 +261,7 @@ fn permission_profile_toml_from_file_system_policy(
         insert_filesystem_permission_toml(&mut filesystem.entries, entry);
     }
     PermissionProfileToml {
+        pid_namespace: None,
         description: None,
         extends: None,
         workspace_roots: None,
@@ -381,12 +382,12 @@ pub(crate) fn network_proxy_config_for_profile_selection(
     ))
 }
 
-/// Compiles a named permission profile into filesystem and network policies.
+/// Compiles a named permission profile into runtime permissions.
 pub fn compile_permission_profile(
     permissions: &PermissionsToml,
     profile_name: &str,
     startup_warnings: &mut Vec<String>,
-) -> io::Result<(FileSystemSandboxPolicy, NetworkSandboxPolicy)> {
+) -> io::Result<PermissionProfile> {
     let profile = resolve_permission_profile(permissions, profile_name)?;
     let mut file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(Vec::new());
     let base_network_sandbox_policy = NetworkSandboxPolicy::Restricted;
@@ -456,7 +457,11 @@ pub fn compile_permission_profile(
     }
     let network_sandbox_policy =
         compile_network_sandbox_policy(profile.network.as_ref(), base_network_sandbox_policy);
-    Ok((file_system_sandbox_policy, network_sandbox_policy))
+    Ok(PermissionProfile::from_runtime_permissions(
+        &file_system_sandbox_policy,
+        network_sandbox_policy,
+    )
+    .with_pid_namespace(profile.pid_namespace.unwrap_or_default()))
 }
 
 pub(crate) fn compile_permission_profile_selection(
@@ -464,9 +469,9 @@ pub(crate) fn compile_permission_profile_selection(
     profile_name: &str,
     workspace_write: Option<&SandboxWorkspaceWrite>,
     startup_warnings: &mut Vec<String>,
-) -> io::Result<(FileSystemSandboxPolicy, NetworkSandboxPolicy)> {
+) -> io::Result<PermissionProfile> {
     if let Some(permission_profile) = builtin_permission_profile(profile_name, workspace_write) {
-        return Ok(permission_profile.to_runtime_permissions());
+        return Ok(permission_profile);
     }
     reject_unknown_builtin_permission_profile(profile_name)?;
 

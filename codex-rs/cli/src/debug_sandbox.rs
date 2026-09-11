@@ -290,7 +290,7 @@ async fn run_command_under_sandbox(
         } else {
             permission_profile.network_sandbox_policy()
         };
-        permission_profile = PermissionProfile::from_runtime_permissions(&file_system, network);
+        permission_profile = permission_profile.with_runtime_permissions(&file_system, network);
     }
     let use_legacy_landlock = sandbox_state.as_ref().map_or_else(
         || config.features.use_legacy_landlock(),

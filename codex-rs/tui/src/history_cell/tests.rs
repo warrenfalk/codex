@@ -1911,6 +1911,7 @@ fn session_header_title_marks_custom_builds() {
 #[test]
 fn yolo_mode_includes_managed_full_access_profiles() {
     let permission_profile: PermissionProfile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Enabled,
         file_system: ManagedFileSystemPermissions::Unrestricted,
     };

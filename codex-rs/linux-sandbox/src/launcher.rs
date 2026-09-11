@@ -36,7 +36,14 @@ struct SystemBwrapCapabilities {
 }
 
 pub(crate) fn exec_bwrap(mut argv: Vec<String>, preserved_files: Vec<File>) -> ! {
-    argv.insert(1, "--as-pid-1".to_string());
+    // The filtered reaper can be PID 1 only when bubblewrap creates a namespace.
+    if argv
+        .iter()
+        .take_while(|arg| *arg != "--")
+        .any(|arg| arg == "--unshare-pid")
+    {
+        argv.insert(1, "--as-pid-1".to_string());
+    }
 
     match preferred_bwrap_launcher() {
         BubblewrapLauncher::System(launcher) => {

@@ -5657,6 +5657,7 @@ async fn active_profile_update_rebuilds_network_proxy_config() -> std::io::Resul
             (
                 "locked-down".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,
@@ -5673,6 +5674,7 @@ async fn active_profile_update_rebuilds_network_proxy_config() -> std::io::Resul
             (
                 "web-enabled".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,

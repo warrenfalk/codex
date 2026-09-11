@@ -3021,6 +3021,14 @@
         "network": {
           "$ref": "#/definitions/NetworkToml"
         },
+        "pid_namespace": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PidNamespace"
+            }
+          ],
+          "description": "Linux PID namespace. Inherited when omitted; defaults to `isolated`."
+        },
         "workspace_roots": {
           "$ref": "#/definitions/WorkspaceRootsToml"
         }
@@ -3037,6 +3045,25 @@
         "pragmatic"
       ],
       "type": "string"
+    },
+    "PidNamespace": {
+      "description": "PID namespace used by the Linux bubblewrap sandbox. Other platforms ignore it.",
+      "oneOf": [
+        {
+          "description": "Create a fresh namespace for each sandbox invocation.",
+          "enum": [
+            "isolated"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Share the executor's existing namespace, including any enclosing container.",
+          "enum": [
+            "host"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "PluginConfig": {
       "additionalProperties": false,

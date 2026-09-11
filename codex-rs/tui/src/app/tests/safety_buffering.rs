@@ -715,6 +715,7 @@ goals = true
         let extra_root =
             AbsolutePathBuf::resolve_path_against_base("extra", app.config.cwd.as_path());
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![

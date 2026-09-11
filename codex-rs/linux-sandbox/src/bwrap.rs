@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::linux_run_main::synthetic_mount_registry_root;
+use codex_protocol::PidNamespace;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
 use codex_protocol::permissions::is_protected_metadata_name;
@@ -60,6 +61,8 @@ const MAX_UNREADABLE_GLOB_MATCHES: usize = 8192;
 /// Options that control how bubblewrap is invoked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BwrapOptions {
+    /// Whether to create a new PID namespace or share the executor's namespace.
+    pub pid_namespace: PidNamespace,
     /// Whether to mount a fresh `/proc` inside the sandbox.
     ///
     /// This is the secure default, but some restrictive container environments
@@ -77,6 +80,7 @@ pub(crate) struct BwrapOptions {
 impl Default for BwrapOptions {
     fn default() -> Self {
         Self {
+            pid_namespace: PidNamespace::Isolated,
             mount_proc: true,
             network_mode: BwrapNetworkMode::FullAccess,
             glob_scan_max_depth: None,
@@ -283,9 +287,11 @@ fn create_bwrap_flags_full_filesystem(command: Vec<String>, options: BwrapOption
         // Always enter a fresh user namespace so root inside a container does
         // not need ambient CAP_SYS_ADMIN to create the remaining namespaces.
         "--unshare-user".to_string(),
-        "--unshare-pid".to_string(),
-        "--unshare-ipc".to_string(),
     ];
+    if options.pid_namespace.is_isolated() {
+        args.push("--unshare-pid".to_string());
+    }
+    args.push("--unshare-ipc".to_string());
     if options.network_mode.should_unshare_network() {
         args.push("--unshare-net".to_string());
     }
@@ -333,7 +339,9 @@ fn create_bwrap_flags(
     // Request a user namespace explicitly rather than relying on bubblewrap's
     // auto-enable behavior, which is skipped when the caller runs as uid 0.
     args.push("--unshare-user".to_string());
-    args.push("--unshare-pid".to_string());
+    if options.pid_namespace.is_isolated() {
+        args.push("--unshare-pid".to_string());
+    }
     args.push("--unshare-ipc".to_string());
     if options.network_mode.should_unshare_network() {
         args.push("--unshare-net".to_string());

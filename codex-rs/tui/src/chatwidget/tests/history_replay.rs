@@ -569,6 +569,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
 
     let expected_cwd = test_path_buf("/home/user/sub-agent").abs();
     let expected_app_server_permission_profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![
