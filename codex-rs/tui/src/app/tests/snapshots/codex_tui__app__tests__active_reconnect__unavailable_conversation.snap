@@ -6,4 +6,4 @@ expression: "format!(\"{history}\\n{}\", render_bottom_popup(&app.chat_widget, 8
 • Reconnected. No input was resent. Review uncertain submissions before retrying; recovered queues remain paused.
 › unavailable draft
 
-  gpt-test default · /tmp/project
+  gpt-test default · /tmp/project · [R]
