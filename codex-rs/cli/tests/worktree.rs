@@ -211,6 +211,11 @@ trust_level = "trusted"
     let mut env: HashMap<String, String> = std::env::vars().collect();
     env.insert("CODEX_HOME".into(), home.display().to_string());
     env.insert("CODEX_SQLITE_HOME".into(), home.display().to_string());
+    // This fixture captures the worktree turn's first model request.
+    env.insert(
+        app_test_support::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR.into(),
+        "1".into(),
+    );
     env.insert("NO_PROXY".into(), "127.0.0.1,localhost".into());
     env.insert("no_proxy".into(), "127.0.0.1,localhost".into());
     env.insert("TERM".into(), "xterm-256color".into());

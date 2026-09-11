@@ -4997,7 +4997,7 @@ fn text_block(s: &str) -> serde_json::Value {
 }
 
 async fn build_test_config(codex_home: &Path) -> Config {
-    ConfigBuilder::without_managed_config_for_tests()
+    let mut config = ConfigBuilder::without_managed_config_for_tests()
         .codex_home(codex_home.to_path_buf())
         .harness_overrides(ConfigOverrides {
             model: Some("gpt-5.5".to_string()),
@@ -5005,7 +5005,9 @@ async fn build_test_config(codex_home: &Path) -> Config {
         })
         .build()
         .await
-        .expect("load default test config")
+        .expect("load default test config");
+    config.auto_thread_title = false;
+    config
 }
 
 fn session_telemetry(
@@ -6620,6 +6622,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         thread_settings_persistence: Semaphore::new(/*permits*/ 1),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
+        thread_name_update_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         guardian_context_mode: GuardianContextMode::from_features(&config.features),
         windows_sandbox_proxy_settings_mode:
@@ -9018,6 +9021,7 @@ where
         state: Mutex::new(state),
         thread_settings_persistence: Semaphore::new(/*permits*/ 1),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
+        thread_name_update_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         guardian_context_mode: GuardianContextMode::from_features(&config.features),
         windows_sandbox_proxy_settings_mode:
