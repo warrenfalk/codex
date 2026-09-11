@@ -21,10 +21,16 @@ behavior, user value, edge cases, and validation expectations; do not describe t
 implementation, architecture, or code layout. Feature documents are not required for bug fixes or
 maintenance-only changes that do not add a feature.
 
-Bug fixes use a paired commit structure instead of feature documents. Create two adjacent commits:
-first a `[bug test] ...` commit containing the failing regression test that demonstrates the bug,
-then a `[bug fix] ...` commit containing the fix. Keep the pair test-first and adjacent in history
-so replaying or dropping the fix remains straightforward during future rebases.
+Upstream or non-fork bug fixes use a paired commit structure instead of feature documents. Create
+two adjacent commits: first a `[bug test] ...` commit containing the failing regression test that
+demonstrates the bug, then a `[bug fix] ...` commit containing the fix. Keep the pair test-first
+and adjacent in history so replaying or dropping the fix remains straightforward during future
+rebases.
+
+Fixes to fork-local features do not use `[bug test]` / `[bug fix]` pairs. Commit the regression
+test and fix together as a `fixup!` commit targeting the fork feature commit that introduced or
+owns the behavior. If the observable behavior changes, update that feature's `wf_features/`
+document in the same fixup.
 
 # Rust/codex-rs
 
