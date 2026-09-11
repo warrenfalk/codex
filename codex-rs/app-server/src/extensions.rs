@@ -476,15 +476,14 @@ mod tests {
             .await
             .expect("timed out waiting for warning notification")
             .expect("outgoing channel closed unexpectedly");
-        let OutgoingEnvelope::ToConnection {
-            connection_id,
+        let OutgoingEnvelope::ToConnections {
+            connection_ids,
             message,
-            write_complete_tx: _,
         } = envelope
         else {
             panic!("expected connection-targeted warning notification");
         };
-        assert_eq!(connection_id, subscribed_connection);
+        assert_eq!(connection_ids, vec![subscribed_connection]);
         let OutgoingMessage::AppServerNotification(envelope) = message else {
             panic!("expected app-server warning notification");
         };
@@ -535,15 +534,14 @@ mod tests {
             .await
             .expect("timed out waiting for warning notification")
             .expect("outgoing channel closed unexpectedly");
-        let OutgoingEnvelope::ToConnection {
-            connection_id,
+        let OutgoingEnvelope::ToConnections {
+            connection_ids,
             message,
-            write_complete_tx: _,
         } = envelope
         else {
             panic!("expected connection-targeted warning notification");
         };
-        assert_eq!(connection_id, subscribed_connection);
+        assert_eq!(connection_ids, vec![subscribed_connection]);
         let OutgoingMessage::AppServerNotification(envelope) = message else {
             panic!("expected app-server warning notification");
         };
@@ -595,15 +593,14 @@ mod tests {
             .await
             .expect("timed out waiting for warning notification")
             .expect("outgoing channel closed unexpectedly");
-        let OutgoingEnvelope::ToConnection {
-            connection_id,
+        let OutgoingEnvelope::ToConnections {
+            connection_ids,
             message,
-            write_complete_tx: _,
         } = envelope
         else {
             panic!("expected connection-targeted warning notification");
         };
-        assert_eq!(connection_id, subscribed_connection);
+        assert_eq!(connection_ids, vec![subscribed_connection]);
         let OutgoingMessage::AppServerNotification(envelope) = message else {
             panic!("expected app-server warning notification");
         };

@@ -42,10 +42,10 @@ async fn verification_is_delivered_to_one_owner_and_other_connections_cannot_res
         .await;
     assert!(matches!(
         messages.recv().await,
-        Some(OutgoingEnvelope::ToConnection {
-            connection_id: ConnectionId(1),
+        Some(OutgoingEnvelope::ToConnections {
+            connection_ids,
             ..
-        })
+        }) if connection_ids == vec![ConnectionId(1)]
     ));
     assert!(messages.try_recv().is_err());
     let proof = json!({"action": "accept", "content": {"credentialId": "AQID", "signature": "BAUG"}, "_meta": null});

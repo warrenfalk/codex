@@ -25,6 +25,7 @@ use std::sync::atomic::AtomicBool;
 use crate::analytics_utils::analytics_events_client_from_config;
 use crate::config_manager::ConfigManager;
 use crate::connection_cleanup::ConnectionCleanupTasks;
+use crate::message_processor::ConnectionSessionState;
 use crate::message_processor::MessageProcessor;
 use crate::message_processor::MessageProcessorArgs;
 use crate::outgoing_message::ConnectionId;
@@ -179,6 +180,7 @@ enum OutboundControlEvent {
         initialized: Arc<AtomicBool>,
         experimental_api_enabled: Arc<AtomicBool>,
         opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
+        session: Arc<ConnectionSessionState>,
     },
     /// Remove state for a closed/disconnected connection.
     Closed { connection_id: ConnectionId },
@@ -878,14 +880,16 @@ pub async fn run_main_with_transport_options(
                                 initialized,
                                 experimental_api_enabled,
                                 opted_out_notification_methods,
+                                session,
                             } => {
                                 outbound_connections.insert(
                                     connection_id,
-                                    OutboundConnectionState::new(
+                                    OutboundConnectionState::new_with_session(
                                         writer,
                                         initialized,
                                         experimental_api_enabled,
                                         opted_out_notification_methods,
+                                        session,
                                         disconnect_sender,
                                     ),
                                 );
@@ -958,14 +962,31 @@ pub async fn run_main_with_transport_options(
         let transport_shutdown_token = transport_shutdown_token.clone();
         async move {
             let mut listen_for_threads = true;
+            let mut saw_connection = false;
             let mut shutdown_state = ShutdownState::default();
             let exit_reason = loop {
                 let running_turn_count = {
                     let running_turn_count = running_turn_count_rx.borrow();
                     *running_turn_count
                 };
+                let lifecycle_connections = connections
+                    .iter()
+                    .map(|(connection_id, connection_state)| {
+                        (*connection_id, Arc::clone(&connection_state.session))
+                    })
+                    .collect::<Vec<_>>();
+                let lifecycle_connection_count = processor
+                    .lifecycle_connection_count(lifecycle_connections)
+                    .await;
+                if single_client_mode
+                    && saw_connection
+                    && lifecycle_connection_count == 0
+                    && running_turn_count == 0
+                {
+                    break "last_connection_closed";
+                }
                 if matches!(
-                    shutdown_state.update(running_turn_count, connections.len()),
+                    shutdown_state.update(running_turn_count, lifecycle_connection_count),
                     ShutdownAction::Finish
                 ) {
                     transport_shutdown_token.cancel();
@@ -985,7 +1006,7 @@ pub async fn run_main_with_transport_options(
                             }
                         };
                         let running_turn_count = *running_turn_count_rx.borrow();
-                        shutdown_state.on_signal(signal, connections.len(), running_turn_count);
+                        shutdown_state.on_signal(signal, lifecycle_connection_count, running_turn_count);
                     }
                     changed = running_turn_count_rx.changed(), if shutdown_state.requested() => {
                         if changed.is_err() {
@@ -998,7 +1019,7 @@ pub async fn run_main_with_transport_options(
                         };
                         match event {
                             TransportEvent::DaemonShutdown => {
-                                shutdown_state.on_signal(ShutdownSignal::Forceable, connections.len(), *running_turn_count_rx.borrow());
+                                shutdown_state.on_signal(ShutdownSignal::Forceable, lifecycle_connection_count, *running_turn_count_rx.borrow());
                             }
                             TransportEvent::ConnectionOpened {
                                 connection_id,
@@ -1006,11 +1027,18 @@ pub async fn run_main_with_transport_options(
                                 writer,
                                 disconnect_sender,
                             } => {
+                                saw_connection = true;
                                 let outbound_initialized = Arc::new(AtomicBool::new(false));
                                 let outbound_experimental_api_enabled =
                                     Arc::new(AtomicBool::new(false));
                                 let outbound_opted_out_notification_methods =
                                     Arc::new(RwLock::new(HashSet::new()));
+                                let connection_state = ConnectionState::new(
+                                    origin,
+                                    Arc::clone(&outbound_initialized),
+                                    Arc::clone(&outbound_experimental_api_enabled),
+                                    Arc::clone(&outbound_opted_out_notification_methods),
+                                );
                                 if outbound_control_tx
                                     .send(OutboundControlEvent::Opened {
                                         connection_id,
@@ -1023,21 +1051,14 @@ pub async fn run_main_with_transport_options(
                                         opted_out_notification_methods: Arc::clone(
                                             &outbound_opted_out_notification_methods,
                                         ),
+                                        session: Arc::clone(&connection_state.session),
                                     })
                                     .await
                                     .is_err()
                                 {
                                     break "outbound_router_closed";
                                 }
-                                connections.insert(
-                                    connection_id,
-                                    ConnectionState::new(
-                                        origin,
-                                        outbound_initialized,
-                                        outbound_experimental_api_enabled,
-                                        outbound_opted_out_notification_methods,
-                                    ),
-                                );
+                                connections.insert(connection_id, connection_state);
                             }
                             TransportEvent::ConnectionClosed { connection_id } => {
                                 let Some(connection_state) = connections.remove(&connection_id) else {
@@ -1132,11 +1153,11 @@ pub async fn run_main_with_transport_options(
                                         }
                                     }
                                     JSONRPCMessage::Response(response) => {
-                                        if !connections.contains_key(&connection_id) {
+                                        let Some(connection_state) = connections.get(&connection_id) else {
                                             warn!("dropping response from unknown connection: {connection_id:?}");
                                             continue;
-                                        }
-                                        processor.process_response(connection_id, response).await;
+                                        };
+                                        processor.process_response(connection_id, response, &connection_state.session).await;
                                     }
                                     JSONRPCMessage::Notification(notification) => {
                                         if !connections.contains_key(&connection_id) {
@@ -1146,11 +1167,11 @@ pub async fn run_main_with_transport_options(
                                         processor.process_notification(notification).await;
                                     }
                                     JSONRPCMessage::Error(err) => {
-                                        if !connections.contains_key(&connection_id) {
+                                        let Some(connection_state) = connections.get(&connection_id) else {
                                             warn!("dropping error from unknown connection: {connection_id:?}");
                                             continue;
-                                        }
-                                        processor.process_error(connection_id, err).await;
+                                        };
+                                        processor.process_error(connection_id, err, &connection_state.session).await;
                                     }
                                 }
                             }
@@ -1176,7 +1197,9 @@ pub async fn run_main_with_transport_options(
                             Ok(thread_id) => {
                                 let mut initialized_connection_ids = Vec::new();
                                 for (connection_id, connection_state) in &connections {
-                                    if connection_state.session.initialized() {
+                                    if connection_state.session.initialized()
+                                        && !connection_state.session.firehose_subscribed()
+                                    {
                                         initialized_connection_ids.push(*connection_id);
                                     }
                                 }
