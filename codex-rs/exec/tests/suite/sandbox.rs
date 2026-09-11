@@ -25,6 +25,10 @@ use tokio::fs::create_dir_all;
 use tokio::process::Child;
 
 #[cfg(target_os = "linux")]
+#[path = "sandbox_device_access_tests.rs"]
+mod device_access;
+
+#[cfg(target_os = "linux")]
 #[path = "sandbox_git_config_tests.rs"]
 mod git_config;
 

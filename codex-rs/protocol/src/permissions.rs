@@ -1026,6 +1026,16 @@ impl FileSystemSandboxPolicy {
         let (protected, metadata_name) = entries
             .iter()
             .filter(|(_, access)| access.can_write())
+            .filter(|(root, _)| match root.to_abs_path() {
+                // Follow native aliases just as the filesystem mount builder does.
+                Ok(root) => !device_permissions::is_device_path(root.as_path()),
+                Err(_) => {
+                    !(root.infer_path_convention() == Some(PathConvention::Posix)
+                        && root
+                            .join("/dev")
+                            .is_ok_and(|device_root| root.starts_with(&device_root)))
+                }
+            })
             .find_map(|(root, _)| {
                 PROTECTED_METADATA_PATH_NAMES
                     .iter()
@@ -2231,6 +2241,9 @@ pub(crate) fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
     protect_missing_dot_codex: bool,
 ) -> Vec<AbsolutePathBuf> {
+    if device_permissions::is_device_path(writable_root.as_path()) {
+        return Vec::new();
+    }
     let mut subpaths: Vec<AbsolutePathBuf> = Vec::new();
     let top_level_git = writable_root.join(PROTECTED_METADATA_GIT_PATH_NAME);
     // This applies to typical repos (directory .git), worktrees/submodules
@@ -2393,6 +2406,9 @@ fn protected_metadata_names_for_writable_root(
     raw_writable_roots: &[&AbsolutePathBuf],
     cwd: &Path,
 ) -> Vec<String> {
+    if device_permissions::is_device_path(root.as_path()) {
+        return Vec::new();
+    }
     let mut protected_names = Vec::new();
     for metadata_name in PROTECTED_METADATA_PATH_NAMES {
         let mut metadata_paths = vec![root.join(*metadata_name)];
@@ -2504,6 +2520,13 @@ fn resolve_gitdir_from_file(dot_git: &AbsolutePathBuf) -> Option<AbsolutePathBuf
     }
     Some(gitdir_path)
 }
+
+#[path = "device_permissions.rs"]
+mod device_permissions;
+
+#[cfg(all(test, unix))]
+#[path = "device_permissions_tests.rs"]
+mod device_permissions_tests;
 
 #[cfg(test)]
 mod tests {
