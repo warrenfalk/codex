@@ -304,6 +304,7 @@ impl CoreShellActionProvider {
                     approval_reason: None,
                     retry_reason: None,
                     network_approval_context: None,
+                    auto_approve_after: None,
                 };
                 self.session.request_approval(action, approval_ctx).await
             })

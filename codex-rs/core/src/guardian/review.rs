@@ -229,7 +229,10 @@ pub(crate) fn routes_approval_policy_to_guardian(
 ) -> bool {
     matches!(
         approval_policy,
-        AskForApproval::OnRequest | AskForApproval::Granular(_)
+        AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
+            | AskForApproval::Granular(_)
     ) && approvals_reviewer == ApprovalsReviewer::AutoReview
 }
 

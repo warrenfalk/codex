@@ -1759,10 +1759,18 @@ fn guardian_timeout_message_distinguishes_timeout_from_policy_denial() {
     }
 }
 
+#[test_case::test_case(AskForApproval::OnRequest; "on_request")]
+#[test_case::test_case(AskForApproval::TrustSandbox; "trust_sandbox")]
+#[test_case::test_case(AskForApproval::TrustSandboxTimeout; "trust_sandbox_timeout")]
 #[tokio::test]
-async fn routes_approval_to_guardian_requires_guardian_reviewer() {
+async fn routes_approval_to_guardian_requires_guardian_reviewer(approval_policy: AskForApproval) {
     let (_session, mut turn) = crate::session::tests::make_session_and_context().await;
     let mut config = (*turn.config).clone();
+    config
+        .permissions
+        .approval_policy
+        .set(approval_policy)
+        .expect("test setup should allow updating approval policy");
     config.approvals_reviewer = ApprovalsReviewer::User;
     turn.config = Arc::new(config.clone());
 

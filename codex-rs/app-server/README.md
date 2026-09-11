@@ -22,3 +22,7 @@ The observer connection cannot answer requests it only observed; JSON-RPC respon
 Subscription is idempotent and lasts until the connection closes. Explicit delivery to a connection takes precedence over observation, so a client that both participates and observes receives only one copy.
 
 See [the feature contract](../../wf_features/app-server-firehose-subscription.md) for the behavior and validation expectations this fork preserves.
+
+## Trust sandbox approval policies
+
+`approvalPolicy` also accepts `"trust-sandbox"` and `"trust-sandbox-timeout"`. Both trust managed restricted sandbox enforcement for dangerous command-shape fallback heuristics while still prompting for sandbox overrides and explicit exec-policy prompt rules. `"trust-sandbox-timeout"` additionally auto-approves sandbox-override command prompts after 300 seconds without persisting session approval or policy amendments.

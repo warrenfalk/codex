@@ -920,6 +920,8 @@ async fn review_guardian_mcp_elicitation(
                 return Ok(Some(mcp_elicitation_decline_without_message()));
             }
             AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
             | AskForApproval::UnlessTrusted
             | AskForApproval::Granular(_) => {}
         }

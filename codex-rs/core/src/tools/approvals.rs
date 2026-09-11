@@ -46,6 +46,7 @@ use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::warn;
@@ -60,6 +61,7 @@ pub(crate) struct ApprovalContext {
     pub(crate) approval_reason: Option<String>,
     pub(crate) retry_reason: Option<String>,
     pub(crate) network_approval_context: Option<NetworkApprovalContext>,
+    pub(crate) auto_approve_after: Option<Duration>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -712,6 +714,7 @@ impl Session {
                         additional_permissions.clone(),
                         /*available_decisions*/ None,
                         /*plugin_attribution_override*/ None,
+                        ctx.auto_approve_after,
                     )
                     .await
                 })
@@ -746,6 +749,7 @@ impl Session {
                     additional_permissions.clone(),
                     Some(vec![ReviewDecision::Approved, ReviewDecision::Abort]),
                     /*plugin_attribution_override*/ None,
+                    /*auto_approve_after*/ None,
                 )
                 .await
             }
@@ -772,6 +776,7 @@ impl Session {
                     additional_permissions.clone(),
                     Some(vec![ReviewDecision::Approved, ReviewDecision::Abort]),
                     /*plugin_attribution_override*/ None,
+                    /*auto_approve_after*/ None,
                 )
                 .await
             }
@@ -844,6 +849,7 @@ impl Session {
                     /*additional_permissions*/ None,
                     /*available_decisions*/ None,
                     /*plugin_attribution_override*/ None,
+                    /*auto_approve_after*/ None,
                 )
                 .await
             }
