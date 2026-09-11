@@ -65,6 +65,14 @@ impl App {
                     )
                 });
             }
+            TuiEvent::Key(key_event) if self.keymap.app.copy.is_pressed(key_event) => {
+                self.copy_agent_message_before_selected_prompt_with(|text| {
+                    crate::clipboard_copy::copy_to_clipboard(
+                        text,
+                        crate::clipboard_copy::CopyFormat::Markdown,
+                    )
+                });
+            }
             TuiEvent::Key(KeyEvent {
                 code: KeyCode::Esc | KeyCode::Left,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
