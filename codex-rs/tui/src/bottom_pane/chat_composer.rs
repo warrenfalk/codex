@@ -312,6 +312,7 @@ mod popup_state;
 mod reconnect;
 mod slash_input;
 mod sparkle;
+mod undo;
 mod vim_history;
 mod vim_search;
 
@@ -326,6 +327,8 @@ use self::popup_state::PopupState;
 use self::slash_input::SlashInput;
 use self::slash_input::SlashValidation;
 use self::slash_input::SubmissionValidation;
+use self::undo::EditKind;
+use self::undo::UndoState;
 use self::vim_history::VimHistory;
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
@@ -516,6 +519,7 @@ impl ChatComposerConfig {
 
 pub(crate) struct ChatComposer {
     draft: DraftState,
+    undo: UndoState,
     popups: PopupState,
     app_event_tx: AppEventSender,
     history: ChatComposerHistory,
@@ -661,6 +665,7 @@ impl ChatComposer {
 
         let mut this = Self {
             draft: DraftState::new(),
+            undo: UndoState::default(),
             popups: PopupState::default(),
             app_event_tx,
             history: ChatComposerHistory::new(),
@@ -946,6 +951,7 @@ impl ChatComposer {
     /// the same snapshot's editor bindings so a live remap cannot leave submit
     /// keys updated while cursor/editing keys still use old defaults.
     pub(crate) fn set_keymap_bindings(&mut self, keymap: &RuntimeKeymap) {
+        self.undo.boundary();
         self.submit_keys = keymap.composer.submit.clone();
         self.queue_keys = keymap.composer.queue.clone();
         self.toggle_shortcuts_keys = keymap.composer.toggle_shortcuts.clone();
@@ -1235,6 +1241,13 @@ impl ChatComposer {
     /// In all cases, clears any paste-burst Enter suppression state so a real paste cannot affect
     /// the next user Enter key, then syncs popup state.
     pub fn handle_paste(&mut self, pasted: String) -> bool {
+        let undo_checkpoint = self.editor_undo_checkpoint();
+        let handled = self.handle_paste_raw(pasted);
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
+        handled
+    }
+
+    fn handle_paste_raw(&mut self, pasted: String) -> bool {
         let pasted = pasted.replace("\r\n", "\n").replace('\r', "\n");
         let pasted = sanitize_user_text(pasted.into());
         if let Some(query) = self.draft.textarea.vim_query_mut() {
@@ -1256,7 +1269,7 @@ impl ChatComposer {
             let cursor = self.draft.textarea.cursor();
             self.draft.textarea.insert_str_at(cursor, " ");
         } else {
-            self.insert_str(&pasted);
+            self.insert_str_raw(&pasted);
         }
         self.draft.paste_burst.clear_after_explicit_paste();
         self.sync_popups();
@@ -1266,7 +1279,7 @@ impl ChatComposer {
         true
     }
 
-    pub fn handle_paste_image_path(&mut self, pasted: &str) -> bool {
+    fn handle_paste_image_path(&mut self, pasted: &str) -> bool {
         let Some(path_buf) = normalize_pasted_path(pasted) else {
             return false;
         };
@@ -1279,7 +1292,7 @@ impl ChatComposer {
                 tracing::debug!("image dimensions={}x{}", width, height);
                 let format = pasted_image_format(&path_buf);
                 tracing::debug!("attached image format={}", format.label());
-                self.attach_image(path_buf);
+                self.attach_image_raw(path_buf);
                 true
             }
             Err(err) => {
@@ -1312,7 +1325,7 @@ impl ChatComposer {
         self.draft.disable_paste_burst = disabled;
         if disabled && !was_disabled {
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
             }
             self.draft.paste_burst.clear_after_explicit_paste();
         }
@@ -1324,7 +1337,16 @@ impl ChatComposer {
     /// are renumbered to `[Image #M+1]..[Image #N]` (where `M` is the number of
     /// remote images). Cursor is placed at the end after rebuilding elements.
     pub(crate) fn apply_external_edit(&mut self, text: String) {
-        self.vim_history = VimHistory::default();
+        let undo_checkpoint = self.editor_undo_checkpoint();
+        let started_vim_edit = self.begin_direct_vim_edit();
+        self.apply_external_edit_raw(text);
+        if started_vim_edit {
+            self.finish_vim_edit();
+        }
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
+    }
+
+    fn apply_external_edit_raw(&mut self, text: String) {
         self.draft.pending_pastes.clear();
         let (text, _) = self.imported_text_for_textarea(text, Vec::new());
 
@@ -1412,6 +1434,7 @@ impl ChatComposer {
             self.handle_paste(pasted);
         }
         self.draft.textarea.enable_vim_search();
+        self.undo.reset();
         self.draft.textarea.set_vim_enabled(enabled);
         self.vim_history = VimHistory::default();
         self.draft.paste_burst.clear_after_explicit_paste();
@@ -1533,6 +1556,11 @@ impl ChatComposer {
     }
 
     pub(crate) fn set_pending_pastes(&mut self, pending_pastes: Vec<(String, String)>) {
+        self.set_pending_pastes_raw(pending_pastes);
+        self.undo.reset();
+    }
+
+    fn set_pending_pastes_raw(&mut self, pending_pastes: Vec<(String, String)>) {
         let text = self.current_text();
         self.draft.pending_pastes = pending_pastes
             .into_iter()
@@ -1563,6 +1591,11 @@ impl ChatComposer {
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
+        self.set_remote_image_urls_raw(urls);
+        self.undo.reset();
+    }
+
+    fn set_remote_image_urls_raw(&mut self, urls: Vec<String>) {
         self.attachments
             .set_remote_image_urls(urls, &mut self.draft.textarea);
         self.sync_popups();
@@ -1577,6 +1610,7 @@ impl ChatComposer {
             .attachments
             .take_remote_image_urls(&mut self.draft.textarea);
         self.sync_popups();
+        self.undo.reset();
         urls
     }
 
@@ -1592,16 +1626,33 @@ impl ChatComposer {
         text_elements: Vec<TextElement>,
         local_image_paths: Vec<PathBuf>,
     ) {
-        self.set_text_content_with_mention_bindings(
+        self.set_text_content_with_mention_bindings_raw(
             text,
             text_elements,
             local_image_paths,
             Vec::new(),
         );
+        self.undo.reset();
     }
 
     /// Restore draft content; clear pending input and undo history. The cursor starts at zero.
     pub(crate) fn set_text_content_with_mention_bindings(
+        &mut self,
+        text: String,
+        text_elements: Vec<TextElement>,
+        local_image_paths: Vec<PathBuf>,
+        mention_bindings: Vec<MentionBinding>,
+    ) {
+        self.set_text_content_with_mention_bindings_raw(
+            text,
+            text_elements,
+            local_image_paths,
+            mention_bindings,
+        );
+        self.undo.reset();
+    }
+
+    fn set_text_content_with_mention_bindings_raw(
         &mut self,
         text: String,
         text_elements: Vec<TextElement>,
@@ -1703,14 +1754,14 @@ impl ChatComposer {
             pending_pastes,
             cursor,
         } = draft;
-        self.set_remote_image_urls(remote_image_urls);
-        self.set_text_content_with_mention_bindings(
+        self.set_remote_image_urls_raw(remote_image_urls);
+        self.set_text_content_with_mention_bindings_raw(
             text,
             text_elements,
             local_image_paths,
             mention_bindings,
         );
-        self.set_pending_pastes(pending_pastes);
+        self.set_pending_pastes_raw(pending_pastes);
         self.set_current_cursor(cursor);
         self.sync_popups();
     }
@@ -1727,6 +1778,7 @@ impl ChatComposer {
 
     /// Move the cursor to the end of the current text buffer.
     pub(crate) fn move_cursor_to_end(&mut self) {
+        self.undo.boundary();
         self.draft
             .textarea
             .set_cursor(self.draft.textarea.text().len());
@@ -1777,13 +1829,19 @@ impl ChatComposer {
         if self.is_empty() {
             return None;
         }
+        let undo_checkpoint = self.editor_undo_checkpoint();
         let previous = self.current_text();
         let text_elements = self.current_text_elements();
         let local_image_paths = self.attachments.local_image_paths();
         let pending_pastes = std::mem::take(&mut self.draft.pending_pastes);
         let remote_image_urls = self.attachments.remote_image_urls();
         let mention_bindings = self.snapshot_mention_bindings();
-        self.set_text_content(String::new(), Vec::new(), Vec::new());
+        self.set_text_content_with_mention_bindings_raw(
+            String::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
         self.attachments.clear_remote_image_urls();
         self.history.reset_navigation();
         self.history.record_local_submission(HistoryEntry {
@@ -1794,6 +1852,7 @@ impl ChatComposer {
             mention_bindings,
             pending_pastes,
         });
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
         Some(previous)
     }
 
@@ -1809,6 +1868,11 @@ impl ChatComposer {
     /// Recall content at its history boundary, preserving pending pastes and omitting images
     /// in plain-text editors.
     fn apply_history_entry(&mut self, entry: HistoryEntry) {
+        self.apply_history_entry_raw(entry);
+        self.undo.reset();
+    }
+
+    fn apply_history_entry_raw(&mut self, entry: HistoryEntry) {
         let HistoryEntry {
             text,
             text_elements,
@@ -1817,14 +1881,14 @@ impl ChatComposer {
             mention_bindings,
             pending_pastes,
         } = entry;
-        self.set_remote_image_urls(remote_image_urls);
-        self.set_text_content_with_mention_bindings(
+        self.set_remote_image_urls_raw(remote_image_urls);
+        self.set_text_content_with_mention_bindings_raw(
             text,
             text_elements,
             local_image_paths,
             mention_bindings,
         );
-        self.set_pending_pastes(pending_pastes);
+        self.set_pending_pastes_raw(pending_pastes);
         if !self.config.image_paste_enabled {
             for image in self.attachments.local_images() {
                 if let Some(element) = self.draft.textarea.text_elements().into_iter().find(|e| {
@@ -1899,12 +1963,18 @@ impl ChatComposer {
 
     /// Insert an attachment placeholder and track it for the next submission.
     pub fn attach_image(&mut self, path: PathBuf) {
+        let undo_checkpoint = self.editor_undo_checkpoint();
         let started_vim_edit = self.begin_direct_vim_edit();
-        self.attachments
-            .attach_image(&mut self.draft.textarea, path);
+        self.attach_image_raw(path);
         if started_vim_edit {
             self.finish_vim_edit();
         }
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
+    }
+
+    fn attach_image_raw(&mut self, path: PathBuf) {
+        self.attachments
+            .attach_image(&mut self.draft.textarea, path);
     }
 
     #[cfg(test)]
@@ -1928,7 +1998,7 @@ impl ChatComposer {
     /// This also allows a single "held" ASCII char to render even when it turns out not to be part
     /// of a paste burst.
     pub(crate) fn flush_paste_burst_if_due(&mut self) -> bool {
-        self.handle_paste_burst_flush(Instant::now())
+        self.flush_due_paste_burst_for_undo(Instant::now())
     }
 
     /// Returns whether the composer is currently in any paste-burst related transient state.
@@ -2030,13 +2100,19 @@ impl ChatComposer {
     }
 
     pub(crate) fn insert_str(&mut self, text: &str) {
+        let undo_checkpoint = self.editor_undo_checkpoint();
         let started_vim_edit = self.begin_direct_vim_edit();
-        self.draft.textarea.insert_str(text);
-        self.sync_bash_mode_from_text();
-        self.sync_popups();
+        self.insert_str_raw(text);
         if started_vim_edit {
             self.finish_vim_edit();
         }
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
+    }
+
+    fn insert_str_raw(&mut self, text: &str) {
+        self.draft.textarea.insert_str(text);
+        self.sync_bash_mode_from_text();
+        self.sync_popups();
     }
 
     /// Handle a key event coming from the main UI.
@@ -2060,15 +2136,33 @@ impl ChatComposer {
             return self.handle_history_search_key(key_event);
         }
 
+        let flushed_due = self.flush_due_paste_burst_for_undo(Instant::now());
+        let flushed_for_key = self.flush_paste_burst_before_key(key_event);
+        let flushed_before_key = flushed_due || flushed_for_key;
+
         if self.handle_vim_history_key(key_event) {
             return (InputResult::None, true);
         }
-
+        if !self.draft.textarea.is_vim_enabled() && self.editor_keymap.undo.is_pressed(key_event) {
+            let changed = self.apply_undo();
+            self.sync_popups();
+            return (InputResult::None, changed || flushed_before_key);
+        }
+        if !self.draft.textarea.is_vim_enabled() && self.editor_keymap.redo.is_pressed(key_event) {
+            let changed = self.apply_redo();
+            self.sync_popups();
+            return (InputResult::None, changed || flushed_before_key);
+        }
         if Self::is_history_search_key(&key_event, &self.history_search_previous_keys) {
             return self.begin_history_search();
         }
 
-        let result = match &mut self.popups.active {
+        let undo_checkpoint = self.editor_undo_checkpoint();
+        let edit_kind = undo_checkpoint
+            .as_ref()
+            .map(|_| self.edit_kind_for_key(key_event));
+
+        let mut result = match &mut self.popups.active {
             ActivePopup::Command(_) => self.handle_key_event_with_slash_popup(key_event),
             ActivePopup::File(_) => self.handle_key_event_with_file_popup(key_event),
             ActivePopup::Skill(_) => self.handle_key_event_with_skill_popup(key_event),
@@ -2076,6 +2170,12 @@ impl ChatComposer {
             ActivePopup::None => self.handle_key_event_without_popup(key_event),
         };
         self.reset_vim_mode_after_successful_dispatch(&result.0);
+        if Self::is_successful_dispatch(&result.0) {
+            self.undo.reset();
+        } else if let Some(edit_kind) = edit_kind {
+            self.record_edit_from(undo_checkpoint, edit_kind);
+        }
+        result.1 |= flushed_before_key;
         // Update (or hide/show) popup after processing the key.
         self.sync_popups();
         result
@@ -2142,7 +2242,7 @@ impl ChatComposer {
             // any existing burst buffer (including a pending first char from the ASCII path) so
             // we don't carry that transient state forward.
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
             }
             if let Some(decision) = self.draft.paste_burst.on_plain_char_no_hold(now) {
                 match decision {
@@ -2179,7 +2279,7 @@ impl ChatComposer {
             }
         }
         if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-            self.handle_paste(pasted);
+            self.handle_paste_raw(pasted);
         }
         self.draft.textarea.input(input);
 
@@ -2578,7 +2678,7 @@ impl ChatComposer {
                     let start_idx = token_range.start;
                     self.draft.textarea.replace_range(token_range, "");
                     self.draft.textarea.set_cursor(start_idx);
-                    self.attach_image(path_buf);
+                    self.attach_image_raw(path_buf);
                     self.advance_past_completion_separator();
                 }
                 Err(err) => {
@@ -3136,7 +3236,7 @@ impl ChatComposer {
             self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                 history_cell::new_info_event(message, /*hint*/ None),
             )));
-            self.set_text_content_with_mention_bindings(
+            self.set_text_content_with_mention_bindings_raw(
                 original_input.clone(),
                 original_text_elements,
                 original_local_image_paths,
@@ -3155,7 +3255,7 @@ impl ChatComposer {
             self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                 history_cell::new_error_event(message),
             )));
-            self.set_text_content_with_mention_bindings(
+            self.set_text_content_with_mention_bindings_raw(
                 original_input.clone(),
                 original_text_elements,
                 original_local_image_paths,
@@ -3226,17 +3326,20 @@ impl ChatComposer {
     }
 
     fn reset_vim_mode_after_successful_dispatch(&mut self, result: &InputResult) {
-        if matches!(
+        if Self::is_successful_dispatch(result) && self.config.reset_vim_on_submission {
+            self.reset_vim_mode();
+        }
+    }
+
+    fn is_successful_dispatch(result: &InputResult) -> bool {
+        matches!(
             result,
             InputResult::Submitted { .. }
                 | InputResult::Queued { .. }
                 | InputResult::Command(_)
                 | InputResult::ServiceTierCommand(_)
                 | InputResult::CommandWithArgs(_, _, _)
-        ) && self.config.reset_vim_on_submission
-        {
-            self.reset_vim_mode();
-        }
+        )
     }
 
     fn handle_submission_with_time(
@@ -3253,7 +3356,7 @@ impl ChatComposer {
         }
         if should_queue {
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
             }
             let visible_shell_command = self.is_bang_shell_command();
             let original_input = self.current_text();
@@ -3363,7 +3466,7 @@ impl ChatComposer {
         } else {
             // Restore suppressed input, preserving validation feedback.
             let flash = self.footer.flash.take();
-            self.set_text_content_with_mention_bindings(
+            self.set_text_content_with_mention_bindings_raw(
                 original_input,
                 original_text_elements,
                 original_local_image_paths,
@@ -3553,7 +3656,7 @@ impl ChatComposer {
         }
         if self.draft.is_bash_mode && key_event.code == KeyCode::Esc {
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
             }
             if self.draft.textarea.is_empty() {
                 self.draft.is_bash_mode = false;
@@ -3675,11 +3778,11 @@ impl ChatComposer {
     fn handle_paste_burst_flush(&mut self, now: Instant) -> bool {
         match self.draft.paste_burst.flush_if_due(now) {
             FlushResult::Paste(pasted) => {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
                 true
             }
             FlushResult::Typed(ch) => {
-                self.insert_str(ch.to_string().as_str());
+                self.insert_str_raw(ch.to_string().as_str());
                 true
             }
             FlushResult::None => false,
@@ -3797,7 +3900,7 @@ impl ChatComposer {
                 }
             }
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
-                self.handle_paste(pasted);
+                self.handle_paste_raw(pasted);
             }
         }
 
@@ -3810,7 +3913,7 @@ impl ChatComposer {
         if !matches!(input.code, KeyCode::Char(_) | KeyCode::Enter)
             && let Some(pasted) = self.draft.paste_burst.flush_before_modified_input()
         {
-            self.handle_paste(pasted);
+            self.handle_paste_raw(pasted);
         }
         // For non-char inputs (or after flushing), handle normally.
         // Track element removals so we can drop any corresponding placeholders without scanning
@@ -5127,6 +5230,10 @@ mod effort_tests;
 #[cfg(test)]
 #[path = "chat_composer/embedded_input_tests.rs"]
 mod embedded_input_tests;
+
+#[cfg(test)]
+#[path = "chat_composer/undo_tests.rs"]
+mod undo_tests;
 
 #[cfg(test)]
 mod tests {
