@@ -15,6 +15,10 @@ impl App {
         let picker_target = self.app_server_target.clone();
         let picker_state_db = self.state_db.clone();
         let picker_environment_manager = Arc::clone(&self.environment_manager);
+        let picker_remote_cwd_override = app_server
+            .remote_cwd_override()
+            .filter(|_| app_server.uses_remote_workspace())
+            .map(Path::to_path_buf);
         let picker_app_server = tokio::spawn(async move {
             crate::start_app_server_for_picker(
                 &picker_config,
@@ -30,7 +34,7 @@ impl App {
             Err(err) => Err(err.into()),
         };
         let picker_app_server = match picker_app_server {
-            Ok(app_server) => app_server,
+            Ok(app_server) => app_server.with_remote_cwd_override(picker_remote_cwd_override),
             Err(err) => {
                 self.add_session_picker_error(format!("Failed to start TUI session picker: {err}"));
                 self.chat_widget.maybe_send_next_queued_input();
