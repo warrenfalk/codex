@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::session::Session;
 use super::step_context::StepContext;
+use super::turn_context::TurnEnvironment;
 use crate::connectors;
 use crate::context::ApprovalPromptContext;
 use crate::context::TokenBudgetContext;
@@ -173,6 +174,17 @@ impl Session {
                 .and_then(|environment| environment.cwd().to_abs_path().ok())
                 .unwrap_or_else(|| turn_context.cwd.clone());
             let model_messages = turn_context.model_info().model_messages.as_ref();
+            let active_profile = environment.map_or_else(
+                || turn_context.config.permissions.active_permission_profile(),
+                TurnEnvironment::active_permission_profile,
+            );
+            let profile_instructions = active_profile.as_ref().and_then(|profile| {
+                turn_context
+                    .config
+                    .permissions
+                    .profile_instructions
+                    .get(&profile.id)
+            });
             world_state.add_section(PermissionsState::new(
                 &permission_profile,
                 step_context.settings.approval_policy(),
@@ -180,6 +192,7 @@ impl Session {
                     step_context.settings.approvals_reviewer(),
                     model_messages.and_then(|messages| messages.approvals.as_ref()),
                     model_messages.and_then(|messages| messages.permissions.as_ref()),
+                    profile_instructions.map(String::as_str),
                 ),
                 exec_policy.as_ref(),
                 &cwd,

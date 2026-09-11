@@ -237,7 +237,9 @@ fn permission_profile_enables_git_metadata_write(profile: &PermissionProfileToml
     )
 }
 
-fn extensible_builtin_parent_profile(profile_name: &str) -> Option<PermissionProfileToml> {
+pub(super) fn extensible_builtin_parent_profile(
+    profile_name: &str,
+) -> Option<PermissionProfileToml> {
     let file_system = match profile_name {
         BUILT_IN_READ_ONLY_PROFILE => FileSystemSandboxPolicy::read_only(),
         BUILT_IN_WORKSPACE_PROFILE => FileSystemSandboxPolicy::workspace_write(
@@ -261,6 +263,7 @@ fn permission_profile_toml_from_file_system_policy(
         insert_filesystem_permission_toml(&mut filesystem.entries, entry);
     }
     PermissionProfileToml {
+        instructions_file: None,
         pid_namespace: None,
         description: None,
         extends: None,
