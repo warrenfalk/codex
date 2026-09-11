@@ -8,11 +8,11 @@ use crate::history_cell::HistoryRenderMode;
 use crate::history_cell::raw_lines_from_source;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::inline_visualization::contains_inline_visualization;
-use crate::markdown::render_markdown_agent_with_links_cwd_and_visualizations;
 use crate::markdown::render_streaming_markdown_agent_with_links_and_cwd;
 use crate::render::highlight::syntax_theme_revision;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
+use codex_config::types::UriBasedFileOpener;
 use ratatui::text::Line;
 use std::path::Path;
 
@@ -32,6 +32,14 @@ pub(super) struct StreamingRender {
     has_inline_visualization_directive: bool,
     /// Parser state for a directly appendable, open top-level code fence.
     open_code_fence: Option<OpenCodeFence>,
+}
+
+pub(super) struct StreamingRenderContext<'a> {
+    pub(super) width: Option<usize>,
+    pub(super) cwd: &'a Path,
+    pub(super) render_mode: HistoryRenderMode,
+    pub(super) file_opener: UriBasedFileOpener,
+    pub(super) inline_visualization_context: Option<&'a InlineVisualizationContext>,
 }
 
 impl StreamingRender {
@@ -65,14 +73,19 @@ impl StreamingRender {
         width: Option<usize>,
         cwd: &Path,
         render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<&InlineVisualizationContext>,
     ) {
         self.open_code_fence = None;
         self.has_inline_visualization_directive = contains_inline_visualization(source);
         self.lines = match (render_mode, inline_visualization_context) {
             (HistoryRenderMode::Rich, None) if !self.has_inline_visualization_directive => {
-                let rendered =
-                    render_streaming_markdown_agent_with_links_and_cwd(source, width, Some(cwd));
+                let rendered = render_streaming_markdown_agent_with_links_and_cwd(
+                    source,
+                    width,
+                    Some(cwd),
+                    file_opener,
+                );
                 self.has_reference_link_definition = rendered.has_reference_link_definition;
                 rendered.lines
             }
@@ -83,6 +96,7 @@ impl StreamingRender {
                     width,
                     cwd,
                     render_mode,
+                    file_opener,
                     inline_visualization_context,
                 )
             }
@@ -101,11 +115,15 @@ impl StreamingRender {
         &mut self,
         raw_source: &str,
         committed_source: &str,
-        width: Option<usize>,
-        cwd: &Path,
-        render_mode: HistoryRenderMode,
-        inline_visualization_context: Option<&InlineVisualizationContext>,
+        context: StreamingRenderContext<'_>,
     ) {
+        let StreamingRenderContext {
+            width,
+            cwd,
+            render_mode,
+            file_opener,
+            inline_visualization_context,
+        } = context;
         if render_mode == HistoryRenderMode::Raw {
             self.lines
                 .extend(plain_hyperlink_lines(raw_lines_from_source(
@@ -121,6 +139,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -132,6 +151,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -147,8 +167,12 @@ impl StreamingRender {
 
         let pending_source = &raw_source[self.stable_source_len..];
         let theme_revision = syntax_theme_revision();
-        let pending =
-            render_streaming_markdown_agent_with_links_and_cwd(pending_source, width, Some(cwd));
+        let pending = render_streaming_markdown_agent_with_links_and_cwd(
+            pending_source,
+            width,
+            Some(cwd),
+            file_opener,
+        );
         if pending.has_reference_link_definition {
             self.has_reference_link_definition = true;
             self.recompute(
@@ -156,6 +180,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -176,6 +201,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             self.stable_source_len += boundary;
@@ -202,15 +228,19 @@ pub(super) fn render_source(
     width: Option<usize>,
     cwd: &Path,
     render_mode: HistoryRenderMode,
+    file_opener: UriBasedFileOpener,
     inline_visualization_context: Option<&InlineVisualizationContext>,
 ) -> Vec<HyperlinkLine> {
     match render_mode {
-        HistoryRenderMode::Rich => render_markdown_agent_with_links_cwd_and_visualizations(
-            source,
-            width,
-            Some(cwd),
-            inline_visualization_context,
-        ),
+        HistoryRenderMode::Rich => {
+            crate::markdown::render_markdown_agent_with_links_cwd_file_opener_and_visualizations(
+                source,
+                width,
+                Some(cwd),
+                file_opener,
+                inline_visualization_context,
+            )
+        }
         HistoryRenderMode::Raw => plain_hyperlink_lines(raw_lines_from_source(source)),
     }
 }

@@ -306,6 +306,7 @@ async fn replayed_delegated_tool_output_is_attributed_without_seeding_composer_h
         [item],
         crate::thread_transcript::RawReasoningVisibility::Hidden,
         /*config*/ None,
+        chat.config.file_opener,
     );
     assert_eq!(
         projected
@@ -1306,6 +1307,7 @@ async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
         /*width*/ Some(80),
         cwd.as_path(),
         chat.history_render_mode(),
+        codex_config::types::UriBasedFileOpener::None,
     ));
 
     chat.on_mcp_tool_call_started(AppServerThreadItem::McpToolCall {

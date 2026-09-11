@@ -75,7 +75,7 @@ impl TerminalHyperlink {
 
     fn terminal_destination(&self) -> Option<String> {
         match self.destination_kind {
-            DestinationKind::Web => web_destination(&self.destination),
+            DestinationKind::Web => safe_hyperlink_destination(&self.destination),
             DestinationKind::TrustedFile => trusted_file_destination(&self.destination),
         }
     }
@@ -104,7 +104,7 @@ impl HyperlinkLine {
         let end = start + display_width(span.content.as_ref());
         self.line.push_span(span);
         if end > start
-            && let Some(destination) = destination.and_then(web_destination)
+            && let Some(destination) = destination.and_then(safe_hyperlink_destination)
         {
             self.hyperlinks
                 .push(TerminalHyperlink::web(start..end, destination));
@@ -401,6 +401,23 @@ fn trusted_file_destination(destination: &str) -> Option<String> {
     (parsed.scheme() == "file" && parsed.to_file_path().is_ok()).then_some(safe_destination)
 }
 
+pub(crate) fn safe_hyperlink_destination(destination: &str) -> Option<String> {
+    let safe_destination = sanitized_destination(destination)?;
+    let parsed = Url::parse(&safe_destination).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => {
+            parsed.host_str()?;
+        }
+        "vscode" | "vscode-insiders" | "windsurf" | "cursor" => {
+            if parsed.host_str() != Some("file") {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+    Some(safe_destination)
+}
+
 fn sanitized_destination(destination: &str) -> Option<String> {
     if destination.len() > MAX_HYPERLINK_DESTINATION_BYTES {
         return None;
@@ -409,7 +426,7 @@ fn sanitized_destination(destination: &str) -> Option<String> {
 }
 
 pub(crate) fn osc8_hyperlink(destination: &str, text: &str) -> String {
-    let Some(safe_destination) = web_destination(destination) else {
+    let Some(safe_destination) = safe_hyperlink_destination(destination) else {
         return text.to_string();
     };
     format!("\x1b]8;;{safe_destination}\x07{text}\x1b]8;;\x07")
@@ -616,7 +633,7 @@ fn mark_matching_cells(
     destination: &str,
     matches: impl Fn(&ratatui::buffer::Cell) -> bool,
 ) {
-    if web_destination(destination).is_none() {
+    if safe_hyperlink_destination(destination).is_none() {
         return;
     }
     for position in area.positions() {
@@ -644,9 +661,11 @@ mod tests {
     use ratatui::style::Style;
 
     #[test]
-    fn only_web_destinations_receive_osc8() {
+    fn only_safe_destinations_receive_osc8() {
         assert!(osc8_hyperlink("https://example.com/a", "a").contains("\x1b]8;;"));
+        assert!(osc8_hyperlink("vscode://file/tmp/a.rs:1", "a").contains("\x1b]8;;"));
         assert_eq!(osc8_hyperlink("mailto:a@example.com", "a"), "a");
+        assert_eq!(osc8_hyperlink("vscode://settings", "a"), "a");
         assert_eq!(
             osc8_hyperlink("https://example.com/\u{7}safe", "a"),
             "\x1b]8;;https://example.com/safe\x07a\x1b]8;;\x07"

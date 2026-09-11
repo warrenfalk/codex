@@ -555,6 +555,7 @@ mod tests {
                         &markdown,
                         Some(width),
                         /*cwd*/ None,
+                        /*file_opener*/ codex_config::types::UriBasedFileOpener::None,
                     );
                     let lines = crate::terminal_hyperlinks::prefix_hyperlink_lines(
                         lines,

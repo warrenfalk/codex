@@ -117,6 +117,7 @@ impl ChatWidget {
         self.bottom_pane
             .set_active_reasoning_effort_baseline(effort.as_ref());
         self.refresh_model_display();
+        self.refresh_file_reference_index();
         self.refresh_status_surfaces();
         if previous_thread_id != self.thread_id
             && self.should_prefetch_rate_limits()
