@@ -16,6 +16,7 @@ use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::to_response;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::ThreadGoalClearedNotification;
 use codex_app_server_protocol::ThreadNameUpdatedNotification;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
@@ -56,6 +57,15 @@ async fn thread_name_updated_broadcasts_for_loaded_threads() -> Result<()> {
         let resume_resp: JSONRPCResponse = read_response_for_id(&mut ws1, /*id*/ 10).await?;
         let resume: ThreadResumeResponse = to_response::<ThreadResumeResponse>(resume_resp)?;
         assert_eq!(resume.thread.id, conversation_id);
+        let goal_cleared = read_notification_for_method(&mut ws1, "thread/goal/cleared").await?;
+        let goal_cleared: ThreadGoalClearedNotification =
+            serde_json::from_value(goal_cleared.params.context("thread/goal/cleared params")?)?;
+        assert_eq!(
+            goal_cleared,
+            ThreadGoalClearedNotification {
+                thread_id: conversation_id.clone(),
+            }
+        );
 
         let renamed = "Loaded rename";
         send_request(
