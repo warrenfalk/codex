@@ -87,6 +87,7 @@ async fn replacement_uses_server_defaults_and_preserves_explicit_launch_settings
         app.start_fresh_session_with_summary_hint(
             &mut tui,
             &mut server,
+            PreviousSessionSummaryHint::Show,
             /*session_start_source*/ None,
             /*initial_user_message*/ None,
             /*new_thread_name*/ None,
@@ -154,6 +155,7 @@ async fn replacement_failure_keeps_current_task_and_restores_input() -> Result<(
         app.start_fresh_session_with_summary_hint(
             &mut tui,
             &mut server,
+            PreviousSessionSummaryHint::Show,
             /*session_start_source*/ None,
             Some("keep this request".into()),
             /*new_thread_name*/ None,
@@ -222,6 +224,7 @@ async fn replacement_preserves_remote_launch_paths_and_older_servers() -> Result
         app.start_fresh_session_with_summary_hint(
             &mut tui,
             &mut server,
+            PreviousSessionSummaryHint::Show,
             /*session_start_source*/ None,
             /*initial_user_message*/ None,
             /*new_thread_name*/ None,
