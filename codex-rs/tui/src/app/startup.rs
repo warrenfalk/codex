@@ -179,6 +179,9 @@ impl App {
         let startup_started_at = Instant::now();
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(app_event_tx);
+        #[cfg(unix)]
+        let _shutdown_signal_task =
+            super::shutdown_signal::ShutdownSignalTask::spawn(app_event_tx.clone());
         if let Some(message) = project_config_warning(&config) {
             app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                 history_cell::StartupWarningsCell::new(vec![message]),
