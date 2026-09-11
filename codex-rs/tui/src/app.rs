@@ -38,6 +38,7 @@ use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
 use crate::chatwidget::ConnectedModeFooterState;
 use crate::chatwidget::ExternalEditorState;
+use crate::chatwidget::Notification;
 use crate::chatwidget::ReplayKind;
 use crate::chatwidget::ThreadInputState;
 use crate::cwd_prompt::CwdPromptAction;
@@ -223,6 +224,8 @@ mod event_dispatch;
 mod exit_summary;
 mod experimental_features;
 mod file_change_approvals;
+#[cfg(unix)]
+mod focus_notification_signal;
 mod history_pagination;
 mod history_ui;
 mod input;

@@ -542,6 +542,9 @@ pub(crate) enum AppEvent {
         prompt: UserMessage,
     },
 
+    /// Queue the desktop notification requested by the Unix focus signal.
+    FocusNotificationRequested,
+
     /// Request to exit the application.
     ///
     /// Use `ShutdownFirst` for user-initiated quits so core cleanup runs and the
