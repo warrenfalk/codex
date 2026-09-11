@@ -196,7 +196,7 @@ pub(crate) fn thread_items_to_transcript_cells(
             }
             other => {
                 if let Some(cell) = fallback_transcript_cell(&other) {
-                    cells.push(Arc::new(cell));
+                    cells.push(cell);
                 }
             }
         }
@@ -204,7 +204,7 @@ pub(crate) fn thread_items_to_transcript_cells(
     cells
 }
 
-fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
+fn fallback_transcript_cell(item: &ThreadItem) -> Option<Arc<dyn HistoryCell>> {
     let visibility_kind = match item {
         ThreadItem::HookPrompt { .. }
         | ThreadItem::CommandExecution { .. }
@@ -218,6 +218,7 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::ImageGeneration(_) => HistoryVisibilityKind::Noise,
         ThreadItem::UserMessage { .. }
         | ThreadItem::AgentMessage { .. }
+        | ThreadItem::NoteToSelf { .. }
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }
@@ -227,6 +228,11 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::ContextCompaction { .. } => HistoryVisibilityKind::Normal,
     };
     let lines = match item {
+        ThreadItem::NoteToSelf { note, .. } => {
+            return Some(Arc::new(crate::history_cell::new_note_to_self(
+                note.clone(),
+            )));
+        }
         ThreadItem::HookPrompt { fragments, .. } => fragments
             .iter()
             .map(|fragment| {
@@ -339,5 +345,10 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         | ThreadItem::Reasoning { .. }
         | ThreadItem::Sleep(_) => return None,
     };
-    (!lines.is_empty()).then(|| PlainHistoryCell::new_with_visibility_kind(lines, visibility_kind))
+    (!lines.is_empty()).then(|| {
+        Arc::new(PlainHistoryCell::new_with_visibility_kind(
+            lines,
+            visibility_kind,
+        )) as Arc<dyn HistoryCell>
+    })
 }

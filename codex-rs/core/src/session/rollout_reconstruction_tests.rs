@@ -14,6 +14,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InterAgentCommunication;
+use codex_protocol::protocol::NoteToSelfEvent;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -255,6 +256,33 @@ async fn record_initial_history_restores_world_state_baseline(input: BaselineTur
     assert_eq!(
         raw_history_items(&session.clone_history().await),
         expected_history,
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_ignores_note_to_self_events() {
+    let (session, turn_context) = make_session_and_context().await;
+    let user_item = user_message("visible model input");
+    let assistant_item = assistant_message("assistant reply");
+    let rollout_items = vec![
+        RolloutItem::ResponseItem(ResponseItemEnvelope::new(user_item.clone())),
+        RolloutItem::EventMsg(EventMsg::NoteToSelf(NoteToSelfEvent {
+            note: "private reminder".to_string(),
+            ..Default::default()
+        })),
+        RolloutItem::ResponseItem(ResponseItemEnvelope::new(assistant_item.clone())),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    assert_eq!(
+        reconstructed.history,
+        vec![
+            ResponseItemEnvelope::new(user_item),
+            ResponseItemEnvelope::new(assistant_item),
+        ]
     );
 }
 

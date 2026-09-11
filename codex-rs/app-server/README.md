@@ -32,3 +32,19 @@ See [the feature contract](../../wf_features/app-server-firehose-subscription.md
 Local `thread/shellCommand` calls accept `projectEnv: "auto" | "bypass"`, defaulting to `"auto"`. Auto mode loads the cwd's direnv environment and fails before launch if loading fails; bypass skips loading for that command. The top-level `disable_project_env` config key disables loading entirely.
 
 `thread/projectEnv/read` accepts `{ "threadId": "..." }` and returns the canonical local cwd's current status. `thread/projectEnv/statusChanged` reports changes separately from thread lifecycle notifications, using `disabled`, `none`, `building`, `ready`, or `failed` states. Standalone `command/exec` is unaffected. See [the feature contract](../../wf_features/project-environment-loading.md) for environment precedence, cancellation, and status payload expectations.
+
+## Note to self
+
+`thread/note/create` appends a visible note without starting or steering an agent turn. It trims outer whitespace, preserves internal whitespace, and rejects empty notes with JSON-RPC `-32602`.
+
+```json
+{ "method": "thread/note/create", "id": 24, "params": {
+    "threadId": "thr_123", "note": "Check logs before retrying."
+} }
+{ "id": 24, "result": {
+    "turnId": "turn_note_1",
+    "item": { "type": "noteToSelf", "id": "item_note_1", "note": "Check logs before retrying." }
+} }
+```
+
+During an active turn, the note is appended to that turn and emits `item/completed`. For an idle thread, it appears in its own completed display-only turn and emits `turn/completed`. Notes persist in thread reads and transcript-style history. They remain excluded from model context, compaction, memory extraction, and title metadata. The TUI exposes this behavior as `/nts <note>`; see [the feature contract](../../wf_features/note-to-self.md).

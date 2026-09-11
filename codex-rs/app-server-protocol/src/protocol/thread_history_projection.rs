@@ -67,6 +67,43 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                 ..Default::default()
             }
         }
+        RolloutItem::EventMsg(EventMsg::NoteToSelf(event)) => {
+            let Some(ordinal) = line.ordinal else {
+                return ThreadHistoryChangeSet::default();
+            };
+            let active_turn_id = event.active_turn_id.clone();
+            let turn_id = active_turn_id
+                .clone()
+                .unwrap_or_else(|| format!("rollout-{ordinal}"));
+            let changed_turns = if active_turn_id.is_some() {
+                Vec::new()
+            } else {
+                vec![ThreadHistoryTurnChange {
+                    turn_id: turn_id.clone(),
+                    status: TurnStatus::Completed,
+                    error: None,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
+                }]
+            };
+            ThreadHistoryChangeSet {
+                changed_items: vec![ThreadHistoryItemChange {
+                    turn_id,
+                    item: ThreadItem::NoteToSelf {
+                        id: event
+                            .item_id
+                            .clone()
+                            .unwrap_or_else(|| format!("note-{ordinal}")),
+                        note: event.note.clone(),
+                    },
+                    started_at_ms: None,
+                    completed_at_ms: None,
+                }],
+                changed_turns,
+                ..Default::default()
+            }
+        }
         RolloutItem::EventMsg(EventMsg::ItemCompleted(event)) => ThreadHistoryChangeSet {
             changed_items: vec![ThreadHistoryItemChange {
                 turn_id: event.turn_id.clone(),

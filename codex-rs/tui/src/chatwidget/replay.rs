@@ -123,6 +123,9 @@ impl ChatWidget {
             } => {
                 self.on_committed_user_message(&content, client_id.as_deref(), from_replay);
             }
+            ThreadItem::NoteToSelf { note, .. } => {
+                self.add_to_history(history_cell::new_note_to_self(note));
+            }
             ThreadItem::AgentMessage {
                 id,
                 text,

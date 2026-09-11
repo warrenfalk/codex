@@ -247,6 +247,12 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    NoteToSelf {
+        id: String,
+        note: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
     AgentMessage {
         id: String,
         text: String,
@@ -440,6 +446,7 @@ impl ThreadItem {
         match self {
             ThreadItem::UserMessage { id, .. }
             | ThreadItem::HookPrompt { id, .. }
+            | ThreadItem::NoteToSelf { id, .. }
             | ThreadItem::AgentMessage { id, .. }
             | ThreadItem::FunctionCallOutput { id, .. }
             | ThreadItem::Plan { id, .. }
