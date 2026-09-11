@@ -10,6 +10,7 @@ use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -64,7 +65,7 @@ fn proxy_bypass_requires_review_even_when_permissions_match() -> anyhow::Result<
 }
 
 #[test]
-fn denied_reads_reject_file_system_changes_but_only_review_network_changes() {
+fn denied_reads_require_review_for_file_system_and_network_changes() {
     let mut file_system = FileSystemSandboxPolicy::read_only();
     file_system.entries.push(FileSystemSandboxEntry::new(
         FileSystemPath::GlobPattern {
@@ -78,9 +79,7 @@ fn denied_reads_reject_file_system_changes_but_only_review_network_changes() {
     let current = terminal_permissions(&baseline);
     assert_eq!(
         permissions.review_requirement(&current.policy, &baseline),
-        Err(
-            "this terminal cannot enforce the current denied-read restrictions; start a new terminal"
-        )
+        Ok(SandboxPermissions::RequireEscalated)
     );
 
     let permissions = current;

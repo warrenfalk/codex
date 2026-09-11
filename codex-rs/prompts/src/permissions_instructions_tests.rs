@@ -266,7 +266,7 @@ fn builds_permissions_from_profile_with_denied_reads() {
     );
     let text = instructions.body();
     assert!(text.contains("## Denied filesystem reads"));
-    assert!(text.contains("Do not request escalation or additional permissions"));
+    assert!(text.contains("Approved unsandboxed commands bypass these restrictions"));
     assert!(text.contains(denied_root.to_string_lossy().as_ref()));
     assert!(text.contains(&format!("glob `{}`", denied_glob.to_string_lossy())));
 }

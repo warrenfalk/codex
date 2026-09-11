@@ -4022,7 +4022,7 @@ allow_local_binding = true
 
 #[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "current_thread")]
-async fn network_approval_retry_keeps_deny_read_sandbox_for_escalated_command() -> Result<()> {
+async fn network_approval_retry_keeps_deny_read_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -4031,12 +4031,15 @@ async fn network_approval_retry_keeps_deny_read_sandbox_for_escalated_command() 
         home.path().join("config.toml"),
         r#"default_permissions = "workspace"
 
+[features.network_proxy]
+credential_broker = false
+
 [permissions.workspace.filesystem]
 ":minimal" = "read"
 
 [permissions.workspace.network]
 enabled = true
-mode = "limited"
+mode = "full"
 allow_local_binding = true
 "#,
     )?;
@@ -4047,11 +4050,15 @@ allow_local_binding = true
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
+    let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_codex()
         .with_home(home)
         .with_cloud_config_bundle(managed_network_requirements_loader())
         .with_config(move |config| {
             config.permissions.approval_policy = Constrained::allow_any(approval_policy);
+            config
+                .set_legacy_sandbox_policy(sandbox_policy_for_config)
+                .expect("set sandbox policy");
         });
     let test = builder.build(&server).await?;
     assert!(
@@ -4091,13 +4098,23 @@ allow_local_binding = true
     );
 
     let call_id = "deny-read-network-retry";
-    let fetch_command = r#"python3 -c "import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://codex-network-test.invalid', timeout=30).read().decode(errors='replace'))""#
-        .to_string();
+    fs::write(test.workspace_path("blocked.env"), "protected fixture")?;
+    let fetch_command = r#"python3 -c "import urllib.request
+try:
+    urllib.request.urlopen('http://codex-network-test.invalid', timeout=30).read()
+except Exception:
+    pass
+try:
+    print(open('blocked.env').read())
+except PermissionError:
+    print('blocked')
+""#
+    .to_string();
     let event = shell_event(
         call_id,
         &fetch_command,
         /*timeout_ms*/ 30_000,
-        SandboxPermissions::RequireEscalated,
+        SandboxPermissions::UseDefault,
     )?;
 
     let _ = mount_sse_once(
@@ -4146,50 +4163,20 @@ allow_local_binding = true
         )
         .await?;
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut command_approval_count = 0;
-    let approval = loop {
-        let remaining = deadline
-            .checked_duration_since(std::time::Instant::now())
-            .expect("timed out waiting for network approval request");
-        let event = wait_for_event_with_timeout(
-            &test.codex,
-            |event| {
-                matches!(
-                    event,
-                    EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
-                )
-            },
-            remaining,
+    let event = wait_for_event(&test.codex, |event| {
+        matches!(
+            event,
+            EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
         )
-        .await;
-        match event {
-            EventMsg::ExecApprovalRequest(approval) => {
-                if approval.command.first().map(std::string::String::as_str)
-                    == Some("network-access")
-                {
-                    break approval;
-                }
-                command_approval_count += 1;
-                assert_eq!(
-                    command_approval_count, 1,
-                    "expected only the outer explicit escalation approval"
-                );
-                test.codex
-                    .submit(Op::ExecApproval {
-                        id: approval.effective_approval_id(),
-                        turn_id: None,
-                        decision: ReviewDecision::Approved,
-                    })
-                    .await?;
-            }
-            EventMsg::TurnComplete(_) => {
-                panic!("expected network approval request before completion");
-            }
-            other => panic!("unexpected event: {other:?}"),
-        }
+    })
+    .await;
+    let EventMsg::ExecApprovalRequest(approval) = event else {
+        panic!("expected network approval request before completion");
     };
-    assert_eq!(command_approval_count, 1);
+    assert_eq!(
+        approval.command.first().map(std::string::String::as_str),
+        Some("network-access"),
+    );
     let network_context = approval
         .network_approval_context
         .clone()
@@ -4215,9 +4202,9 @@ allow_local_binding = true
     wait_for_completion(&test).await;
 
     let output = parse_result(&results.single_request().function_call_output(call_id));
-    assert!(
-        output.exit_code.is_some(),
-        "expected the approved retry to report command output"
+    assert_eq!(
+        (output.exit_code, output.stdout.trim()),
+        (Some(0), "blocked")
     );
 
     Ok(())

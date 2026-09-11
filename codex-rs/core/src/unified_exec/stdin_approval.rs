@@ -18,7 +18,6 @@ use codex_network_proxy::EnvironmentNetworkPolicy;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxPermissions;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::policy_transforms::effective_permission_profile;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
 
@@ -65,15 +64,6 @@ impl TerminalPolicy {
             controller_proxy: turn.network.is_some(),
         }
     }
-
-    fn file_system_context(&self) -> FileSystemSandboxContext {
-        let mut context = self.sandbox.clone();
-        // Network changes require review, not rejection for denied-read drift.
-        if let ExecPermissionProfile::Managed { network, .. } = &mut context.permissions {
-            *network = NetworkSandboxPolicy::Restricted;
-        }
-        context
-    }
 }
 
 impl TerminalPermissions {
@@ -114,17 +104,6 @@ impl TerminalPermissions {
         {
             return Err(
                 "this terminal cannot enforce the current environment-owned network restrictions; start a new terminal",
-            );
-        }
-        // Approval cannot retrofit denied reads onto a running process. Unless
-        // its sandbox still matches, start a new terminal under the current policy.
-        if baseline
-            .file_system_sandbox_policy()
-            .has_denied_read_restrictions()
-            && (bypassed || self.policy.file_system_context() != current.file_system_context())
-        {
-            return Err(
-                "this terminal cannot enforce the current denied-read restrictions; start a new terminal",
             );
         }
         // Once the retained settings match, only the baseline permissions can differ.

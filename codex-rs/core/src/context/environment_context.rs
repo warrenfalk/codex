@@ -145,7 +145,7 @@ fn render_file_system_entry(rendered: &mut String, entry: &FileSystemSandboxEntr
     let access = entry.access.to_string();
     rendered.push_str(&access);
     if entry.access == FileSystemAccessMode::Deny {
-        rendered.push_str("\" escalatable=\"false");
+        rendered.push_str("\" escalatable=\"true");
     }
     rendered.push_str("\">");
     match &entry.path {

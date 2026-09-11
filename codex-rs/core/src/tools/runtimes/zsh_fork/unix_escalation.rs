@@ -10,7 +10,6 @@ use crate::tools::runtimes::exec_env_for_sandbox_permissions;
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
-use crate::tools::sandboxing::unsandboxed_execution_allowed;
 use codex_execpolicy::Decision;
 use codex_execpolicy::Evaluation;
 use codex_execpolicy::MatchOptions;
@@ -70,11 +69,14 @@ fn approval_sandbox_permissions(
     sandbox_permissions: SandboxPermissions,
     additional_permissions_preapproved: bool,
 ) -> SandboxPermissions {
-    if additional_permissions_preapproved
-        && matches!(
-            sandbox_permissions,
-            SandboxPermissions::WithAdditionalPermissions
-        )
+    // The parent runtime has already approved a full sandbox override before
+    // constructing this policy. Explicit exec-policy rules still apply to children.
+    if sandbox_permissions.requires_escalated_permissions()
+        || (additional_permissions_preapproved
+            && matches!(
+                sandbox_permissions,
+                SandboxPermissions::WithAdditionalPermissions
+            ))
     {
         SandboxPermissions::UseDefault
     } else {
@@ -236,13 +238,7 @@ impl CoreShellActionProvider {
     ) -> EscalationExecution {
         match sandbox_permissions {
             SandboxPermissions::UseDefault => EscalationExecution::TurnDefault,
-            SandboxPermissions::RequireEscalated => {
-                if unsandboxed_execution_allowed(&permission_profile.file_system_sandbox_policy()) {
-                    EscalationExecution::Unsandboxed
-                } else {
-                    EscalationExecution::TurnDefault
-                }
-            }
+            SandboxPermissions::RequireEscalated => EscalationExecution::Unsandboxed,
             SandboxPermissions::WithAdditionalPermissions => additional_permissions
                 .map(|_| {
                     // Shell request additional permissions were already normalized and
@@ -438,11 +434,9 @@ impl CoreShellActionProvider {
         // fallback function.
         let decision_driven_by_policy =
             Self::decision_driven_by_policy(&evaluation.matched_rules, evaluation.decision);
-        let unsandboxed_allowed =
-            unsandboxed_execution_allowed(&self.permission_profile.file_system_sandbox_policy());
         let needs_escalation = match self.sandbox_permissions {
-            SandboxPermissions::UseDefault => unsandboxed_allowed && decision_driven_by_policy,
-            SandboxPermissions::RequireEscalated => unsandboxed_allowed,
+            SandboxPermissions::UseDefault => decision_driven_by_policy,
+            SandboxPermissions::RequireEscalated => true,
             SandboxPermissions::WithAdditionalPermissions => true,
         };
 
@@ -452,8 +446,7 @@ impl CoreShellActionProvider {
             DecisionSource::UnmatchedCommandFallback
         };
         let escalation_execution = match decision_source {
-            DecisionSource::PrefixRule if unsandboxed_allowed => EscalationExecution::Unsandboxed,
-            DecisionSource::PrefixRule => EscalationExecution::TurnDefault,
+            DecisionSource::PrefixRule => EscalationExecution::Unsandboxed,
             DecisionSource::UnmatchedCommandFallback => Self::shell_request_escalation_execution(
                 self.sandbox_permissions,
                 &self.permission_profile,

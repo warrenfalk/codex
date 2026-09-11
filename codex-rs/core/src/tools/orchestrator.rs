@@ -24,7 +24,6 @@ use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::default_exec_approval_requirement;
 use crate::tools::sandboxing::sandbox_override_for_first_attempt;
-use crate::tools::sandboxing::unsandboxed_execution_allowed;
 use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
@@ -235,14 +234,9 @@ impl ToolOrchestrator {
         }
 
         // 2) First attempt under the selected sandbox.
-        let unsandboxed_allowed =
-            !owner_network_policy && unsandboxed_execution_allowed(&file_system_sandbox_policy);
+        let unsandboxed_allowed = !owner_network_policy;
         let sandbox_override = if unsandboxed_allowed {
-            sandbox_override_for_first_attempt(
-                tool.sandbox_permissions(req),
-                &requirement,
-                &file_system_sandbox_policy,
-            )
+            sandbox_override_for_first_attempt(tool.sandbox_permissions(req), &requirement)
         } else {
             SandboxOverride::NoOverride
         };
@@ -442,7 +436,10 @@ impl ToolOrchestrator {
                         .await?;
                 }
 
-                let retry_sandbox_requested = !unsandboxed_allowed
+                // A host-specific network approval does not authorize bypassing
+                // the filesystem sandbox.
+                let retry_sandbox_requested = (!unsandboxed_allowed
+                    || network_approval_context.is_some())
                     && sandbox_manager.should_sandbox(
                         &permissions,
                         sandbox_preference,
@@ -459,10 +456,10 @@ impl ToolOrchestrator {
                 } else {
                     SandboxType::None
                 };
-                let retry_codex_linux_sandbox_exe = if unsandboxed_allowed {
-                    None
-                } else {
+                let retry_codex_linux_sandbox_exe = if retry_sandbox_requested {
                     turn_ctx.config.codex_linux_sandbox_exe.as_ref()
+                } else {
+                    None
                 };
                 let retry_attempt = SandboxAttempt {
                     sandbox: retry_sandbox,

@@ -33,7 +33,6 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::managed_network_for_sandbox_permissions;
-use crate::tools::sandboxing::sandbox_permissions_preserving_denied_reads;
 use crate::unified_exec::NoopSpawnLifecycle;
 use crate::unified_exec::TerminalPermissions;
 use crate::unified_exec::TerminalSandboxSource;
@@ -217,16 +216,8 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
         req: &UnifiedExecRequest,
         ctx: &ToolCtx,
     ) -> Option<NetworkApprovalSpec> {
-        let file_system_sandbox_policy = req
-            .turn_environment
-            .permission_profile()
-            .file_system_sandbox_policy();
-        let sandbox_permissions = sandbox_permissions_preserving_denied_reads(
-            req.sandbox_permissions,
-            &file_system_sandbox_policy,
-        );
         let network =
-            managed_network_for_sandbox_permissions(req.network.as_ref(), sandbox_permissions)
+            managed_network_for_sandbox_permissions(req.network.as_ref(), req.sandbox_permissions)
                 .cloned();
         // No-proxy fast path; owners still need a spec for execution-only proxies.
         if network.is_none() && req.turn_environment.config().network_policy.is_none() {
@@ -277,16 +268,11 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
                 .map_err(|err| ToolError::Rejected(err.to_string()))?;
             req.turn_environment.shell_snapshot(&native_cwd)
         };
-        let (file_system_sandbox_policy, _) = attempt.permissions.to_runtime_permissions();
-        let launch_sandbox_permissions = sandbox_permissions_preserving_denied_reads(
-            req.sandbox_permissions,
-            &file_system_sandbox_policy,
-        );
         let managed_network = attempt.network_proxy(managed_network_for_sandbox_permissions(
             req.network.as_ref(),
-            launch_sandbox_permissions,
+            req.sandbox_permissions,
         ));
-        let env = exec_env_for_sandbox_permissions(&req.env, launch_sandbox_permissions);
+        let env = exec_env_for_sandbox_permissions(&req.env, req.sandbox_permissions);
         let (mut env, managed_network_context, network_proxy_launch) = match managed_network {
             Some(network) if environment_is_remote => {
                 let mut launch = network.remote_launch_config().await.map_err(|err| {
