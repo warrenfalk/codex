@@ -25,6 +25,7 @@ use codex_core::shell::Shell;
 use codex_core::shell::get_shell_by_model_provided_path;
 use codex_core::thread_store_from_config;
 use codex_exec_server::CreateDirectoryOptions;
+use codex_exec_server::ExecServerRuntimePaths;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
 use codex_extension_api::ExtensionRegistry;
@@ -623,16 +624,9 @@ impl TestCodexBuilder {
             .exec_server_url
             .clone()
             .or_else(|| test_env.exec_server_url.clone());
-        #[cfg(target_os = "linux")]
-        let codex_linux_sandbox_exe = Some(
-            crate::find_codex_linux_sandbox_exe()
-                .context("should find binary for codex-linux-sandbox")?,
-        );
-        #[cfg(not(target_os = "linux"))]
-        let codex_linux_sandbox_exe = None;
-        let local_runtime_paths = codex_exec_server::ExecServerRuntimePaths::new(
-            std::env::current_exe()?,
-            codex_linux_sandbox_exe,
+        let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+            config.codex_self_exe.clone(),
+            config.codex_linux_sandbox_exe.clone(),
         )?;
         let environment_manager = Arc::new(if include_local_environment {
             codex_exec_server::EnvironmentManager::create_for_tests_with_local(
@@ -839,23 +833,9 @@ impl TestCodexBuilder {
         config.model = Some("gpt-5.5".to_string());
         config.cwd = cwd_override;
         config.model_provider = model_provider;
-        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex") {
-            config.codex_self_exe = Some(path);
-        } else if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex-exec") {
-            // `codex-exec` also supports `--codex-run-as-apply-patch`, so use it
-            // when the multitool binary is not available in test builds.
-            config.codex_self_exe = Some(path);
-        } else if let Ok(exe) = std::env::current_exe()
-            && let Some(bin_dir) = exe.parent().and_then(|parent| parent.parent())
-        {
-            let codex = bin_dir.join("codex");
-            let codex_exec = bin_dir.join("codex-exec");
-            if codex.is_file() {
-                config.codex_self_exe = Some(codex);
-            } else if codex_exec.is_file() {
-                config.codex_self_exe = Some(codex_exec);
-            }
-        }
+        // The default sandbox alias re-enters this test binary. Keep the helper
+        // executable aligned so restricted read policies expose both paths.
+        config.codex_self_exe = Some(std::env::current_exe()?);
 
         let mut mutators = vec![];
         swap(&mut self.config_mutators, &mut mutators);

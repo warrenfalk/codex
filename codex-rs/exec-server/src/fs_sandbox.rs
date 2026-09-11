@@ -9,7 +9,6 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxDirectSpawnTransformRequest;
 use codex_sandboxing::SandboxExecRequest;
@@ -115,7 +114,7 @@ impl FileSystemSandboxRunner {
         // unrelated permission roots synchronously on the executor's runtime thread.
         #[cfg(not(target_os = "linux"))]
         normalize_file_system_policy_root_aliases(&mut file_system_policy);
-        let network_policy = NetworkSandboxPolicy::Restricted;
+        let network_policy = native_permissions.network_sandbox_policy();
         let permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
             native_permissions.enforcement(),
             &file_system_policy,
