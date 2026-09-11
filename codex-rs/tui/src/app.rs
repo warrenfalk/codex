@@ -216,6 +216,7 @@ mod app_server_events;
 pub(crate) mod app_server_requests;
 mod backend_banner_fallback;
 mod background_requests;
+mod clean_scrollback;
 mod config_persistence;
 mod connector_mentions;
 mod event_dispatch;
@@ -565,6 +566,7 @@ pub(crate) struct App {
     pub(crate) file_search: FileSearchManager,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
+    clean_scrollback_enabled: bool,
     last_rendered_history_tail: Option<history_ui::RenderedHistoryTail>,
     last_thread_usage_status_cell: Option<history_ui::ThreadUsageStatusHistory>,
     pub(crate) pending_thread_usage_history_refresh: bool,

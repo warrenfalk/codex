@@ -16,7 +16,6 @@ use crate::history_cell::HistoryCell;
 use crate::history_cell::ThreadRecapHistoryCell;
 use crate::history_cell::ThreadRecapLoadingCell;
 use crate::history_cell::UserHistoryCell;
-use crate::pager_overlay::Overlay;
 use crate::temporary_structured_request::TemporaryStructuredThreadOptions;
 use crate::temporary_structured_request::run_temporary_structured_turn;
 use crate::temporary_structured_request::start_temporary_thread;
@@ -222,9 +221,7 @@ impl App {
         };
 
         self.transcript_cells.remove(index);
-        if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
-            overlay.replace_cells(self.transcript_cells.clone());
-        }
+        self.sync_transcript_overlay_cells();
     }
 
     fn retry_or_report_recap_failure(&mut self, request: RecapRequest) {

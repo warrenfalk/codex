@@ -52,6 +52,7 @@ impl ChatWidget {
             }
             self.clear_context_compaction();
         }
-        self.add_info_message(message, /*hint*/ None);
+        self.add_to_history(history_cell::new_context_compaction_event(message));
+        self.request_redraw();
     }
 }

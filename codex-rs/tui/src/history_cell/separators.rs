@@ -71,6 +71,10 @@ impl HistoryCell for FinalMessageSeparator {
             vec![Line::from(label_parts.join(" • "))]
         }
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<String> {
