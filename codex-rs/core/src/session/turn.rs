@@ -202,8 +202,8 @@ pub(crate) async fn run_turn(
     }
 
     let user_input = turn_user_input(&input);
-    let allow_plugin_mentions =
-        !crate::guardian::is_basic_session_source(&turn_context.session_source);
+    let allow_plugin_mentions = !turn_context.model_only
+        && !crate::guardian::is_basic_session_source(&turn_context.session_source);
     let McpStartupRequirements {
         required_servers,
         required_plugins,
@@ -211,7 +211,9 @@ pub(crate) async fn run_turn(
     if allow_plugin_mentions {
         required_plugins.extend(crate::plugins::collect_explicit_plugin_ids(&user_input));
     }
-    let (input_required_servers, mentioned_plugins) =
+    let (input_required_servers, mentioned_plugins) = if turn_context.model_only {
+        (Vec::new(), Vec::new())
+    } else {
         match required_mcp_servers_for_input(&sess, turn_context.as_ref(), &user_input)
             .or_cancel(&cancellation_token)
             .await
@@ -222,7 +224,8 @@ pub(crate) async fn run_turn(
                     .await;
                 return Err(err.into());
             }
-        };
+        }
+    };
 
     required_servers.extend(input_required_servers);
     required_servers.sort_unstable();
@@ -273,19 +276,24 @@ pub(crate) async fn run_turn(
     );
     let mut world_state = world_state?;
 
-    let Some((injection_items, explicitly_enabled_connectors)) = build_skills_and_plugins(
-        &sess,
-        first_step_context.as_ref(),
-        &user_input,
-        &mentioned_plugins,
-        &cancellation_token,
-    )
-    .await
-    else {
-        return Ok(None);
+    let (injection_items, explicitly_enabled_connectors) = if turn_context.model_only {
+        (Vec::new(), HashSet::new())
+    } else {
+        let Some(result) = build_skills_and_plugins(
+            &sess,
+            first_step_context.as_ref(),
+            &user_input,
+            &mentioned_plugins,
+            &cancellation_token,
+        )
+        .await
+        else {
+            return Ok(None);
+        };
+        result
     };
 
-    if run_pending_session_start_hooks(&sess, &turn_context).await {
+    if !turn_context.model_only && run_pending_session_start_hooks(&sess, &turn_context).await {
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();
@@ -543,7 +551,9 @@ pub(crate) async fn run_turn(
                             .await;
                         return Ok(None);
                     }
-                    if run_pending_session_start_hooks(&sess, &turn_context).await {
+                    if !turn_context.model_only
+                        && run_pending_session_start_hooks(&sess, &turn_context).await
+                    {
                         return Ok(None);
                     }
                     can_drain_pending_input = !model_needs_follow_up;
@@ -552,6 +562,9 @@ pub(crate) async fn run_turn(
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
+                    if turn_context.model_only {
+                        break;
+                    }
                     let stop_outcome = run_turn_stop_hooks(
                         &sess,
                         &step_context,
@@ -682,6 +695,11 @@ pub(crate) async fn run_hooks_and_record_inputs(
     input: &[TurnInput],
     persist_context: PersistContext,
 ) -> bool {
+    if turn_context.model_only {
+        record_inputs_without_hooks(sess, turn_context, input, persist_context).await;
+        return false;
+    }
+
     let mut blocked_input = false;
     let mut accepted_user_input = false;
     for input_item in input {
@@ -711,6 +729,24 @@ pub(crate) async fn run_hooks_and_record_inputs(
         }
     }
     blocked_input && !accepted_user_input
+}
+
+async fn record_inputs_without_hooks(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    input: &[TurnInput],
+    persist_context: PersistContext,
+) {
+    for input_item in input {
+        record_pending_input(
+            sess,
+            turn_context,
+            input_item.clone(),
+            Vec::new(),
+            persist_context,
+        )
+        .await;
+    }
 }
 
 fn turn_user_input(input: &[TurnInput]) -> Vec<UserInput> {

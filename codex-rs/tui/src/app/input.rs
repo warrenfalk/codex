@@ -394,6 +394,15 @@ impl App {
             return;
         }
 
+        if self.overlay.is_none()
+            && self.chat_widget.can_start_prompt_rewrite()
+            && key_event.kind == KeyEventKind::Press
+            && self.keymap.composer.rewrite_prompt.is_pressed(key_event)
+        {
+            self.handle_start_prompt_rewrite(app_server).await;
+            return;
+        }
+
         let app_keymap_shortcuts_available = self.app_keymap_shortcuts_available();
         if app_keymap_shortcuts_available
             && self

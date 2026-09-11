@@ -1,6 +1,7 @@
 //! Footer and status-row presentation state for the chat composer.
 //! Owners schedule flash expiry redraws; replacing a draft clears its flash.
 
+use std::time::Duration;
 use std::time::Instant;
 
 use ratatui::text::Line;
@@ -11,7 +12,6 @@ use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::ShortcutHint;
 use crate::slash_command::SlashCommand;
-use std::time::Duration;
 
 impl super::ChatComposer {
     pub(crate) fn footer_flash_delay(&self) -> Option<Duration> {

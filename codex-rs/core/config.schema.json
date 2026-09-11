@@ -3915,6 +3915,7 @@
               "history_search_next": null,
               "history_search_previous": null,
               "queue": null,
+              "rewrite_prompt": null,
               "submit": null,
               "toggle_shortcuts": null
             },
@@ -4425,6 +4426,14 @@
           ],
           "description": "Queue the current composer draft while a task is running."
         },
+        "rewrite_prompt": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Rewrite the current composer draft for clarity and concision."
+        },
         "submit": {
           "allOf": [
             {
@@ -4778,6 +4787,7 @@
             "history_search_next": null,
             "history_search_previous": null,
             "queue": null,
+            "rewrite_prompt": null,
             "submit": null,
             "toggle_shortcuts": null
           }

@@ -59,6 +59,7 @@ struct KeymapContextTab {
 
 const KEYMAP_COMMON_ACTIONS: &[(&str, &str)] = &[
     ("composer", "submit"),
+    ("composer", "rewrite_prompt"),
     ("chat", "interrupt_turn"),
     ("editor", "undo"),
     ("editor", "redo"),

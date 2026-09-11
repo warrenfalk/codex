@@ -48,3 +48,9 @@ Local `thread/shellCommand` calls accept `projectEnv: "auto" | "bypass"`, defaul
 ```
 
 During an active turn, the note is appended to that turn and emits `item/completed`. For an idle thread, it appears in its own completed display-only turn and emits `turn/completed`. Notes persist in thread reads and transcript-style history. They remain excluded from model context, compaction, memory extraction, and title metadata. The TUI exposes this behavior as `/nts <note>`; see [the feature contract](../../wf_features/note-to-self.md).
+
+## Model-only turns
+
+Experimental `turn/startModelOnly` starts an idle turn using the target thread's model-visible history with no tools, hooks, skill/plugin injection, memory startup, or automatic title generation. It accepts `threadId`, `input`, `model`, optional `effort`, and optional `outputSchema`, and returns the initial `turn` with the usual turn/item notifications. Parent-owned Multi-Agent V2 subagents reject direct turns.
+
+The input and output become ordinary history on the target thread. Clients needing a hidden transformation must use a separate ephemeral thread, as the TUI's [prompt rewrite shortcut](../../wf_features/prompt-rewrite-shortcut.md) does.

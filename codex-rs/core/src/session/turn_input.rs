@@ -30,6 +30,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::turn_input::NotSubmittedReason;
+use codex_protocol::turn_input::TurnExecutionMode;
 use codex_protocol::turn_input::TurnInput as SubmittedTurnInput;
 use codex_protocol::turn_input::TurnInputMode;
 use codex_protocol::turn_input::TurnInputRequest;
@@ -127,6 +128,7 @@ impl PreparedTurnInputSettings {
             parent_turn_id,
             root_turn_id,
             cyber_access_program,
+            execution_mode,
         } = self.start_options;
         let emit_thread_settings_applied = self.thread_settings_update.is_some();
         let _settings_guard = if emit_thread_settings_applied {
@@ -140,6 +142,7 @@ impl PreparedTurnInputSettings {
         let options = NewTurnContextOptions {
             final_output_json_schema,
             cyber_access_program,
+            model_only: execution_mode == TurnExecutionMode::ModelOnly,
         };
         let turn_context = match kind {
             TurnStartKind::User | TurnStartKind::Recovery => Some(
@@ -200,6 +203,13 @@ pub(super) async fn handle(
     mode: TurnInputMode,
     submission_id: String,
 ) -> CodexResult<TurnInputSubmission> {
+    if request.start.execution_mode == TurnExecutionMode::ModelOnly
+        && mode != TurnInputMode::StartIfIdle
+    {
+        return Err(CodexErr::InvalidRequest(
+            "model-only input must start on an idle thread".to_string(),
+        ));
+    }
     match mode {
         TurnInputMode::StartOrSteer => start_or_steer(session, request, submission_id).await,
         TurnInputMode::StartIfIdle => {

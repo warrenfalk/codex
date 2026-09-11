@@ -65,6 +65,14 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::models::ActivePermissionProfile;
 
 use crate::history_cell::HistoryCell;
+use crate::prompt_rewrite::PromptRewriteRequest;
+
+#[derive(Debug)]
+pub(crate) struct PromptRewriteCompletion {
+    pub(crate) child_thread_id: ThreadId,
+    pub(crate) request: PromptRewriteRequest,
+    pub(crate) result: Result<String, String>,
+}
 
 /// Whether a managed checkout starts fresh or preserves the current conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -344,6 +352,9 @@ pub(crate) enum AppEvent {
 
     /// Handle the selected close action for an idle side conversation.
     SideConversationCloseSelected(SideConversationCloseChoice),
+
+    /// Apply or report the completed hidden prompt-rewrite turn.
+    PromptRewriteCompleted(PromptRewriteCompletion),
 
     /// Submit an op to the specified thread, regardless of current focus.
     SubmitThreadOp {
