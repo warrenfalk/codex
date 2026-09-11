@@ -246,6 +246,7 @@ mod safety_buffering;
 mod session_lifecycle;
 mod session_picker;
 mod side;
+mod side_summary;
 mod startup;
 mod startup_prompts;
 mod startup_warnings;
@@ -268,6 +269,7 @@ use self::platform_actions::*;
 use self::side::SideParentStatus;
 use self::side::SideParentStatusChange;
 use self::side::SideThreadState;
+use self::side_summary::PendingSideSummary;
 use self::startup_prompts::*;
 use self::thread_events::*;
 
@@ -635,6 +637,7 @@ pub(crate) struct App {
     agents_overview: agents_overview::AgentsOverviewState,
     side_threads: HashMap<ThreadId, SideThreadState>,
     abandoned_side_threads: HashSet<ThreadId>,
+    pending_side_summary: Option<PendingSideSummary>,
     active_thread_id: Option<ThreadId>,
     active_thread_rx: Option<mpsc::Receiver<ThreadBufferedEvent>>,
     primary_thread_id: Option<ThreadId>,
