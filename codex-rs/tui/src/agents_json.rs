@@ -6,13 +6,12 @@ mod state;
 #[path = "agents_json_tests.rs"]
 mod tests;
 
+use crate::agents_model::AgentsModel;
 use codex_app_server_client::AppServerClient;
 use codex_app_server_client::RemoteAppServerClient;
 use codex_app_server_client::RemoteAppServerConnectArgs;
 use codex_app_server_client::RemoteAppServerEndpoint;
 use codex_app_server_client::TypedRequestError;
-use codex_app_server_protocol::Thread;
-use std::collections::BTreeMap;
 use std::io;
 use std::io::Write;
 use std::time::Duration;
@@ -37,7 +36,7 @@ pub async fn run_agents_json(options: AgentsJsonOptions) -> anyhow::Result<()> {
 #[allow(clippy::print_stderr)] // JSON owns stdout; connection diagnostics belong on stderr.
 async fn run(options: &AgentsJsonOptions, output: &mut impl Write) -> anyhow::Result<()> {
     let mut previous = String::new();
-    let mut threads = BTreeMap::<String, Thread>::new();
+    let mut model = AgentsModel::default();
     let mut backoff = Duration::from_millis(500);
     loop {
         let result = async {
@@ -58,21 +57,19 @@ async fn run(options: &AgentsJsonOptions, output: &mut impl Write) -> anyhow::Re
             };
             #[cfg(not(windows))]
             let client = RemoteAppServerClient::connect(args).await?;
+            model.reset_connection();
             let mut observer = state::Observer {
                 client: AppServerClient::Remote(client),
-                threads: &mut threads,
-                dirty: Default::default(),
-                removed: Default::default(),
-                membership: Default::default(),
+                model: &mut model,
             };
             let result = async {
-                observer.seed().await?;
+                observer.subscribe().await?;
                 loop {
                     observer.synchronize().await?;
                     emit(
                         output,
                         &mut previous,
-                        snapshot::snapshot(observer.threads, options)?,
+                        snapshot::snapshot(observer.model, options)?,
                     )?;
                     backoff = Duration::from_millis(500);
                     if !options.watch {

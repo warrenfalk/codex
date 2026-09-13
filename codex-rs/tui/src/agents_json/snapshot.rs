@@ -1,8 +1,9 @@
 use super::AgentsJsonOptions;
-use super::state::parent_id;
 use crate::agents_list::AgentsOverviewGroup;
 use crate::agents_list::AgentsOverviewProjectGroup;
 use crate::agents_list::display_title;
+use crate::agents_list::parent_id;
+use crate::agents_model::AgentsModel;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadActiveFlag;
 use codex_app_server_protocol::ThreadStatus;
@@ -10,11 +11,17 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 pub(super) fn snapshot(
-    threads: &BTreeMap<String, Thread>,
+    model: &AgentsModel,
     options: &AgentsJsonOptions,
 ) -> anyhow::Result<serde_json::Value> {
+    let threads: BTreeMap<_, _> = model
+        .threads
+        .values()
+        .flatten()
+        .map(|thread| (thread.id.clone(), thread))
+        .collect();
     let mut families = BTreeMap::<String, Vec<&Thread>>::new();
-    for thread in threads.values() {
+    for thread in threads.values().copied() {
         let mut root = thread;
         let mut seen = BTreeSet::from([&root.id]);
         while let Some(parent) = parent_id(root) {
@@ -31,7 +38,7 @@ pub(super) fn snapshot(
     }
     let mut sessions = Vec::new();
     for (id, family) in families {
-        let root = &threads[&id];
+        let root = threads[&id];
         let status = family
             .iter()
             .map(|thread| AgentsOverviewGroup::for_status(&thread.status))

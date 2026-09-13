@@ -13,6 +13,12 @@ remote, explicit local, `tui.local_app_server_url`, then the default daemon sock
 Profile and configuration errors are fatal. Project directories do not filter the
 list. Remote paths are server paths and are never inspected as local Git projects.
 
+Given the same server and observed history, the interactive dashboard and JSON
+output agree on task membership, titles, project grouping, and exclusive status.
+Clients started at different times can have different retained tasks. Unload races,
+archive/unarchive, and notifications during discovery follow the same behavior in
+both presentations.
+
 ## Membership
 
 A session is a root task and its descendants, counted once using the root thread's
