@@ -62,9 +62,11 @@ use supports_color::Stream;
 #[global_allocator]
 static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+mod agents_cmd;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
 mod cloud_config;
+use agents_cmd::AgentsCommand;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod desktop_app;
 mod doctor;
@@ -368,20 +370,6 @@ struct DebugTraceReduceCommand {
     /// Output path for reduced RolloutTrace JSON. Defaults to TRACE_BUNDLE/state.json.
     #[arg(long = "output", short = 'o', value_name = "FILE")]
     output: Option<PathBuf>,
-}
-
-#[derive(Debug, Parser)]
-struct AgentsCommand {
-    #[clap(flatten)]
-    remote: InteractiveRemoteOptions,
-
-    /// Use this directory for new tasks on a remote server.
-    #[arg(long = "cd", short = 'C', value_name = "DIR")]
-    cwd: Option<PathBuf>,
-
-    /// Disable alternate screen mode.
-    #[arg(long = "no-alt-screen", default_value_t = false)]
-    no_alt_screen: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -1391,6 +1379,9 @@ async fn cli_main(
     }
     reject_local_mode_for_subcommand(root_local.as_deref(), &subcommand)?;
 
+    let agents_json = agents_options
+        .filter(|options| options.json)
+        .map(|options| options.watch);
     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
     match subcommand {
         None | Some(Subcommand::Agents(_)) => {
@@ -1433,6 +1424,16 @@ async fn cli_main(
                     )?;
                     #[cfg(not(any(unix, windows)))]
                     anyhow::bail!("`codex agents` requires `--remote` on this platform");
+                }
+                if let Some(watch) = agents_json {
+                    return agents_cmd::run_json(
+                        &interactive,
+                        root_local,
+                        root_remote,
+                        root_remote_auth_token_env,
+                        watch,
+                    )
+                    .await;
                 }
                 interactive.agents_overview = true;
             }

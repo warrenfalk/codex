@@ -11,7 +11,6 @@ use crate::AppServerTarget;
 use crate::app_event::AgentsOverviewThreadRefresh;
 use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
-use crate::chatwidget::ChatWidget;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::RequestId;
@@ -314,13 +313,7 @@ impl App {
                                     .await
                                     && let Some(turn) = turns.data.first()
                                 {
-                                    if let Some(ThreadItem::UserMessage { content, .. }) =
-                                        turn.items.first()
-                                    {
-                                        response.thread.preview =
-                                            ChatWidget::user_message_display_from_inputs(content)
-                                                .message;
-                                    }
+                                    crate::agents_list::update_preview(&mut response.thread, turn);
                                     last_message =
                                         turn.items.iter().rev().find_map(|item| match item {
                                             ThreadItem::AgentMessage { text, .. } => {
