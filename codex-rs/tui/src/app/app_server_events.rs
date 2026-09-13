@@ -71,11 +71,8 @@ impl App {
                 if let Some(task) = self.agents_overview.refresh_task.take() {
                     task.abort();
                 }
-                self.agents_overview.request_id = None;
-                self.agents_overview.refresh_pending = false;
-                self.agents_overview.refresh_notifications.clear();
+                self.agents_overview.model.reset_connection();
                 self.agents_overview.activity.clear();
-                self.agents_overview.last_messages.clear();
                 self.repaint_agents_overview();
                 self.refresh_agents_overview_threads(app_server_client);
             }
@@ -164,17 +161,7 @@ impl App {
                 .entry(thread_id)
                 .or_default();
         }
-        self.track_agents_overview_notification(&notification);
-        if matches!(
-            &notification,
-            ServerNotification::ThreadStarted(_)
-                | ServerNotification::ThreadStatusChanged(_)
-                | ServerNotification::ThreadSettingsUpdated(_)
-                | ServerNotification::ThreadNameUpdated(_)
-                | ServerNotification::ThreadArchived(_)
-                | ServerNotification::ThreadDeleted(_)
-                | ServerNotification::ThreadClosed(_)
-        ) {
+        if self.track_agents_overview_notification(&notification) {
             self.repaint_agents_overview();
             self.refresh_changed_agents_overview_threads(app_server_client);
         }

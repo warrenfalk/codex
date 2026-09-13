@@ -14,28 +14,19 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line_for_keymap;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput;
-use codex_protocol::protocol::SubAgentSource;
 
 pub(crate) const AGENTS_OVERVIEW_VIEW_ID: &str = "agents-overview";
 
 #[derive(Default)]
 pub(super) struct AgentsOverviewState {
-    /// Missing metadata records a local resume until the next metadata refresh.
-    pub(super) threads: HashMap<ThreadId, Option<Thread>>,
-    pub(super) last_messages: HashMap<ThreadId, String>,
+    pub(super) model: crate::agents_model::AgentsModel,
     pub(super) activity: HashMap<ThreadId, super::agents_overview_details::AgentsOverviewActivity>,
-    pub(super) initialized: bool,
-    pub(super) request_id: Option<Uuid>,
-    pub(super) refresh_pending: bool,
-    pub(super) refresh_thread_ids: HashSet<ThreadId>,
     pub(super) refresh_task: Option<tokio::task::AbortHandle>,
-    pub(super) refresh_notifications: HashMap<ThreadId, Vec<ServerNotification>>,
     pub(super) rendered_full_screen: bool,
     pub(super) visible_thread_ids: Vec<ThreadId>,
     pub(super) view_state:
@@ -110,6 +101,7 @@ impl App {
             .focus_composer();
         let threads = self
             .agents_overview
+            .model
             .threads
             .values()
             .flatten()
@@ -127,59 +119,31 @@ impl App {
         request_id: Uuid,
         result: Result<AgentsOverviewThreadRefresh, String>,
     ) {
-        if self.agents_overview.request_id != Some(request_id) {
+        if self.agents_overview.model.request_id != Some(request_id) {
             return;
         }
-        self.agents_overview.request_id = None;
         self.agents_overview.refresh_task = None;
-        match result {
-            Ok(refresh) => {
-                self.agents_overview.initialized = refresh.recent_seed_complete;
-                self.agents_overview
-                    .last_messages
-                    .extend(refresh.last_messages);
-                for (thread_id, thread) in refresh.threads {
-                    if let Some(mut thread) = thread {
-                        if thread.ephemeral {
-                            self.agents_overview.threads.remove(&thread_id);
-                            self.agents_overview.last_messages.remove(&thread_id);
-                            self.agents_overview.activity.remove(&thread_id);
-                            continue;
-                        }
-                        thread.turns.clear();
-                        self.agents_overview.threads.insert(thread_id, Some(thread));
-                    } else {
-                        self.agents_overview.threads.entry(thread_id).or_default();
-                    }
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to refresh shared agents");
-                if self
+        let failed = result.is_err();
+        if let Err(error) = self
+            .agents_overview
+            .model
+            .finish_refresh(request_id, result.map_err(anyhow::Error::msg))
+        {
+            tracing::warn!(%error, "failed to refresh shared agents");
+            if failed
+                && self
                     .chat_widget
                     .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
                     .is_some()
-                {
-                    self.chat_widget
-                        .add_error_message(format!("Failed to load shared agents: {error}"));
-                }
+            {
+                self.chat_widget
+                    .add_error_message(format!("Failed to load shared agents: {error}"));
             }
         }
-        for notifications in
-            std::mem::take(&mut self.agents_overview.refresh_notifications).into_values()
-        {
-            for notification in notifications {
-                if let ServerNotification::ThreadReverted(reverted) = &notification
-                    && let Ok(thread_id) = ThreadId::from_string(&reverted.thread_id)
-                {
-                    // Discard stale read results without clearing activity received after the revert.
-                    self.agents_overview.last_messages.remove(&thread_id);
-                    continue;
-                }
-                self.track_agents_overview_notification(&notification);
-            }
-        }
-        if std::mem::take(&mut self.agents_overview.refresh_pending) {
+        self.agents_overview
+            .activity
+            .retain(|id, _| self.agents_overview.model.threads.contains_key(id));
+        if std::mem::take(&mut self.agents_overview.model.refresh_pending) {
             self.refresh_changed_agents_overview_threads(app_server);
         }
         self.repaint_agents_overview();
@@ -199,6 +163,7 @@ impl App {
             .copied();
         let threads = self
             .agents_overview
+            .model
             .threads
             .values()
             .flatten()
@@ -232,13 +197,7 @@ impl App {
     ) -> AgentsOverviewView {
         threads.retain(|thread| !thread.ephemeral);
         for thread in &mut threads {
-            if thread.parent_thread_id.is_none()
-                && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                    parent_thread_id, ..
-                }) = &thread.source
-            {
-                thread.parent_thread_id = Some(parent_thread_id.to_string());
-            }
+            thread.parent_thread_id = crate::agents_list::parent_id(thread);
         }
         let mut children: HashMap<String, Vec<&Thread>> = HashMap::new();
         for thread in &threads {

@@ -18,15 +18,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::collections::HashMap;
 
-const PREVIEW_CHARS: usize = 512;
-
-pub(super) fn preview_text(text: &str) -> String {
-    text.chars()
-        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
-        .filter(|ch| !ch.is_control())
-        .take(PREVIEW_CHARS)
-        .collect()
-}
+use crate::agents_list::PREVIEW_CHARS;
+pub(super) use crate::agents_list::preview_text;
 
 #[derive(Default)]
 pub(super) struct AgentsOverviewActivity {
@@ -48,7 +41,7 @@ impl App {
         thread_id: ThreadId,
         notification: &ServerNotification,
     ) {
-        if !self.agents_overview.threads.contains_key(&thread_id) {
+        if !self.agents_overview.model.threads.contains_key(&thread_id) {
             return;
         }
         let activity = self.agents_overview.activity.entry(thread_id).or_default();
@@ -192,7 +185,7 @@ impl App {
         }
         if let Some(message) = activity
             .and_then(|activity| activity.last_message.as_ref())
-            .or_else(|| self.agents_overview.last_messages.get(&thread_id))
+            .or_else(|| self.agents_overview.model.last_messages.get(&thread_id))
             .filter(|message| !message.trim().is_empty())
         {
             lines.extend([

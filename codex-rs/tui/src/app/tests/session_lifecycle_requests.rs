@@ -2637,6 +2637,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
             app.apply_agents_overview_thread_refresh(&app_server, request_id, result);
             assert_eq!(
                 app.agents_overview
+                    .model
                     .threads
                     .keys()
                     .copied()
@@ -2644,7 +2645,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                 vec![started.session.thread_id]
             );
             assert_eq!(
-                app.agents_overview.initialized,
+                app.agents_overview.model.initialized,
                 capabilities != HistoryCapabilities::ThreadListFails || attempt > 0
             );
             if attempt == 0 {
@@ -2660,7 +2661,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     )),
                 )
                 .await;
-                assert!(app.agents_overview.request_id.is_none());
+                assert!(app.agents_overview.model.request_id.is_none());
             }
         }
         let list_requests = recorded_params(&requests, "thread/list");

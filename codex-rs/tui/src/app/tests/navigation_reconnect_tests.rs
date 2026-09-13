@@ -127,11 +127,12 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
             .iter()
             .map(|thread| Ok((ThreadId::from_string(&thread.id)?, Some(thread.clone()))))
             .collect::<Result<HashMap<_, _>>>()?;
-        app.agents_overview.threads = stale_threads.clone();
+        app.agents_overview.model.threads = stale_threads.clone();
         app.agents_overview
+            .model
             .last_messages
             .insert(selected, "Pre-disconnect answer".into());
-        app.agents_overview.initialized = overview_initialized;
+        app.agents_overview.model.initialized = overview_initialized;
         let view = app.agents_overview_view(
             stale.clone(),
             Some(if previous_thread.is_some() {
@@ -157,8 +158,8 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
             }
         };
         let stale_request = Uuid::new_v4();
-        app.agents_overview.request_id = Some(stale_request);
-        app.agents_overview.refresh_pending = true;
+        app.agents_overview.model.request_id = Some(stale_request);
+        app.agents_overview.model.refresh_pending = true;
         let refresh = tokio::spawn(std::future::pending::<()>());
         app.agents_overview.refresh_task = Some(refresh.abort_handle());
         let directory = tempfile::tempdir()?;
@@ -252,12 +253,12 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
         let disconnected = session.next_event().await.unwrap();
         app.handle_app_server_event(&session, disconnected).await;
         assert!(app.reconnect.offline);
-        assert!(app.agents_overview.last_messages.is_empty());
+        assert!(app.agents_overview.model.last_messages.is_empty());
         assert!(refresh.await.unwrap_err().is_cancelled());
         assert_eq!(
             (
-                app.agents_overview.request_id,
-                app.agents_overview.refresh_pending
+                app.agents_overview.model.request_id,
+                app.agents_overview.model.refresh_pending
             ),
             (None, false)
         );
@@ -268,6 +269,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
                 last_messages: HashMap::new(),
                 threads: HashMap::new(),
                 recent_seed_complete: false,
+                ..Default::default()
             }),
         );
         assert_eq!(app.agents_overview.visible_thread_ids.len(), 2);
@@ -314,7 +316,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
 
         tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
             let mut deferred = Vec::new();
-            while app.agents_overview.request_id.is_some() {
+            while app.agents_overview.model.request_id.is_some() {
                 let event = events.recv().await.expect("inventory refresh event");
                 if matches!(event, AppEvent::AgentsOverviewThreadsLoaded { .. }) {
                     app.handle_event(&mut tui, &mut session, event).await?;
@@ -390,6 +392,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
                 last_messages: HashMap::new(),
                 threads: stale_threads,
                 recent_seed_complete: true,
+                ..Default::default()
             }),
         );
         assert!(!app.agents_overview.visible_thread_ids.contains(&vanished));

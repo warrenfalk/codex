@@ -170,6 +170,7 @@ mod local_settings;
 pub use live_wrap::RowBuilder;
 mod agents_json;
 mod agents_list;
+mod agents_model;
 mod local_chatgpt_auth;
 mod managed_new_thread_defaults;
 mod markdown;

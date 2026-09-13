@@ -1,11 +1,35 @@
 //! Shared list semantics for the interactive agents dashboard and JSON snapshots.
 
+use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadActiveFlag;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
+use codex_protocol::protocol::SubAgentSource;
 use std::path::PathBuf;
+
+pub(crate) const PREVIEW_CHARS: usize = 512;
+
+pub(crate) fn preview_text(text: &str) -> String {
+    text.chars()
+        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
+        .filter(|ch| !ch.is_control())
+        .take(PREVIEW_CHARS)
+        .collect()
+}
+
+pub(crate) fn parent_id(thread: &Thread) -> Option<String> {
+    thread
+        .parent_thread_id
+        .clone()
+        .or_else(|| match &thread.source {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) => Some(parent_thread_id.to_string()),
+            _ => None,
+        })
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
