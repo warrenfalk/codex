@@ -10,9 +10,10 @@ impl ChatWidget {
         &mut self,
         message_id: &str,
         questions: &[AsyncUserInputQuestion],
-    ) {
-        self.bottom_pane.push_async_questions(message_id, questions);
+    ) -> bool {
+        let appended = self.bottom_pane.push_async_questions(message_id, questions);
         self.refresh_pending_input_preview();
+        appended
     }
 
     pub(super) fn handle_question_key(&mut self, key: KeyEvent) -> bool {

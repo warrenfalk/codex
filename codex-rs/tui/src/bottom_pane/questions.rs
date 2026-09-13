@@ -7,10 +7,11 @@ impl BottomPane {
         &mut self,
         message_id: &str,
         questions: &[codex_protocol::items::AsyncUserInputQuestion],
-    ) {
-        self.question_editor().append(message_id, questions);
+    ) -> bool {
+        let appended = self.question_editor().append(message_id, questions);
         self.schedule_active_view_frame();
         self.request_redraw();
+        appended
     }
 
     fn question_editor(&mut self) -> &mut AsyncQuestions {
