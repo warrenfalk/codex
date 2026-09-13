@@ -16,6 +16,7 @@ use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadTurnsListParams;
 use codex_app_server_protocol::ThreadTurnsListResponse;
 use codex_protocol::protocol::SubAgentSource;
@@ -25,8 +26,9 @@ use std::collections::BTreeSet;
 use std::io;
 use std::time::Duration;
 
-pub(super) struct Observer {
+pub(super) struct Observer<'a> {
     pub(super) client: AppServerClient,
+    pub(super) threads: &'a mut BTreeMap<String, Thread>,
     pub(super) dirty: BTreeSet<String>,
     pub(super) removed: BTreeSet<String>,
     pub(super) membership: BTreeMap<String, Membership>,
@@ -37,7 +39,7 @@ pub(super) enum Membership {
     Removed,
 }
 
-impl Observer {
+impl Observer<'_> {
     pub(super) async fn receive(&mut self) -> anyhow::Result<()> {
         loop {
             let event = self.client.next_event().await;
@@ -65,14 +67,17 @@ impl Observer {
             }
         };
         let id = match *notification {
-            ServerNotification::ThreadStarted(event) => {
+            ServerNotification::ThreadStarted(mut event) => {
                 if event.thread.ephemeral {
                     return Ok(false);
                 }
                 self.removed.remove(&event.thread.id);
                 self.membership
                     .insert(event.thread.id.clone(), Membership::Present);
-                event.thread.id
+                let id = event.thread.id.clone();
+                event.thread.turns.clear();
+                self.threads.insert(id.clone(), event.thread);
+                id
             }
             ServerNotification::ThreadArchived(event) => {
                 self.dirty.remove(&event.thread_id);
@@ -129,15 +134,15 @@ impl Observer {
         }
     }
 
-    pub(super) async fn seed(&mut self, retained: &BTreeMap<String, Thread>) -> anyhow::Result<()> {
+    pub(super) async fn seed(&mut self) -> anyhow::Result<()> {
         self.request::<EventFirehoseResponse>(ClientRequest::EventFirehose {
             request_id: request_id(),
             params: None,
         })
         .await?;
-        self.dirty.extend(retained.keys().cloned());
+        self.dirty.extend(self.threads.keys().cloned());
         // Reconcile archives that happened while disconnected, including descendants.
-        if !retained.is_empty() {
+        if !self.threads.is_empty() {
             for sources in [
                 Vec::new(),
                 vec![
@@ -172,8 +177,11 @@ impl Observer {
                 .cmp(&left.recency_at.unwrap_or(left.updated_at))
                 .then_with(|| right.id.cmp(&left.id))
         });
-        self.dirty
-            .extend(recent.into_iter().take(20).map(|thread| thread.id));
+        for mut thread in recent.into_iter().take(20) {
+            self.dirty.insert(thread.id.clone());
+            thread.turns.clear();
+            self.threads.entry(thread.id.clone()).or_insert(thread);
+        }
         let mut cursor = None;
         let mut seen = BTreeSet::new();
         loop {
@@ -264,10 +272,7 @@ impl Observer {
         Ok(data)
     }
 
-    pub(super) async fn synchronize(
-        &mut self,
-        threads: &mut BTreeMap<String, Thread>,
-    ) -> anyhow::Result<()> {
+    pub(super) async fn synchronize(&mut self) -> anyhow::Result<()> {
         while let Some(id) = self.dirty.pop_first() {
             if self.removed.contains(&id) {
                 continue;
@@ -284,8 +289,18 @@ impl Observer {
             if self.removed.contains(&id) {
                 continue;
             }
+            let read_history = result.is_ok();
             let mut thread = match result {
                 Ok(response) => response.thread,
+                Err(error) if thread_not_loaded(&error, &id) => {
+                    // Unloading is not deletion. Keep metadata observed before the
+                    // thread became unreadable, without retrying an unavailable read.
+                    let Some(mut thread) = self.threads.get(&id).cloned() else {
+                        continue;
+                    };
+                    thread.status = ThreadStatus::NotLoaded;
+                    thread
+                }
                 Err(error) if matches!(error.downcast_ref::<TypedRequestError>(), Some(TypedRequestError::Server { source, .. }) if source.message == format!("no rollout found for thread id {id}") || source.message == format!("thread not found: {id}")) =>
                 {
                     self.removed.insert(id);
@@ -297,7 +312,7 @@ impl Observer {
                 self.removed.insert(id);
                 continue;
             }
-            if parent_id(&thread).is_none() {
+            if read_history && parent_id(&thread).is_none() {
                 let turns = self
                     .request::<ThreadTurnsListResponse>(ClientRequest::ThreadTurnsList {
                         request_id: request_id(),
@@ -319,25 +334,37 @@ impl Observer {
                             crate::agents_list::update_preview(&mut thread, turn);
                         }
                     }
+                    Err(error) if thread_not_loaded(&error, &id) => {
+                        if let Some(previous) = self.threads.get(&id) {
+                            thread.preview.clone_from(&previous.preview);
+                        }
+                        thread.status = ThreadStatus::NotLoaded;
+                    }
                     Err(error) if matches!(error.downcast_ref::<TypedRequestError>(), Some(TypedRequestError::Server { source, .. }) if source.message == format!("thread {id} is not materialized yet; thread/turns/list is unavailable before first user message")) =>
                         {}
                     Err(error) => return Err(error),
                 }
             }
             if let Some(parent) = parent_id(&thread)
-                && !threads.contains_key(&parent)
+                && !self.threads.contains_key(&parent)
                 && !self.removed.contains(&parent)
             {
                 self.dirty.insert(parent);
             }
             thread.turns.clear();
-            threads.insert(id, thread);
+            self.threads.insert(id, thread);
         }
         // Keep descendant metadata even while an archived parent hides its row.
         // If the parent returns, its still-observed children belong to it again.
-        threads.retain(|id, _| !self.removed.contains(id));
+        self.threads.retain(|id, _| !self.removed.contains(id));
         Ok(())
     }
+}
+
+fn thread_not_loaded(error: &anyhow::Error, id: &str) -> bool {
+    matches!(error.downcast_ref::<TypedRequestError>(),
+        Some(TypedRequestError::Server { source, .. })
+            if source.code == -32600 && source.message == format!("thread not loaded: {id}"))
 }
 
 enum Listing {

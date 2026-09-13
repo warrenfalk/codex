@@ -29,6 +29,7 @@ struct Mock {
     threads: Arc<Mutex<BTreeMap<String, Thread>>>,
     commands: mpsc::UnboundedSender<Option<Value>>,
     archived: Arc<Mutex<BTreeSet<String>>>,
+    read_errors: Arc<Mutex<BTreeMap<(String, String), Value>>>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -60,6 +61,8 @@ impl Mock {
         let data = Arc::clone(&threads);
         let archived = Arc::new(Mutex::new(BTreeSet::<String>::new()));
         let server_archived = Arc::clone(&archived);
+        let read_errors = Arc::new(Mutex::new(BTreeMap::<(String, String), Value>::new()));
+        let server_read_errors = Arc::clone(&read_errors);
         let task = tokio::spawn(async move {
             let mut inject_race = true;
             loop {
@@ -87,6 +90,25 @@ impl Mock {
                     let method = request["method"].as_str().unwrap();
                     if method.starts_with("thread/") {
                         assert!(subscribed);
+                    }
+                    let error = server_read_errors
+                        .lock()
+                        .unwrap()
+                        .get(&(
+                            method.to_string(),
+                            params["threadId"].as_str().unwrap_or_default().to_string(),
+                        ))
+                        .cloned();
+                    if let Some(error) = error {
+                        websocket
+                            .send(Message::Text(
+                                json!({"id": request["id"], "error": error})
+                                    .to_string()
+                                    .into(),
+                            ))
+                            .await
+                            .unwrap();
+                        continue;
                     }
                     let result = match method {
                         "initialize" => json!({"userAgent": "mock"}),
@@ -162,6 +184,7 @@ impl Mock {
             threads,
             commands,
             archived,
+            read_errors,
             task,
         }
     }
@@ -214,6 +237,10 @@ impl Write for Lines {
     }
 }
 
+fn not_loaded_error(id: &str) -> Value {
+    json!({"code": -32600, "message": format!("thread not loaded: {id}")})
+}
+
 #[tokio::test]
 async fn watch_retains_unloaded_tasks_deduplicates_and_resynchronizes() {
     let mut mock = Mock::start(vec![thread("root", json!({"type": "idle"}))]).await;
@@ -225,6 +252,10 @@ async fn watch_retains_unloaded_tasks_deduplicates_and_resynchronizes() {
         assert_eq!(
             initial["counts"],
             json!({"total": 1, "working": 0, "needsAttention": 0})
+        );
+        mock.read_errors.lock().unwrap().insert(
+            ("thread/read".into(), "root".into()),
+            not_loaded_error("root"),
         );
         mock.commands.send(Some(json!({"method": "thread/status/changed", "params": {"threadId": "root", "status": {"type": "idle"}}}))).unwrap();
         mock.threads.lock().unwrap().get_mut("root").unwrap().status = ThreadStatus::NotLoaded;
@@ -247,6 +278,7 @@ async fn watch_retains_unloaded_tasks_deduplicates_and_resynchronizes() {
             json!({"version": 1, "connection": "disconnected", "counts": null, "sessions": null})
         );
         assert_eq!(rx.recv().await.unwrap(), finished);
+        mock.read_errors.lock().unwrap().clear();
         mock.threads.lock().unwrap().get_mut("root").unwrap().status = ThreadStatus::SystemError;
         mock.commands.send(Some(json!({"method": "thread/status/changed", "params": {"threadId": "root", "status": {"type": "systemError"}}}))).unwrap();
         let reconnected = rx.recv().await.unwrap();
@@ -319,6 +351,109 @@ async fn watch_retains_unloaded_tasks_deduplicates_and_resynchronizes() {
         () = exercise => {},
         () = tokio::time::sleep(Duration::from_secs(10)) => panic!("watch stalled"),
     }
+}
+
+#[tokio::test]
+async fn watch_retains_started_threads_when_metadata_or_history_reads_race_unloading() {
+    for method in ["thread/read", "thread/turns/list"] {
+        let mut mock = Mock::start(Vec::new()).await;
+        mock.options.watch = true;
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut output = Lines(tx, Vec::new());
+        let exercise = async {
+            assert_eq!(
+                rx.recv().await.unwrap(),
+                json!({
+                    "version": 1, "connection": "connected",
+                    "counts": {"total": 0, "working": 0, "needsAttention": 0}, "sessions": []
+                })
+            );
+            let task = thread("task", json!({"type": "active", "activeFlags": []}));
+            mock.threads
+                .lock()
+                .unwrap()
+                .insert(task.id.clone(), task.clone());
+            mock.read_errors
+                .lock()
+                .unwrap()
+                .insert((method.into(), task.id.clone()), not_loaded_error(&task.id));
+            mock.commands
+                .send(Some(json!({
+                    "method": "thread/started", "params": {"thread": task}
+                })))
+                .unwrap();
+            let mut expected = json!({
+                "version": 1, "connection": "connected",
+                "counts": {"total": 1, "working": 0, "needsAttention": 0},
+                "sessions": [{
+                    "id": "task", "title": "Original prompt", "cwd": task.cwd,
+                    "name": null, "preview": task.preview, "createdAt": 1, "updatedAt": 2,
+                    "recencyAt": null, "gitInfo": null, "status": "finished",
+                    "rootStatus": {"type": "notLoaded"},
+                    "project": {"key": [task.cwd, ""], "heading": task.cwd},
+                    "loaded": false, "working": false, "attention": []
+                }]
+            });
+            assert_eq!(rx.recv().await.unwrap(), expected);
+            mock.read_errors.lock().unwrap().clear();
+            mock.threads.lock().unwrap().get_mut("task").unwrap().status = ThreadStatus::Idle;
+            mock.commands
+                .send(Some(json!({
+                    "method": "thread/status/changed", "params": {
+                        "threadId": "task", "status": {"type": "idle"}
+                    }
+                })))
+                .unwrap();
+            expected["sessions"][0]["title"] = json!("Latest prompt");
+            expected["sessions"][0]["preview"] = json!("Latest prompt\nSecond line");
+            expected["sessions"][0]["status"] = json!("ready");
+            expected["sessions"][0]["rootStatus"] = json!({"type": "idle"});
+            expected["sessions"][0]["loaded"] = json!(true);
+            assert_eq!(rx.recv().await.unwrap(), expected);
+            mock.read_errors
+                .lock()
+                .unwrap()
+                .insert((method.into(), task.id.clone()), not_loaded_error(&task.id));
+            mock.commands
+                .send(Some(json!({
+                    "method": "thread/closed", "params": {"threadId": task.id}
+                })))
+                .unwrap();
+            expected["sessions"][0]["status"] = json!("finished");
+            expected["sessions"][0]["rootStatus"] = json!({"type": "notLoaded"});
+            expected["sessions"][0]["loaded"] = json!(false);
+            assert_eq!(rx.recv().await.unwrap(), expected);
+        };
+        tokio::select! {
+            result = run(&mock.options, &mut output) => panic!("watch ended early: {result:?}"),
+            () = exercise => {},
+            () = tokio::time::sleep(Duration::from_secs(10)) => panic!("watch stalled"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn one_shot_retains_recent_metadata_and_skips_unknown_threads_that_unload_during_discovery() {
+    let mock = Mock::start(vec![
+        thread("recent", json!({"type": "active", "activeFlags": []})),
+        // The mock excludes this ID from thread/list, so only its loaded ID is known.
+        thread("root", json!({"type": "active", "activeFlags": []})),
+    ])
+    .await;
+    for id in ["recent", "root"] {
+        mock.read_errors
+            .lock()
+            .unwrap()
+            .insert(("thread/read".into(), id.into()), not_loaded_error(id));
+    }
+    let mut output = Vec::new();
+    run(&mock.options, &mut output).await.unwrap();
+    let mut snapshot: Value = serde_json::from_slice(&output).unwrap();
+    for session in snapshot["sessions"].as_array_mut().unwrap() {
+        session["cwd"] = json!("/project");
+        session["project"] = json!({"key": ["/project", ""], "heading": "/project"});
+    }
+    insta::assert_snapshot!(serde_json::to_string_pretty(&snapshot).unwrap());
 }
 
 #[tokio::test]

@@ -22,6 +22,11 @@ exec/app-server sources and recency ordering. Ephemeral threads are excluded.
 Discover unloaded ancestors when necessary; never present a child as its own root.
 
 Watch mode retains discovered tasks after they unload, as the dashboard does.
+If a thread unloads during a metadata or history read, keep its last known metadata,
+mark it unloaded, and continue watching on the same connection. Metadata received
+in recent-task listings or thread-start notifications also counts as known state.
+If only an ID was discovered before the thread became unreadable, skip that ID
+without inventing a row; later discovery or notifications can make it visible.
 Archive and deletion remove tasks. Reconnection refreshes retained tasks and
 reconciles archives/deletions that happened during the interruption, then adds the
 current loaded and recent tasks. All discovery queries exhaust the pages needed
@@ -86,4 +91,5 @@ Validation must cover complete discovery and ancestry, notifications racing with
 initial reads, simultaneous work and attention, recent/retained membership,
 archive/delete and reconnect reconciliation, stable JSON snapshots, flushing,
 duplicate suppression, clean one-shot failure, fatal authentication, endpoint
-argument placement, and unchanged interactive defaults.
+argument placement, unload races during metadata/history reads and subsequent
+reloads, and unchanged interactive defaults.

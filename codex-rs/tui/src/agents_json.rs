@@ -60,18 +60,19 @@ async fn run(options: &AgentsJsonOptions, output: &mut impl Write) -> anyhow::Re
             let client = RemoteAppServerClient::connect(args).await?;
             let mut observer = state::Observer {
                 client: AppServerClient::Remote(client),
+                threads: &mut threads,
                 dirty: Default::default(),
                 removed: Default::default(),
                 membership: Default::default(),
             };
             let result = async {
-                observer.seed(&threads).await?;
+                observer.seed().await?;
                 loop {
-                    observer.synchronize(&mut threads).await?;
+                    observer.synchronize().await?;
                     emit(
                         output,
                         &mut previous,
-                        snapshot::snapshot(&threads, options)?,
+                        snapshot::snapshot(observer.threads, options)?,
                     )?;
                     backoff = Duration::from_millis(500);
                     if !options.watch {
