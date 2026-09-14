@@ -168,6 +168,8 @@ mod line_truncation;
 pub(crate) mod live_wrap;
 mod local_settings;
 pub use live_wrap::RowBuilder;
+mod agents_focus;
+pub use agents_focus::focus_agent_tui;
 mod agents_json;
 mod agents_list;
 mod agents_model;

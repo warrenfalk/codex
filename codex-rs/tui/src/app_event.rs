@@ -540,6 +540,10 @@ pub(crate) enum AppEvent {
     /// Queue the desktop notification requested by the Unix focus signal.
     FocusNotificationRequested,
 
+    /// Answer a local request to focus this TUI if it displays the requested session.
+    #[cfg(unix)]
+    AgentsFocusRequested(crate::agents_focus::PendingRequest),
+
     /// Request to exit the application.
     ///
     /// Use `ShutdownFirst` for user-initiated quits so core cleanup runs and the

@@ -180,6 +180,13 @@ impl App {
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(app_event_tx);
         #[cfg(unix)]
+        let _agents_focus_service = crate::agents_focus::FocusService::start(
+            &crate::agents_focus::registry_directory(),
+            app_event_tx.clone(),
+        )
+        .inspect_err(|error| tracing::warn!("TUI focus unavailable: {error:#}"))
+        .ok();
+        #[cfg(unix)]
         let _focus_notification_signal_task =
             super::focus_notification_signal::FocusNotificationSignalTask::spawn(
                 app_event_tx.clone(),

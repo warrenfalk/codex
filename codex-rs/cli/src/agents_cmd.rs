@@ -10,6 +10,10 @@ pub(crate) struct AgentsCommand {
     #[arg(long, requires = "json")]
     pub(crate) watch: bool,
 
+    /// Focus an existing local TUI displaying this session, without opening one.
+    #[arg(long, value_name = "SESSION_ID", conflicts_with_all = ["json", "watch"])]
+    pub(crate) focus: Option<String>,
+
     #[clap(flatten)]
     pub(crate) remote: InteractiveRemoteOptions,
 
@@ -22,12 +26,17 @@ pub(crate) struct AgentsCommand {
     pub(crate) no_alt_screen: bool,
 }
 
-pub(crate) async fn run_json(
+pub(crate) enum AgentsAction {
+    Json { watch: bool },
+    Focus { session_id: String },
+}
+
+pub(crate) async fn run_noninteractive(
     interactive: &TuiCli,
     local: Option<String>,
     remote: Option<String>,
     remote_auth_token_env: Option<String>,
-    watch: bool,
+    action: AgentsAction,
 ) -> anyhow::Result<()> {
     let remote_endpoint = resolve_remote_endpoint(remote, remote_auth_token_env)?;
     let remote_workspace = remote_endpoint.is_some();
@@ -72,13 +81,20 @@ pub(crate) async fn run_json(
             .as_ref()
             .and_then(|features| features.entries().get("worktrees").copied())
             .unwrap_or_else(|| codex_features::Feature::Worktrees.default_enabled());
-    codex_tui::run_agents_json(codex_tui::AgentsJsonOptions {
-        endpoint,
-        watch,
-        worktree_grouping,
-        implicit_local_daemon,
-    })
-    .await
+    match action {
+        AgentsAction::Json { watch } => {
+            codex_tui::run_agents_json(codex_tui::AgentsJsonOptions {
+                endpoint,
+                watch,
+                worktree_grouping,
+                implicit_local_daemon,
+            })
+            .await
+        }
+        AgentsAction::Focus { session_id } => {
+            codex_tui::focus_agent_tui(endpoint, &session_id).await
+        }
+    }
 }
 
 #[cfg(test)]

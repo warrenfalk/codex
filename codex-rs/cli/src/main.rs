@@ -157,7 +157,7 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Browse all agent sessions on the shared local app-server daemon.
+    /// Browse agent sessions or focus an attached TUI.
     Agents(AgentsCommand),
 
     /// Run Codex non-interactively.
@@ -1379,9 +1379,17 @@ async fn cli_main(
     }
     reject_local_mode_for_subcommand(root_local.as_deref(), &subcommand)?;
 
-    let agents_json = agents_options
-        .filter(|options| options.json)
-        .map(|options| options.watch);
+    let agents_action = agents_options.and_then(|options| {
+        options
+            .focus
+            .clone()
+            .map(|session_id| agents_cmd::AgentsAction::Focus { session_id })
+            .or_else(|| {
+                options.json.then_some(agents_cmd::AgentsAction::Json {
+                    watch: options.watch,
+                })
+            })
+    });
     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
     match subcommand {
         None | Some(Subcommand::Agents(_)) => {
@@ -1425,13 +1433,13 @@ async fn cli_main(
                     #[cfg(not(any(unix, windows)))]
                     anyhow::bail!("`codex agents` requires `--remote` on this platform");
                 }
-                if let Some(watch) = agents_json {
-                    return agents_cmd::run_json(
+                if let Some(action) = agents_action {
+                    return agents_cmd::run_noninteractive(
                         &interactive,
                         root_local,
                         root_remote,
                         root_remote_auth_token_env,
-                        watch,
+                        action,
                     )
                     .await;
                 }

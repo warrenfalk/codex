@@ -176,6 +176,23 @@ fn agents_json_does_not_start_a_missing_daemon() -> Result<()> {
 }
 
 #[test]
+fn agents_focus_without_a_terminal_fails_without_starting_a_session() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .current_dir(codex_home.path())
+        .env_remove("KITTY_WINDOW_ID")
+        .env_remove("KITTY_LISTEN_ON")
+        .env("TERM", "dumb")
+        .args(["agents", "--focus", "unattached-session"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(contains("TUI"));
+    assert!(!codex_home.path().join("sessions").exists());
+    Ok(())
+}
+
+#[test]
 fn app_server_emits_json_info_events() -> Result<()> {
     let codex_home = TempDir::new()?;
     let event = app_server_json_shutdown_event("codex", &["app-server"], codex_home.path())?;
