@@ -1,5 +1,9 @@
 # Fork-Specific Codex Work
 
+This section takes precedence over all other `AGENTS.md` advice. All advice about commit
+structure belongs here; commit-size limits and staging advice from outside this section do not
+apply in this fork.
+
 This repository is a fork of the main Codex project. In this fork, treat every commit after the
 most recent `rust-v*` tag reachable from `HEAD` as one of our fork-specific commits/features.
 Any reference in these instructions to "our features", "our commits", or "my changes" refers to
@@ -140,32 +144,11 @@ conflict resolution as a first-class task, not a mechanical cleanup step.
   - keep file-local conventions aligned with the latest upstream style when behavior is equivalent.
 - If a conflict spans source files plus generated artifacts, resolve the source intent first, then
   regenerate or reconcile generated files from that resolved source.
-- When a conflict reveals that a fix really belongs to multiple historical commits, split the
-  follow-up cleanly instead of forcing an inaccurate single fixup target.
 - After finishing a rebase and before declaring it done, verify builds in this order:
   1. `cargo build` for the Rust workspace (use `nix develop -c cargo build` if `cargo` is not on `PATH`).
   2. If that succeeds, run `nix build` from the repo root.
 - If `nix build` fails, capture the exact failure and treat it as part of the rebase follow-up; do
   not assume a successful Cargo build is sufficient.
-- Any fixes required to make `cargo build` or `nix build` pass after a rebase should be committed
-  as separate `fixup!` commits against the appropriate commits from our rebased work, not folded
-  into an arbitrary final conflict-resolution commit.
-- After creating those `fixup!` commits, do not run another rebase/autosquash locally just to apply
-  them. Leave the fixup commits in history and report them clearly; the user will decide when to
-  autosquash them later.
-- Only fix up our own commits:
-  - define "our commits" as commits in the range `<most-recent-rust-v-tag>..HEAD`,
-  - identify that tag from the current history as the most recent reachable `rust-v*` tag,
-  - inspect candidate targets with `git log --oneline <most-recent-rust-v-tag>..HEAD`.
-- Choose the appropriate fixup target by asking which commit introduced the behavior, API usage, or
-  test expectation that now needs correction:
-  - use `git blame` on the affected lines,
-  - use `git log -S <symbol-or-field>` or `git log -- <path>` to find the introducing commit,
-  - prefer the most specific commit in our rebased range that introduced the broken behavior,
-  - if runtime code and tests were introduced by different commits, split follow-up fixups so each
-    targets the commit that actually introduced that part,
-  - do not target upstream commits that are outside `<base>..HEAD`, even if they originally
-    introduced the concept before our branch rebased onto them.
 
 Run `just fmt` (in the `codex-rs` directory) automatically after you have finished making code changes anywhere in this repository; do not ask for approval to run it. Additionally, run the tests:
 
@@ -230,14 +213,6 @@ If unit tests are needed, put them in a dedicated test file (\*\_tests.rs).
 Avoid test-only functions in the main implementation.
 
 Check whether there are existing helpers to make tests more streamlined and readable.
-
-### Change size guidance (800 lines)
-
-Unless the change is mechanical the total number of changed lines should not exceed 800 lines.
-For complex logic changes the size should be under 500 lines.
-
-If the change is larger, explore whether it can be split into reviewable stages and identify the smallest coherent stage to land first.
-Base the staging suggestion on the actual diff, dependencies, and affected call sites.
 
 ## TUI style conventions
 
