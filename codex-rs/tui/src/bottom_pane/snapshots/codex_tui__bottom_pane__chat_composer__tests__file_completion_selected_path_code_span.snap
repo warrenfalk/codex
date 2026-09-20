@@ -3,11 +3,11 @@ source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                    "
-"› `ma` next                                                                                         "
+"› read `src/main file.rs`                                                                           "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
-"                                                                  100% context left | Vim: Replace  "
+"                                                                                 100% context left  "

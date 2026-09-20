@@ -634,12 +634,12 @@ fn vim_replace_completion_preserves_suffix() {
                 composer.sync_popups();
                 assert_eq!(
                     (composer.current_text(), composer.current_cursor()),
-                    (format!("{path}  next"), path.len() + 1)
+                    (format!("`{path}`  next"), path.len() + 3)
                 );
                 let _ = composer.handle_key_event(KeyEvent::from(KeyCode::Backspace));
                 assert_eq!(
                     (composer.current_text(), composer.current_cursor()),
-                    (format!("{path} next"), path.len())
+                    (format!("`{path}` next"), path.len() + 2)
                 );
             }
         },
