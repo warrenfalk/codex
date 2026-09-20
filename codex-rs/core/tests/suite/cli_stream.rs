@@ -118,6 +118,8 @@ impl Drop for ChildProcessCleanupGuard {
 // can spawn shell/Python grandchildren, so the timeout path must reap the whole
 // process group instead of only the direct CLI child.
 fn run_cli_command(command: &mut Command) -> io::Result<Output> {
+    command.env("CODEX_DISABLE_AUTO_THREAD_TITLE_FOR_TESTS", "1");
+
     #[cfg(unix)]
     command.process_group(0);
 

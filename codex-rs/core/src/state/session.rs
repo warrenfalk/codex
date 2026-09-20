@@ -93,6 +93,7 @@ pub(crate) struct SessionState {
     pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
     next_turn_is_first: bool,
+    auto_thread_title_requested: bool,
 }
 
 impl SessionState {
@@ -111,6 +112,7 @@ impl SessionState {
         auto_compact_window_ids: AutoCompactWindowIds,
         history: ContextManager,
     ) -> Self {
+        let auto_thread_title_requested = session_configuration.has_thread_name();
         Self {
             session_configuration,
             base_instructions_provenance: None,
@@ -130,6 +132,7 @@ impl SessionState {
             pending_session_start_sources: VecDeque::new(),
             granted_permissions_by_environment_id: HashMap::new(),
             next_turn_is_first: true,
+            auto_thread_title_requested,
         }
     }
 
@@ -160,6 +163,18 @@ impl SessionState {
         let is_first_turn = self.next_turn_is_first;
         self.next_turn_is_first = false;
         is_first_turn
+    }
+
+    pub(crate) fn set_auto_thread_title_requested(&mut self, value: bool) {
+        self.auto_thread_title_requested = value;
+    }
+
+    pub(crate) fn mark_auto_thread_title_requested(&mut self) -> bool {
+        if self.auto_thread_title_requested || self.session_configuration.has_thread_name() {
+            return false;
+        }
+        self.auto_thread_title_requested = true;
+        true
     }
 
     pub(crate) fn clone_history(&self) -> ContextManager {
