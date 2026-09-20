@@ -97,6 +97,8 @@ async fn picker_side_worktree_fork_and_cd_run_on_the_production_stack() -> Resul
     terminal.wait_for_screen("Side from main thread")?;
     terminal.ensure_running()?;
     terminal.write_input(b"\x03")?;
+    terminal.wait_for_screen("Close side conversation")?;
+    terminal.write_input(b"4")?;
     terminal.wait_for_screen("STACK_SAVED_HISTORY")?;
 
     submit(&mut terminal, "/resume")?;

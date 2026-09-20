@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_event::SideConversationCloseChoice;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -80,6 +81,118 @@ async fn slash_rename_is_rejected_for_side_threads() {
     assert_side_rename_rejected(&mut rx, &mut op_rx);
 }
 
+fn assert_close_choice_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    expected: SideConversationCloseChoice,
+) {
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::SideConversationCloseSelected(choice)) if choice == expected
+    );
+    assert!(rx.try_recv().is_err(), "expected no follow-up events");
+}
+
+#[tokio::test]
+async fn side_close_prompt_defaults_to_cancel() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.open_side_conversation_close_prompt();
+
+    assert_eq!(
+        chat.active_view_id(),
+        Some(crate::chatwidget::SIDE_CLOSE_PROMPT_VIEW_ID)
+    );
+    assert_eq!(
+        chat.selected_index_for_active_view(crate::chatwidget::SIDE_CLOSE_PROMPT_VIEW_ID),
+        Some(0)
+    );
+}
+
+#[tokio::test]
+async fn side_close_prompt_enter_accepts_default_cancel() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::Cancel);
+    assert!(!chat.has_active_view());
+}
+
+#[tokio::test]
+async fn side_close_prompt_esc_and_ctrl_c_cancel() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::Cancel);
+    assert!(!chat.has_active_view());
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::Cancel);
+    assert!(!chat.has_active_view());
+}
+
+#[tokio::test]
+async fn side_close_prompt_emits_summary_choices_and_leave() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::Summarize);
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::SummarizeForMe);
+
+    chat.open_side_conversation_close_prompt();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::Leave);
+}
+
+#[tokio::test]
+async fn side_close_prompt_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.open_side_conversation_close_prompt();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw side close prompt");
+    assert_chatwidget_snapshot!(
+        "side_close_prompt",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn side_close_prompt_narrow_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_welcome_banner = false;
+    chat.open_side_conversation_close_prompt();
+
+    let width = 42;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw narrow side close prompt");
+    assert_chatwidget_snapshot!(
+        "side_close_prompt_narrow",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
 #[tokio::test]
 async fn slash_rename_with_args_is_rejected_for_side_threads() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -106,7 +219,7 @@ async fn slash_commands_without_side_flag_are_rejected_for_side_threads() {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
             assert!(
                 rendered.contains(
-                    "'/review' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
+                    "'/review' is unavailable in side conversations. Press Ctrl+C to close the side conversation first."
                 ),
                 "expected side conversation slash command error, got {rendered:?}"
             );
@@ -132,7 +245,7 @@ async fn slash_side_is_rejected_for_side_threads() {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
             assert!(
                 rendered.contains(
-                    "'/side' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
+                    "'/side' is unavailable in side conversations. Press Ctrl+C to close the side conversation first."
                 ),
                 "expected side conversation slash command error, got {rendered:?}"
             );
