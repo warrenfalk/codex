@@ -106,6 +106,7 @@ mod skills_list;
 mod sleep;
 mod thread_archive;
 mod thread_attachments;
+mod thread_auto_title;
 mod thread_delete;
 mod thread_environments;
 mod thread_fork;
