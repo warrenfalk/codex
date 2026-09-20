@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/prompt_rewrite_tests.rs
+expression: "render_bottom_popup(&chat, 72)"
+---
+› Please make this clearer
+
+  Prompt rewritten — undo restores the original.

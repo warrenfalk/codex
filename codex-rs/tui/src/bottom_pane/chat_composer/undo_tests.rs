@@ -12,6 +12,7 @@ use super::LARGE_PASTE_CHAR_THRESHOLD;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::MentionBinding;
+use crate::prompt_rewrite::RewrittenComposerDraft;
 
 fn composer() -> ChatComposer {
     let (tx, _rx) = unbounded_channel::<AppEvent>();
@@ -171,6 +172,103 @@ fn ctrl_c_clear_round_trips_the_complete_draft() {
     assert_eq!(composer.snapshot_draft(), before_clear);
     redo(&mut composer);
     assert_eq!(composer.snapshot_draft(), after_clear);
+}
+
+#[test]
+fn prompt_rewrite_is_one_full_rich_draft_undo_unit() {
+    let mut composer = composer();
+    composer.set_remote_image_urls(vec!["https://example.com/remote.png".to_string()]);
+    composer.set_text_content_with_mention_bindings(
+        "$drive explain [Image #2]".to_string(),
+        vec![
+            codex_protocol::user_input::TextElement::new((0..6).into(), Some("$drive".to_string())),
+            codex_protocol::user_input::TextElement::new(
+                (15..25).into(),
+                Some("[Image #2]".to_string()),
+            ),
+        ],
+        vec![PathBuf::from("/tmp/local.png")],
+        vec![MentionBinding {
+            sigil: '$',
+            mention: "drive".to_string(),
+            path: "app://drive".to_string(),
+        }],
+    );
+    composer.set_current_cursor(3);
+    let before = composer.snapshot_draft();
+    let expected = composer.prepare_prompt_rewrite_snapshot();
+
+    assert!(composer.apply_prompt_rewrite(
+        &expected,
+        RewrittenComposerDraft {
+            text: "Explain [Image #2] using $drive.".to_string(),
+            text_elements: vec![
+                codex_protocol::user_input::TextElement::new(
+                    (8..18).into(),
+                    Some("[Image #2]".to_string()),
+                ),
+                codex_protocol::user_input::TextElement::new(
+                    (25..31).into(),
+                    Some("$drive".to_string()),
+                ),
+            ],
+        },
+    ));
+
+    undo(&mut composer);
+    assert_eq!(composer.snapshot_draft(), before);
+}
+
+#[test]
+fn prompt_rewrite_ignores_cursor_motion_but_rejects_content_edits() {
+    let mut composer = composer();
+    composer.set_text_content("wordy draft".to_string(), Vec::new(), Vec::new());
+    let before = composer.snapshot_draft();
+    let expected = composer.prepare_prompt_rewrite_snapshot();
+    composer.set_current_cursor(2);
+
+    assert!(composer.apply_prompt_rewrite(
+        &expected,
+        RewrittenComposerDraft {
+            text: "clear draft".to_string(),
+            text_elements: Vec::new(),
+        },
+    ));
+    undo(&mut composer);
+    assert_eq!(composer.snapshot_draft(), before);
+
+    let expected = composer.prepare_prompt_rewrite_snapshot();
+    type_text(&mut composer, " changed");
+    let changed = composer.current_text();
+    assert!(!composer.apply_prompt_rewrite(
+        &expected,
+        RewrittenComposerDraft {
+            text: "discarded".to_string(),
+            text_elements: Vec::new(),
+        },
+    ));
+    assert_eq!(composer.current_text(), changed);
+}
+
+#[test]
+fn prompt_rewrite_is_one_vim_undo_unit() {
+    let mut composer = composer();
+    composer.set_text_content("wordy draft".to_string(), Vec::new(), Vec::new());
+    composer.set_current_cursor(2);
+    composer.set_vim_enabled(/*enabled*/ true);
+    let before = composer.snapshot_draft();
+    let expected = composer.prepare_prompt_rewrite_snapshot();
+
+    assert!(composer.apply_prompt_rewrite(
+        &expected,
+        RewrittenComposerDraft {
+            text: "clear draft".to_string(),
+            text_elements: Vec::new(),
+        },
+    ));
+
+    let _ = composer.handle_key_event(key(KeyCode::Char('u'), KeyModifiers::NONE));
+    assert_eq!(composer.snapshot_draft(), before);
 }
 
 #[test]

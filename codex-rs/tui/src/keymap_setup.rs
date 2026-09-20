@@ -937,6 +937,7 @@ mod tests {
             actions,
             vec![
                 "Composer.submit",
+                "Composer.rewrite_prompt",
                 "Chat.interrupt_turn",
                 "Editor.undo",
                 "Editor.redo",

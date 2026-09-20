@@ -273,6 +273,7 @@ define_runtime_action_bindings! {
     "chat" => Voice, chat, chat [toggle_voice_mute],
     "composer" => Composer, composer, composer [
         submit,
+        rewrite_prompt,
         queue,
         toggle_shortcuts,
         history_search_previous,
