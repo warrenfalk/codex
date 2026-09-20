@@ -103,6 +103,10 @@ impl HistoryCell for FinalMessageSeparator {
             .map(|label| vec![Line::from(label)])
             .unwrap_or_default()
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@
 //!    for exec-flush and usage-output ordering.
 //! 4. Completed runs only persist when they have user-facing output or a non-success status.
 use super::HistoryCell;
+use super::HistoryVisibilityKind;
 use super::plain_lines;
 use codex_app_server_protocol::HookOutputEntry;
 use codex_app_server_protocol::HookOutputEntryKind;
@@ -331,6 +332,10 @@ impl HookCell {
 impl HistoryCell for HookCell {
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         self.output_lines()
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {

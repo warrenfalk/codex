@@ -149,6 +149,10 @@ impl HistoryCell for RequestUserInputResultCell {
         }
         lines
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 /// Wrap a plain string with textwrap and prefix each line, while applying a style to the content.

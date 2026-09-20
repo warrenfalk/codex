@@ -943,6 +943,7 @@ mod tests {
                 "Global.open_external_editor",
                 "Global.copy",
                 "Global.toggle_vim_mode",
+                "Global.toggle_clean_scrollback",
                 "Editor.delete_backward_word",
                 "Editor.delete_forward_word",
                 "Editor.move_word_left",
