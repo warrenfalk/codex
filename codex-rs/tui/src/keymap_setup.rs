@@ -938,6 +938,8 @@ mod tests {
             vec![
                 "Composer.submit",
                 "Chat.interrupt_turn",
+                "Editor.undo",
+                "Editor.redo",
                 "Editor.insert_newline",
                 "Composer.queue",
                 "Global.open_external_editor",

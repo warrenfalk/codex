@@ -2,13 +2,13 @@
 source: tui/src/keymap_setup.rs
 expression: snapshot
 ---
-tab: All (146 selectable)
-tab: Common (21 selectable)
+tab: All (148 selectable)
+tab: Common (23 selectable)
 tab: Customized (0) (0 selectable)
 tab: Unbound (5) (5 selectable)
 tab: App (18 selectable)
 tab: Composer (5 selectable)
-tab: Editor (17 selectable)
+tab: Editor (19 selectable)
 tab: Vim (69 selectable)
 tab: Navigation (20 selectable)
 tab: Agents (9 selectable)
