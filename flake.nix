@@ -83,9 +83,37 @@
               ln -s "${bundledShellToolSources.${name}}" "$out/bin/${name}"
             '') bundledShellToolNames}
           '';
+          codex-dev-wrapper = pkgs.writeShellScriptBin "codex-dev" ''
+            set -euo pipefail
+
+            dir="$PWD"
+            while true; do
+              candidate="$dir/codex-dev"
+              if [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+                exec "$candidate" "$@"
+              fi
+
+              if [ "$dir" = "/" ]; then
+                break
+              fi
+
+              dir=''${dir%/*}
+              if [ -z "$dir" ]; then
+                dir="/"
+              fi
+            done
+
+            printf 'No codex-dev found, do you want to run codex (y,n)? '
+            read -r answer
+            case "$answer" in
+              [Yy]) exec codex "$@" ;;
+              [Nn]) exit 1 ;;
+              *) exit 1 ;;
+            esac
+          '';
           codex = pkgs.symlinkJoin {
             name = "codex-${version}";
-            paths = [ codex-rs-unwrapped ];
+            paths = [ codex-rs-unwrapped codex-dev-wrapper ];
             nativeBuildInputs = [ pkgs.makeWrapper ];
             postBuild = ''
               wrapProgram "$out/bin/codex" \
