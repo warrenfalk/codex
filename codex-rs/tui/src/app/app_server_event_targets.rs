@@ -51,6 +51,9 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadStatusChanged(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadProjectEnvStatusChanged(notification) => {
+            Some(notification.project_env.thread_id.as_str())
+        }
         ServerNotification::ThreadReverted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadArchived(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadDeleted(notification) => Some(notification.thread_id.as_str()),
@@ -237,6 +240,9 @@ mod tests {
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ThreadAttachmentOperation;
     use codex_app_server_protocol::ThreadAttachmentUpdatedNotification;
+    use codex_app_server_protocol::ThreadProjectEnvState;
+    use codex_app_server_protocol::ThreadProjectEnvStatus;
+    use codex_app_server_protocol::ThreadProjectEnvStatusChangedNotification;
     use codex_app_server_protocol::ThreadSettings;
     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
     use codex_app_server_protocol::WarningNotification;
@@ -370,6 +376,28 @@ mod tests {
                 attachment_id: "attachment-1".to_string(),
                 operation: ThreadAttachmentOperation::Deleted,
             });
+
+        let target = server_notification_thread_target(&notification);
+
+        assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
+    }
+
+    #[test]
+    fn project_env_status_changed_notifications_route_to_threads() {
+        let thread_id = ThreadId::new();
+        let notification = ServerNotification::ThreadProjectEnvStatusChanged(
+            ThreadProjectEnvStatusChangedNotification {
+                project_env: ThreadProjectEnvStatus {
+                    thread_id: thread_id.to_string(),
+                    status: ThreadProjectEnvState::Ready,
+                    cwd: None,
+                    envrc_path: None,
+                    message: None,
+                    updated_at: 0,
+                    watched_input_count: 0,
+                },
+            },
+        );
 
         let target = server_notification_thread_target(&notification);
 

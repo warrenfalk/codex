@@ -61,6 +61,12 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
                 "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.".to_string(),
             )),
         ),
+        (
+            "project_env".to_string(),
+            JsonSchema::string(Some(
+                "Project environment loading mode: auto (default) or bypass.".to_string(),
+            )),
+        ),
     ]);
     if include_shell_parameter {
         properties.insert(
