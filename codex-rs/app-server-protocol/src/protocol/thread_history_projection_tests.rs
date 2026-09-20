@@ -6,6 +6,7 @@ use codex_protocol::items::UserMessageItem;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
+use codex_protocol::protocol::NoteToSelfEvent;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
@@ -185,6 +186,63 @@ fn projects_optional_completed_item_lifecycle_timestamps() {
             }
         );
     }
+}
+
+#[test]
+fn projects_note_to_self_for_idle_and_active_turns() {
+    let idle = project(RolloutItem::EventMsg(EventMsg::NoteToSelf(
+        NoteToSelfEvent {
+            note: "remember this".to_string(),
+            item_id: Some("note-idle".to_string()),
+            active_turn_id: None,
+        },
+    )));
+    assert_eq!(
+        idle,
+        ThreadHistoryChangeSet {
+            changed_items: vec![ThreadHistoryItemChange {
+                turn_id: "rollout-7".to_string(),
+                item: ThreadItem::NoteToSelf {
+                    id: "note-idle".to_string(),
+                    note: "remember this".to_string(),
+                },
+                started_at_ms: None,
+                completed_at_ms: None,
+            }],
+            changed_turns: vec![ThreadHistoryTurnChange {
+                turn_id: "rollout-7".to_string(),
+                status: TurnStatus::Completed,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            }],
+            ..Default::default()
+        }
+    );
+
+    let active = project(RolloutItem::EventMsg(EventMsg::NoteToSelf(
+        NoteToSelfEvent {
+            note: "during turn".to_string(),
+            item_id: Some("note-active".to_string()),
+            active_turn_id: Some("turn-1".to_string()),
+        },
+    )));
+    assert_eq!(
+        active,
+        ThreadHistoryChangeSet {
+            changed_items: vec![ThreadHistoryItemChange {
+                turn_id: "turn-1".to_string(),
+                item: ThreadItem::NoteToSelf {
+                    id: "note-active".to_string(),
+                    note: "during turn".to_string(),
+                },
+                started_at_ms: None,
+                completed_at_ms: None,
+            }],
+            ..Default::default()
+        }
+    );
 }
 
 #[test]

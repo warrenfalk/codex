@@ -5647,6 +5647,15 @@ class HookPromptThreadItem(BaseModel):
     type: Annotated[Literal["hookPrompt"], Field(title="HookPromptThreadItemType")]
 
 
+class NoteToSelfThreadItem(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: str
+    note: str
+    type: Annotated[Literal["noteToSelf"], Field(title="NoteToSelfThreadItemType")]
+
+
 class PlanThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -5898,6 +5907,14 @@ class ThreadNameUpdatedNotification(BaseModel):
     )
     thread_id: Annotated[str, Field(alias="threadId")]
     thread_name: Annotated[str | None, Field(alias="threadName")] = None
+
+
+class ThreadNoteCreateParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    note: str
+    thread_id: Annotated[str, Field(alias="threadId")]
 
 
 class ThreadProjectEnvReadParams(BaseModel):
@@ -7398,6 +7415,15 @@ class ThreadReadRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/read"], Field(title="Thread/readRequestMethod")]
     params: ThreadReadParams
+
+
+class ThreadNoteCreateRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["thread/note/create"], Field(title="Thread/note/createRequestMethod")]
+    params: ThreadNoteCreateParams
 
 
 class ThreadItemsListRequest(BaseModel):
@@ -11955,6 +11981,7 @@ class ThreadItem(
     RootModel[
         UserMessageThreadItem
         | HookPromptThreadItem
+        | NoteToSelfThreadItem
         | AgentMessageThreadItem
         | FunctionCallOutputThreadItem
         | PlanThreadItem
@@ -11980,6 +12007,7 @@ class ThreadItem(
     root: (
         UserMessageThreadItem
         | HookPromptThreadItem
+        | NoteToSelfThreadItem
         | AgentMessageThreadItem
         | FunctionCallOutputThreadItem
         | PlanThreadItem
@@ -12027,6 +12055,14 @@ class ThreadItemsListResponse(BaseModel):
             description="Opaque cursor to pass to the next call to continue after the last item. if None, there are no more items to return.",
         ),
     ] = None
+
+
+class ThreadNoteCreateResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    item: ThreadItem
+    turn_id: Annotated[str, Field(alias="turnId")]
 
 
 class ItemThreadTimelineEntry(BaseModel):
@@ -13050,6 +13086,7 @@ class ClientRequest(
         | ThreadSectionDeleteRequest
         | ThreadLoadedListRequest
         | ThreadReadRequest
+        | ThreadNoteCreateRequest
         | ThreadTurnsListRequest
         | ThreadItemsListRequest
         | ThreadInjectItemsRequest
@@ -13160,6 +13197,7 @@ class ClientRequest(
         | ThreadSectionDeleteRequest
         | ThreadLoadedListRequest
         | ThreadReadRequest
+        | ThreadNoteCreateRequest
         | ThreadTurnsListRequest
         | ThreadItemsListRequest
         | ThreadInjectItemsRequest

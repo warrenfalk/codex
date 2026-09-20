@@ -1597,22 +1597,6 @@
         }
       ]
     },
-    "ThreadItemEntry": {
-      "properties": {
-        "item": {
-          "$ref": "#/definitions/ThreadItem"
-        },
-        "turnId": {
-          "description": "Turn containing this item.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "item",
-        "turnId"
-      ],
-      "type": "object"
-    },
     "UserInput": {
       "oneOf": [
         {
@@ -1898,30 +1882,17 @@
     }
   },
   "properties": {
-    "backwardsCursor": {
-      "description": "Opaque cursor to pass as `cursor` when reversing `sortDirection`. This is only populated when the page contains at least one item.",
-      "type": [
-        "string",
-        "null"
-      ]
+    "item": {
+      "$ref": "#/definitions/ThreadItem"
     },
-    "data": {
-      "items": {
-        "$ref": "#/definitions/ThreadItemEntry"
-      },
-      "type": "array"
-    },
-    "nextCursor": {
-      "description": "Opaque cursor to pass to the next call to continue after the last item. if None, there are no more items to return.",
-      "type": [
-        "string",
-        "null"
-      ]
+    "turnId": {
+      "type": "string"
     }
   },
   "required": [
-    "data"
+    "item",
+    "turnId"
   ],
-  "title": "ThreadItemsListResponse",
+  "title": "ThreadNoteCreateResponse",
   "type": "object"
 }
