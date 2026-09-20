@@ -212,6 +212,7 @@ impl App {
                     /*older_server*/ None,
                 );
             }
+            self.chat_widget.show_disconnected_mode_footer();
             self.cancel_pending_key_chord();
             self.overlay = None;
             self.commit_animation = None;
@@ -460,6 +461,7 @@ impl App {
             server.reconnect(app_server.request_handle(), self.app_event_tx.clone());
         }
         self.reconnect.offline = false;
+        self.chat_widget.show_connected_mode_footer();
         self.chat_widget.update_account_state(
             bootstrap.status_account_display,
             bootstrap.plan_type,
