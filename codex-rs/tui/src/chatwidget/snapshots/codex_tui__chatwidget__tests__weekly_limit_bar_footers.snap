@@ -1,0 +1,26 @@
+---
+source: tui/src/chatwidget/tests/weekly_limit_tests.rs
+expression: "snapshots.join(\"\\n\\n\")"
+---
+weekly_limit_bar_footer:
+"                                                                                "
+"                                                                                "
+"› Ask Codex to do anything                                                      "
+"                                                                                "
+"  [█████████│█░░░░░░░░░]                                                        "
+
+
+weekly_limit_bar_footer_narrow:
+"                        "
+"                        "
+"› Ask Codex to do anyth "
+"                        "
+"  [█████████│█░░░░░░░░░]"
+
+
+weekly_limit_percentages_and_bar_footer:
+"                                                                                "
+"                                                                                "
+"› Ask Codex to do anything                                                      "
+"                                                                                "
+"  limit 55%, time 48% · [█████████│█░░░░░░░░░]                                  "

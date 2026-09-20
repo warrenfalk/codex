@@ -119,7 +119,7 @@ impl TerminalTitleItem {
                 "Remaining usage on the primary usage limit (omitted when unavailable)"
             }
             TerminalTitleItem::WeeklyLimit => {
-                "Remaining usage on the secondary usage limit (omitted when unavailable)"
+                "Usage limit and time remaining as percentages (omitted when unavailable)"
             }
             TerminalTitleItem::CodexVersion => "Codex application version",
             TerminalTitleItem::UsedTokens => "Total tokens used in session (omitted when zero)",
