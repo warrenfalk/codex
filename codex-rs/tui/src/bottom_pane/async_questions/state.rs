@@ -6,9 +6,14 @@ use codex_context_fragments::AnsweredQuestion;
 use codex_context_fragments::ContextualUserFragment;
 
 impl AsyncQuestions {
-    pub(crate) fn append(&mut self, message_id: &str, questions: &[AsyncUserInputQuestion]) {
+    /// Returns whether this message introduced a new, nonempty question batch.
+    pub(crate) fn append(
+        &mut self,
+        message_id: &str,
+        questions: &[AsyncUserInputQuestion],
+    ) -> bool {
         if questions.is_empty() || !self.state.seen_ids.insert(message_id.to_string()) {
-            return;
+            return false;
         }
         let was_empty = self.state.pending.is_empty();
         let expires_at = (!self.expanded).then(|| Instant::now() + Duration::from_secs(30));
@@ -43,6 +48,7 @@ impl AsyncQuestions {
             self.state.current_idx = 0;
             self.restore_current_draft();
         }
+        true
     }
 
     pub(crate) fn set_expanded(&mut self, expanded: bool) {

@@ -373,8 +373,14 @@ impl ChatWidget {
         turn_id: &str,
         from_replay: bool,
     ) {
-        if !from_replay && let Some(questions) = &item.questions {
-            self.add_async_questions(&item.id, questions);
+        if !from_replay
+            && let Some(questions) = &item.questions
+            && self.add_async_questions(&item.id, questions)
+            && let Some(question) = questions.first()
+        {
+            self.notify(Notification::UserInputRequested {
+                question: question.title.clone(),
+            });
         }
         self.transcript.last_completed_agent_message = Some((turn_id.to_string(), item.id.clone()));
         let mut message = String::new();

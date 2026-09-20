@@ -29,6 +29,7 @@ pub(crate) enum Notification {
     ExecApprovalRequested { command: String },
     EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
     ElicitationRequested { server_name: String },
+    UserInputRequested { question: String },
     FocusRequested,
     PlanModePrompt { title: String },
 }
@@ -36,10 +37,8 @@ pub(crate) enum Notification {
 impl Notification {
     pub(super) fn display(&self) -> String {
         match self {
-            Notification::AgentTurnComplete { response } => {
-                Notification::agent_turn_preview(response)
-                    .unwrap_or_else(|| "Agent turn complete".to_string())
-            }
+            Notification::AgentTurnComplete { response } => Notification::message_preview(response)
+                .unwrap_or_else(|| "Agent turn complete".to_string()),
             Notification::ExecApprovalRequested { command } => {
                 format!(
                     "Approval requested: {}",
@@ -60,6 +59,11 @@ impl Notification {
             Notification::ElicitationRequested { server_name } => {
                 format!("Approval requested by {server_name}")
             }
+            Notification::UserInputRequested { question } => {
+                Notification::message_preview(question)
+                    .map(|preview| format!("Question requested: {preview}"))
+                    .unwrap_or_else(|| "Question requested".to_string())
+            }
             Notification::FocusRequested => "Click to focus this Codex session".to_string(),
             Notification::PlanModePrompt { title } => {
                 format!("Plan mode prompt: {title}")
@@ -73,6 +77,7 @@ impl Notification {
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. } => "approval-requested",
+            Notification::UserInputRequested { .. } => "user-input-requested",
             Notification::FocusRequested => "focus-requested",
             Notification::PlanModePrompt { .. } => "plan-mode-prompt",
         }
@@ -84,6 +89,7 @@ impl Notification {
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. }
+            | Notification::UserInputRequested { .. }
             | Notification::PlanModePrompt { .. } => 1,
         }
     }
@@ -95,9 +101,9 @@ impl Notification {
         }
     }
 
-    pub(super) fn agent_turn_preview(response: &str) -> Option<String> {
+    pub(super) fn message_preview(message: &str) -> Option<String> {
         let mut normalized = String::new();
-        for part in response.split_whitespace() {
+        for part in message.split_whitespace() {
             if !normalized.is_empty() {
                 normalized.push(' ');
             }
@@ -107,7 +113,7 @@ impl Notification {
         if trimmed.is_empty() {
             None
         } else {
-            Some(truncate_text(trimmed, AGENT_NOTIFICATION_PREVIEW_GRAPHEMES))
+            Some(truncate_text(trimmed, NOTIFICATION_PREVIEW_GRAPHEMES))
         }
     }
 
@@ -128,4 +134,4 @@ impl Notification {
     }
 }
 
-const AGENT_NOTIFICATION_PREVIEW_GRAPHEMES: usize = 200;
+const NOTIFICATION_PREVIEW_GRAPHEMES: usize = 200;
