@@ -48,3 +48,7 @@ pub(crate) async fn focus(mut command: Command) -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "kitty_tests.rs"]
+mod tests;
