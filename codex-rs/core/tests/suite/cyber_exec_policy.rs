@@ -139,10 +139,10 @@ async fn saved_prefix_only_bypasses_guardian_for_general_models(
         })
         .with_config(configure_saved_prefix_and_guardian);
     let test = builder.build_with_auto_env(&server).await?;
-    let expected_guardian_review_count = match (model_specialty, shell_backend) {
-        (ModelSpecialty::General, _) => 0,
-        (ModelSpecialty::Cyber, ShellBackend::Standard) => 1,
-        (ModelSpecialty::Cyber, ShellBackend::ZshFork) => 2,
+    // Intercepted children reuse the parent command's approved full escalation.
+    let expected_guardian_review_count = match model_specialty {
+        ModelSpecialty::General => 0,
+        ModelSpecialty::Cyber => 1,
     };
 
     let mut response_bodies = vec![command_response(

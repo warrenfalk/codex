@@ -14,6 +14,7 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
+use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::env;
 use std::future::Future;
@@ -44,7 +45,7 @@ pub(super) async fn spawn_command_under_sandbox(
 
     #[cfg(target_os = "linux")]
     let codex_linux_sandbox_exe = Some(
-        core_test_support::find_codex_linux_sandbox_exe()
+        codex_utils_cargo_bin::cargo_bin("codex-exec")
             .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?,
     );
     #[cfg(target_os = "macos")]
@@ -125,16 +126,20 @@ async fn linux_sandbox_test_env() -> Option<HashMap<String, String>> {
     let command_cwd = AbsolutePathBuf::current_dir().ok()?;
     let sandbox_cwd = command_cwd.clone();
     let permission_profile = PermissionProfile::read_only();
+    let sandbox_env = ["PATH", "TMPDIR"]
+        .into_iter()
+        .filter_map(|key| env::var(key).ok().map(|value| (key.to_string(), value)))
+        .collect::<HashMap<_, _>>();
 
     if can_apply_linux_sandbox_policy(
         &permission_profile,
         &command_cwd,
         &sandbox_cwd,
-        HashMap::new(),
+        sandbox_env.clone(),
     )
     .await
     {
-        return Some(HashMap::new());
+        return Some(sandbox_env);
     }
 
     eprintln!("Skipping test: Landlock is not enforceable on this host.");
@@ -386,6 +391,71 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
         .await
         .expect("try_exists allowed failed");
     assert!(allowed_exists, "allowed path should exist");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn sandbox_denied_paths_block_reads_and_writes() -> anyhow::Result<()> {
+    let Some(sh) = find_executable_on_path("sh") else {
+        eprintln!("sh not found in PATH, skipping test.");
+        return Ok(());
+    };
+    let Some(sandbox_env) = linux_sandbox_test_env().await else {
+        return Ok(());
+    };
+    let temp = tempfile::tempdir()?;
+    let workspace = tokio::fs::canonicalize(temp.path()).await?.abs();
+    tokio::fs::write(workspace.join("blocked.secret"), "protected fixture").await?;
+    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Special {
+                value: FileSystemSpecialPath::Root,
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: workspace.clone().into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: workspace.join("blocked.secret").into(),
+            },
+            access: FileSystemAccessMode::Deny,
+            missing_path_behavior: None,
+        },
+    ]);
+    let permission_profile = PermissionProfile::from_runtime_permissions(
+        &file_system_sandbox_policy,
+        NetworkSandboxPolicy::Restricted,
+    );
+    let child = spawn_command_under_sandbox(
+        vec![
+            sh.to_string_lossy().into_owned(),
+            "-c".to_string(),
+            "printf allowed > allowed.txt && ! (exec 3< blocked.secret) && ! (printf changed > blocked.secret)".to_string(),
+        ],
+        workspace.clone(),
+        &permission_profile,
+        &workspace,
+        StdioPolicy::RedirectForShellTool,
+        sandbox_env,
+    )
+    .await?;
+    let output = child.wait_with_output().await?;
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        (
+            tokio::fs::read_to_string(workspace.join("allowed.txt")).await?,
+            tokio::fs::read_to_string(workspace.join("blocked.secret")).await?,
+        ),
+        ("allowed".to_string(), "protected fixture".to_string()),
+    );
+    Ok(())
 }
 
 #[tokio::test]

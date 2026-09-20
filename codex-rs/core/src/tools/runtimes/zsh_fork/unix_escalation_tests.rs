@@ -131,7 +131,7 @@ fn execve_prompt_rejection_keeps_unmatched_commands_on_sandbox_flag() {
 }
 
 #[test]
-fn approval_sandbox_permissions_only_downgrades_preapproved_additional_permissions() {
+fn approval_sandbox_permissions_reuses_parent_escalation_and_preapproved_grants() {
     assert_eq!(
         super::approval_sandbox_permissions(
             SandboxPermissions::WithAdditionalPermissions,
@@ -149,9 +149,9 @@ fn approval_sandbox_permissions_only_downgrades_preapproved_additional_permissio
     assert_eq!(
         super::approval_sandbox_permissions(
             SandboxPermissions::RequireEscalated,
-            /*additional_permissions_preapproved*/ true
+            /*additional_permissions_preapproved*/ false
         ),
-        SandboxPermissions::RequireEscalated,
+        SandboxPermissions::UseDefault,
     );
 }
 
@@ -339,7 +339,7 @@ fn shell_request_escalation_execution_is_explicit() {
             &permission_profile,
             /*additional_permissions*/ None,
         ),
-        EscalationExecution::TurnDefault,
+        EscalationExecution::Unsandboxed,
     );
     assert_eq!(
         CoreShellActionProvider::shell_request_escalation_execution(
@@ -802,7 +802,7 @@ host_executable(name = "git", paths = ["{git_path_literal}"])
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn denied_reads_keep_prefix_rule_allow_inside_sandbox() -> anyhow::Result<()> {
+async fn denied_reads_allow_prefix_rule_escalation() -> anyhow::Result<()> {
     let cat_path = host_absolute_path(&["usr", "bin", "cat"]);
     let cat_path_literal = starlark_string(&cat_path);
     let policy_src = format!(
@@ -845,7 +845,10 @@ prefix_rule(pattern = ["{cat_path_literal}"], decision = "allow")
     )
     .await?;
 
-    assert_eq!(action, codex_shell_escalation::EscalationDecision::Run);
+    assert_eq!(
+        action,
+        codex_shell_escalation::EscalationDecision::Escalate(EscalationExecution::Unsandboxed)
+    );
     Ok(())
 }
 
