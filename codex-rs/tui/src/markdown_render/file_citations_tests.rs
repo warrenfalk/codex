@@ -2,15 +2,21 @@
 
 use crate::markdown::render_markdown_agent_with_links_and_cwd;
 use crate::markdown_render::render_markdown_lines_with_width_and_cwd;
+use codex_config::types::UriBasedFileOpener;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 
 fn rendered_text(markdown: &str, cwd: Option<&Path>) -> String {
-    render_markdown_agent_with_links_and_cwd(markdown, /*width*/ None, cwd)
-        .into_iter()
-        .map(|line| line.line.to_string())
-        .join("\n")
+    render_markdown_agent_with_links_and_cwd(
+        markdown,
+        /*width*/ None,
+        cwd,
+        UriBasedFileOpener::None,
+    )
+    .into_iter()
+    .map(|line| line.line.to_string())
+    .join("\n")
 }
 
 #[test]

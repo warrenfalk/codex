@@ -318,6 +318,7 @@ fn rendered_history_rows(
         items,
         visibility,
         Some(config),
+        config.file_opener,
     )
     .into_iter()
     .fold(rendered_rows, |rows, cell| {

@@ -130,6 +130,7 @@ impl App {
                 user_items.iter().map(|(_, item)| item.clone()),
                 visibility,
                 Some(&self.config),
+                self.config.file_opener,
             );
             let mut persisted_user_cells = user_items
                 .into_iter()
@@ -194,6 +195,7 @@ impl App {
                 items,
                 visibility,
                 Some(&self.config),
+                self.config.file_opener,
             ));
             if let Some(turn) = completed_turn
                 && let Some(completion) = self
