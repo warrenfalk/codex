@@ -4,6 +4,7 @@ use super::connection_handling_websocket::DEFAULT_READ_TIMEOUT;
 use super::connection_handling_websocket::create_config_toml;
 use anyhow::Context;
 use anyhow::Result;
+use app_test_support::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR;
 use app_test_support::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
 use app_test_support::create_final_assistant_message_sse_response;
 use codex_app_server_protocol::InitializeCapabilities;
@@ -425,6 +426,7 @@ fn spawn_server(home: &Path, socket_path: &Path) -> Result<Child> {
         .args(["--listen", &format!("unix://{}", socket_path.display())])
         .arg(DISABLE_PLUGIN_STARTUP_TASKS_ARG)
         .env("CODEX_HOME", home)
+        .env(DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR, "1")
         .arg("--managed-daemon")
         .env(
             codex_app_server_transport::DAEMON_SHUTDOWN_SOCKET_ENV,
