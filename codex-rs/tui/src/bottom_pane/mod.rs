@@ -280,6 +280,7 @@ pub(crate) struct BottomPane {
     unified_exec_footer: UnifiedExecFooter,
     /// Preview of pending steers and queued drafts shown above the composer.
     pending_input_preview: PendingInputPreview,
+    notes_indicator: Option<Line<'static>>,
     /// Inactive threads with pending approval requests.
     pending_thread_approvals: PendingThreadApprovals,
     context_window_percent: Option<i64>,
@@ -349,6 +350,7 @@ impl BottomPane {
             status_timer: crate::status_indicator_widget::StatusTimer::default(),
             unified_exec_footer: UnifiedExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
+            notes_indicator: None,
             pending_thread_approvals: PendingThreadApprovals::new(),
             esc_backtrack_hint: false,
             animations_enabled,
@@ -2114,6 +2116,9 @@ impl BottomPane {
             }
             let mut flex2 = FlexRenderable::new();
             flex2.push(/*flex*/ 1, RenderableItem::Owned(flex.into()));
+            if let Some(indicator) = &self.notes_indicator {
+                flex2.push(/*flex*/ 0, RenderableItem::Borrowed(indicator));
+            }
             let composer: RenderableItem<'_> = if let Some(questions) = question_editor {
                 RenderableItem::Borrowed(questions.as_ref())
             } else if composer_right_reserve == 0 {
@@ -2131,6 +2136,13 @@ impl BottomPane {
 
     pub(crate) fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
         if self.composer.set_status_line(status_line) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn set_notes_indicator(&mut self, indicator: Option<Line<'static>>) {
+        if self.notes_indicator != indicator {
+            self.notes_indicator = indicator;
             self.request_redraw();
         }
     }

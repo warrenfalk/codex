@@ -237,6 +237,7 @@ mod managed_worktree_creation;
 mod misalignment_policy;
 mod model_defaults;
 mod new_session;
+mod notes;
 mod pending_interactive_replay;
 mod permission_shortcuts;
 mod pets;

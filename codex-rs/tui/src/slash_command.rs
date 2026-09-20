@@ -136,7 +136,7 @@ impl SlashCommand {
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Voice => "start or stop a live voice conversation",
             SlashCommand::Goal => "set or view the goal for a long-running task",
-            SlashCommand::Nts => "record a note in the current thread",
+            SlashCommand::Nts => "browse notes to self, or add one with /nts <note>",
             SlashCommand::Agents => "view and switch between all active agent sessions",
             SlashCommand::MultiAgents => "switch between this session's subagents",
             SlashCommand::Side | SlashCommand::Btw => {

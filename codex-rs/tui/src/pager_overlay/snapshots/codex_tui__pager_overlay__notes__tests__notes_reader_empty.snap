@@ -1,0 +1,14 @@
+---
+source: tui/src/pager_overlay/notes_tests.rs
+expression: "render(&mut overlay, 65, 10)"
+---
+"/ Notes to self (0) / / / / / / / / / / / / / / / / / / / / / /  "
+"No notes yet. Add one with /nts <note>.                          "
+"~                                                                "
+"~                                                                "
+"~                                                                "
+"~                                                                "
+"────────────────────────────────────────────────────────── 100% ─"
+" ↑/↓ to scroll   pgup/pgdn to page   home/end to jump            "
+" esc close                                                       "
+"                                                                 "

@@ -384,6 +384,7 @@ mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod model_popup_state;
 mod model_popups;
+mod notes;
 mod notifications;
 pub(crate) use self::notifications::Notification;
 mod permission_discovery;
@@ -583,6 +584,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     transcript: TranscriptState,
+    pub(crate) notes: crate::notes::NotesState,
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
     raw_output_mode: bool,

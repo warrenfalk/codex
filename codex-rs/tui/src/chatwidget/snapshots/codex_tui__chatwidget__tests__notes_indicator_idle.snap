@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/notes_tests.rs
+expression: "render_bottom_popup(&chat, 65)"
+---
+1 note to self · /nts to view
+
+› Draft stays here
+
+  5.6-sol default · tmp/project

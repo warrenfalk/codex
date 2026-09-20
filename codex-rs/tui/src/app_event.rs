@@ -640,6 +640,17 @@ pub(crate) enum AppEvent {
         note: String,
     },
 
+    OpenNotes,
+    LoadNotes {
+        thread_id: ThreadId,
+        generation: uuid::Uuid,
+    },
+    NotesLoaded {
+        thread_id: ThreadId,
+        generation: uuid::Uuid,
+        result: Result<Vec<crate::notes::NoteToSelf>, String>,
+    },
+
     /// Approve one retry of a recent auto-review denial selected in the TUI.
     ApproveRecentAutoReviewDenial {
         thread_id: ThreadId,

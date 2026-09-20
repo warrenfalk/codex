@@ -37,6 +37,8 @@ mod misalignment_policy;
 mod model_catalog;
 #[path = "tests/model_defaults_tests.rs"]
 mod model_defaults;
+#[path = "tests/notes_tests.rs"]
+mod notes_tests;
 #[path = "tests/pagination_completion_tests.rs"]
 mod pagination_completion_tests;
 #[path = "tests/patch_approval_tests.rs"]
@@ -7048,7 +7050,7 @@ async fn clean_scrollback_syncs_transcript_overlay_to_filtered_and_full_cells() 
         let mut buffer = Buffer::empty(area);
         match overlay {
             Overlay::Transcript(transcript) => transcript.render(area, &mut buffer),
-            Overlay::Static(_) => panic!("expected transcript overlay"),
+            Overlay::Static(_) | Overlay::Notes(_) => panic!("expected transcript overlay"),
         }
         buffer
             .content()

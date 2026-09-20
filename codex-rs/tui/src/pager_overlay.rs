@@ -15,7 +15,9 @@
 //! recomputed. `ChatWidget` is responsible for producing a key that changes when the active cell
 //! mutates in place or when its transcript output is time-dependent.
 
+mod notes;
 mod scrolling;
+pub(crate) use notes::NotesOverlay;
 
 #[cfg(test)]
 #[path = "pager_overlay/highlight_tests.rs"]
@@ -58,6 +60,7 @@ use scrolling::render_offset_content;
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
+    Notes(NotesOverlay),
 }
 
 impl Overlay {
@@ -85,6 +88,7 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
+            Overlay::Notes(o) => o.handle_event(tui, event),
         }
     }
 
@@ -92,6 +96,7 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
+            Overlay::Notes(o) => o.is_done(),
         }
     }
 }

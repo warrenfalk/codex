@@ -1,0 +1,14 @@
+---
+source: tui/src/pager_overlay/notes_tests.rs
+expression: "render(&mut overlay, 65, 10)"
+---
+"/ Notes to self / / / / / / / / / / / / / / / / / / / / / / / /  "
+"Could not load all notes: connection lost                        "
+"Close and reopen /nts to retry.                                  "
+"~                                                                "
+"~                                                                "
+"~                                                                "
+"────────────────────────────────────────────────────────── 100% ─"
+" ↑/↓ to scroll   pgup/pgdn to page   home/end to jump            "
+" esc close                                                       "
+"                                                                 "

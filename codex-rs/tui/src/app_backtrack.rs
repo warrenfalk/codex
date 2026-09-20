@@ -98,6 +98,10 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<bool> {
+        if matches!(self.overlay, Some(Overlay::Notes(_))) {
+            self.overlay_forward_event(tui, event)?;
+            return Ok(true);
+        }
         self.handle_legacy_transcript_event(tui, app_server, event)
     }
 
@@ -304,6 +308,9 @@ impl App {
     /// source of truth for the active cell and its cache invalidation key, and because `App` owns
     /// overlay lifecycle and frame scheduling for animations.
     fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+        if let Some(Overlay::Notes(notes)) = &mut self.overlay {
+            notes.sync(&self.chat_widget.notes);
+        }
         if matches!(
             &event,
             TuiEvent::Draw | TuiEvent::Resume | TuiEvent::Resize(_) | TuiEvent::FocusGained

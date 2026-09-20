@@ -856,6 +856,15 @@ impl App {
                         .add_error_message(format!("Failed to create note to self: {err}"));
                 }
             }
+            AppEvent::OpenNotes => self.open_notes(tui),
+            AppEvent::LoadNotes { thread_id, generation } => {
+                self.load_notes(app_server, thread_id, generation);
+            }
+            AppEvent::NotesLoaded { thread_id, generation, result } => {
+                if self.chat_widget.thread_id() == Some(thread_id) {
+                    self.chat_widget.finish_notes_load(generation, result);
+                }
+            }
             AppEvent::AppendMessageHistoryEntry { thread_id, text } => {
                 self.append_message_history_entry(thread_id, text);
             }

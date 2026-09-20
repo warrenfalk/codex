@@ -724,16 +724,14 @@ async fn nts_slash_command_emits_note_event_without_submitting_turn() {
 }
 
 #[tokio::test]
-async fn nts_slash_command_reports_usage_for_empty_note() {
+async fn nts_slash_command_opens_notes_without_submitting_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
 
     submit_composer_text(&mut chat, "/nts");
 
-    let rendered = rendered_inserted_history(&mut rx);
     assert!(
-        rendered.contains("Usage: /nts <note>"),
-        "expected usage message, got {rendered:?}"
+        std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(event, AppEvent::OpenNotes))
     );
     assert_no_submit_op(&mut op_rx);
 }
