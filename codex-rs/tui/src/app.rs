@@ -250,6 +250,8 @@ mod safety_buffering;
 mod server_version_notice;
 mod session_lifecycle;
 mod session_picker;
+#[cfg(unix)]
+mod shutdown_signal;
 mod side;
 mod side_summary;
 mod startup;
