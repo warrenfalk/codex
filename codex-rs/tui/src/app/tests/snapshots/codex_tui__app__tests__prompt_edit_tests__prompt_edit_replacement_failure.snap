@@ -1,0 +1,5 @@
+---
+source: tui/src/app/tests/prompt_edit_tests.rs
+expression: next_history_message(&mut events)
+---
+■ Failed to replace the conversation from the selected prompt: the selected transcript prompt no longer matches the persisted thread

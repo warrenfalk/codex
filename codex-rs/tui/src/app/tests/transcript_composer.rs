@@ -101,10 +101,11 @@ async fn transcript_flag_off_preserves_viewer_and_backtracking() -> Result<()> {
     }
     press_key(&mut app, &mut tui, &mut app_server, KeyCode::Enter).await?;
     assert!(app.overlay.is_none());
+    press_key(&mut app, &mut tui, &mut app_server, KeyCode::Enter).await?;
     assert!(
         std::iter::from_fn(|| app_event_rx.try_recv().ok()).any(|event| matches!(
             event,
-            AppEvent::ForkSessionForPromptEdit {
+            AppEvent::RevertSessionForPromptEdit {
                 nth_user_message: 1,
                 ..
             }

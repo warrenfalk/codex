@@ -589,6 +589,19 @@ pub(crate) enum AppEvent {
         prompt: UserMessage,
     },
 
+    /// Replace the selected prompt and its following history in the same thread.
+    RevertSessionForPromptEdit {
+        thread_id: ThreadId,
+        nth_user_message: usize,
+        prompt: UserMessage,
+    },
+
+    /// Apply a successful revert after previously queued transcript inserts have drained.
+    PromptEditReverted {
+        started: Box<AppServerStartedThread>,
+        prompt: UserMessage,
+    },
+
     /// Queue the desktop notification requested by the Unix focus signal.
     FocusNotificationRequested,
 

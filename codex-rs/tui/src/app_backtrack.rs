@@ -4,14 +4,14 @@
 //! mediates a key rendering boundary for the transcript overlay.
 //!
 //! Overall goal: keep the main chat view and the transcript overlay in sync while allowing users
-//! to edit an earlier prompt on a source-preserving branch. Confirming a selection forks before
-//! the selected turn and restores its prompt in the new composer.
+//! to edit an earlier prompt in the same conversation or on a source-preserving branch.
+//! Confirming a selection opens the choice before changing conversation history.
 //!
 //! Backtrack operates as a small state machine:
 //! - The first `Esc` in the main view "primes" the feature and captures a base thread id.
 //! - A subsequent `Esc` opens the transcript overlay (`Ctrl+T`) and highlights a user message when
 //!   there is a prompt to reuse.
-//! - `Enter` requests a fork before the selected prompt and reopens it for editing.
+//! - `Enter` offers to replace this conversation from the prompt onward or edit a new branch.
 //!
 //! The transcript overlay (`Ctrl+T`) renders committed transcript cells plus a render-only live
 //! tail derived from the current in-flight `ChatWidget.active_cell`.
@@ -27,7 +27,6 @@ use std::any::TypeId;
 use std::sync::Arc;
 
 use crate::app::App;
-use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::chatwidget::ChatWidget;
@@ -117,7 +116,7 @@ impl App {
         }
     }
 
-    /// Request a source-preserving branch before the selected prompt.
+    /// Offer to edit the selected prompt in this conversation or on a new branch.
     pub(crate) fn apply_backtrack_selection(&mut self, selection: BacktrackSelection) {
         if self.chat_widget.side_conversation_active() {
             self.reset_backtrack_state();
@@ -130,11 +129,7 @@ impl App {
             return;
         }
 
-        self.app_event_tx.send(AppEvent::ForkSessionForPromptEdit {
-            thread_id: selection.thread_id,
-            nth_user_message: selection.nth_user_message,
-            prompt: selection.prompt,
-        });
+        self.show_prompt_edit_menu(selection);
     }
 
     pub(crate) fn restore_backtrack_prompt_after_branch_error(

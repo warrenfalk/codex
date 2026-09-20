@@ -1,0 +1,14 @@
+---
+source: tui/src/app/tests/prompt_edit_tests.rs
+expression: "render_bottom_popup(&app.chat_widget, 45)"
+---
+  Edit previous prompt
+
+› 1. Edit this conversation
+     Replace this prompt and discard
+     everything after it.
+  2. Edit in a new conversation
+     Keep the original conversation and
+     continue on a new branch.
+
+  Press enter to confirm or esc to go back
