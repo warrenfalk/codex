@@ -1,3 +1,8 @@
+[env]
+# Match CI/just test so raw `cargo test` libtest threads do not use Rust's
+# smaller default stack in debug builds.
+RUST_MIN_STACK = { value = "8388608", force = false }
+
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "target-feature=+crt-static"]
 
