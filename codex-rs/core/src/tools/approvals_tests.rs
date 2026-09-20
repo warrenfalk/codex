@@ -127,6 +127,7 @@ async fn non_utf8_cwd_preserves_approval_routing(
         cancellation_token: None,
         call_id: "non-utf8-cwd".to_string(),
         tool_name: ToolName::plain("exec_command"),
+        auto_approve_after: None,
         strict_auto_review: false,
         approval_reason: None,
         retry_reason: None,
@@ -213,6 +214,7 @@ async fn explicit_mcp_reviewer_override_takes_precedence_over_action_context() {
         approval_reason: None,
         retry_reason: None,
         network_approval_context: None,
+        auto_approve_after: None,
     };
 
     tokio::select! {

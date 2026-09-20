@@ -624,7 +624,7 @@ async fn exec_command_escalated_permissions_rejected_then_ok() -> Result<()> {
 
     let policy = AskForApproval::Never;
     let expected_message = format!(
-        "approval policy is {policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {policy:?}"
+        "approval policy is {policy:?}; reject command — this policy does not allow model-requested permission overrides"
     );
 
     let blocked_output = second_mock

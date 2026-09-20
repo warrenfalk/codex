@@ -345,6 +345,8 @@ class AppsReadParams(BaseModel):
 class AskForApprovalValue(Enum):
     untrusted = "untrusted"
     on_request = "on-request"
+    trust_sandbox = "trust-sandbox"
+    trust_sandbox_timeout = "trust-sandbox-timeout"
     never = "never"
 
 
