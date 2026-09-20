@@ -30,19 +30,21 @@ impl App {
         app_server: &mut AppServerSession,
         event: AppEvent,
     ) -> Result<AppRunControl> {
-        if self.reconnect.offline
-            && !matches!(
-                &event,
-                AppEvent::InsertHistoryCell(_)
-                    | AppEvent::ResetTranscriptForThreadSwitch
-                    | AppEvent::ManagedWorktreeCreated(_)
-                    | AppEvent::AppendMessageHistoryEntry { .. }
-                    | AppEvent::BeginInitialHistoryReplayBuffer
-                    | AppEvent::BeginThreadSwitchHistoryReplayBuffer
-                    | AppEvent::EndInitialHistoryReplayBuffer
-                    | AppEvent::FatalExitRequest(_)
-            )
-        {
+        let allowed_offline = matches!(
+            &event,
+            AppEvent::InsertHistoryCell(_)
+                | AppEvent::ResetTranscriptForThreadSwitch
+                | AppEvent::ManagedWorktreeCreated(_)
+                | AppEvent::AppendMessageHistoryEntry { .. }
+                | AppEvent::BeginInitialHistoryReplayBuffer
+                | AppEvent::BeginThreadSwitchHistoryReplayBuffer
+                | AppEvent::EndInitialHistoryReplayBuffer
+                | AppEvent::FatalExitRequest(_)
+        );
+        #[cfg(unix)]
+        let allowed_offline =
+            allowed_offline || matches!(&event, AppEvent::AgentsFocusRequested(_));
+        if self.reconnect.offline && !allowed_offline {
             return Ok(AppRunControl::Continue);
         }
         if self.chat_widget.has_misalignment_policy_violation()
@@ -736,6 +738,8 @@ impl App {
             AppEvent::FocusNotificationRequested => {
                 self.chat_widget.notify(Notification::FocusRequested);
             }
+            #[cfg(unix)]
+            AppEvent::AgentsFocusRequested(pending) => self.handle_agents_focus(tui, pending).await,
             AppEvent::Exit(mode) => {
                 if matches!(mode, ExitMode::ShutdownFirst | ExitMode::ShutdownAfterInterrupt) {
                     self.show_shutdown_feedback(tui)?;
