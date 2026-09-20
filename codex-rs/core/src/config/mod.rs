@@ -569,14 +569,9 @@ impl Permissions {
         ) {
             return permission_profile;
         }
-        let enforcement = permission_profile.enforcement();
         let (mut file_system_policy, network_policy) = permission_profile.to_runtime_permissions();
         file_system_policy.preserve_deny_read_restrictions_from(managed_deny_read_policy);
-        PermissionProfile::from_runtime_permissions_with_enforcement(
-            enforcement,
-            &file_system_policy,
-            network_policy,
-        )
+        permission_profile.with_runtime_permissions(&file_system_policy, network_policy)
     }
 }
 
@@ -3586,13 +3581,13 @@ impl Config {
                 effective_permission_selection.profiles.as_ref(),
                 default_permissions,
             )?;
-            let (mut file_system_sandbox_policy, network_sandbox_policy) =
-                compile_permission_profile_selection(
+            let permission_profile = compile_permission_profile_selection(
                     effective_permission_selection.profiles.as_ref(),
                     default_permissions,
                     builtin_workspace_write_settings,
                     &mut startup_warnings,
                 )?;
+            let mut file_system_sandbox_policy = permission_profile.file_system_sandbox_policy();
             let mut configured_workspace_roots = compile_permission_profile_workspace_roots(
                 effective_permission_selection.profiles.as_ref(),
                 default_permissions,
@@ -3612,9 +3607,9 @@ impl Config {
             {
                 permission_profile
             } else {
-                PermissionProfile::from_runtime_permissions(
+                permission_profile.with_runtime_permissions(
                     &file_system_sandbox_policy,
-                    network_sandbox_policy,
+                    permission_profile.network_sandbox_policy(),
                 )
             };
             let active_permission_profile = if using_implicit_builtin_profile
@@ -4138,8 +4133,7 @@ impl Config {
         }
         let effective_file_system_sandbox_policy = effective_file_system_sandbox_policy
             .with_additional_readable_roots(resolved_cwd.as_path(), &helper_readable_roots);
-        let effective_permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
-            effective_permission_profile.enforcement(),
+        let effective_permission_profile = effective_permission_profile.with_runtime_permissions(
             &effective_file_system_sandbox_policy,
             effective_network_sandbox_policy,
         );

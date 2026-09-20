@@ -82,7 +82,9 @@ commands that would enter the bubblewrap path.
   writable roots are blocked by mounting `/dev/null` on the symlink or first
   missing component.
 - When bubblewrap is active, the helper explicitly isolates the user namespace via
-  `--unshare-user` and the PID namespace via `--unshare-pid`.
+  `--unshare-user`. The PID namespace is isolated via `--unshare-pid` by default;
+  permission profiles can set `pid_namespace = "host"` to share the executor's PID
+  namespace while retaining the other sandbox restrictions.
 - When bubblewrap is active and network is restricted without proxy routing, the helper also
   isolates the network namespace via `--unshare-net`.
 - In managed proxy mode, the helper uses `--unshare-net` plus an internal

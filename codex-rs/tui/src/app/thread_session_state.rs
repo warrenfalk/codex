@@ -289,6 +289,7 @@ mod tests {
         let thread_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000403").expect("valid thread");
         let profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![

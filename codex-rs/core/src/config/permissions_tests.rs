@@ -22,6 +22,60 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 
+#[tokio::test]
+async fn pid_namespace_inheritance_survives_config_resolution() -> anyhow::Result<()> {
+    use codex_protocol::PidNamespace;
+
+    let temp = TempDir::new()?;
+    let codex_home = AbsolutePathBuf::try_from(temp.path().join("home"))?;
+    let cwd = temp.path().join("workspace");
+    std::fs::create_dir_all(&cwd)?;
+    let config: ConfigToml = toml::from_str(
+        r#"
+[permissions.default]
+extends = ":workspace"
+
+[permissions.trusted-workspace]
+extends = "default"
+pid_namespace = "host"
+
+[permissions.trusted-workspace-conservative]
+extends = "trusted-workspace"
+
+[permissions.isolated-child]
+extends = "trusted-workspace-conservative"
+pid_namespace = "isolated"
+"#,
+    )?;
+    let mut baseline = None;
+    for (profile, namespace) in [
+        ("default", PidNamespace::Isolated),
+        ("trusted-workspace", PidNamespace::Host),
+        ("trusted-workspace-conservative", PidNamespace::Host),
+        ("isolated-child", PidNamespace::Isolated),
+    ] {
+        let resolved = Config::load_from_base_config_with_overrides(
+            config.clone(),
+            ConfigOverrides {
+                cwd: Some(cwd.clone()),
+                default_permissions: Some(profile.to_string()),
+                ..Default::default()
+            },
+            codex_home.clone(),
+        )
+        .await?;
+        let actual = resolved.permissions.effective_permission_profile();
+        let baseline = baseline.get_or_insert_with(|| actual.clone());
+        assert_eq!(
+            actual,
+            baseline.clone().with_pid_namespace(namespace),
+            "profile {profile}"
+        );
+    }
+    assert!(toml::from_str::<PermissionProfileToml>("pid_namespace = 'shared'").is_err());
+    Ok(())
+}
+
 #[test]
 fn normalize_absolute_path_for_platform_simplifies_windows_verbatim_paths() {
     let parsed = normalize_absolute_path_for_platform(
@@ -67,6 +121,7 @@ async fn restricted_read_implicitly_allows_helper_executables() -> std::io::Resu
                 entries: BTreeMap::from([(
                     "workspace".to_string(),
                     PermissionProfileToml {
+                        pid_namespace: None,
                         description: None,
                         extends: None,
                         workspace_roots: None,
@@ -439,6 +494,7 @@ fn compile_permission_profile_workspace_roots_resolves_enabled_entries() -> std:
             entries: BTreeMap::from([(
                 "workspace".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: Some(WorkspaceRootsToml {
@@ -491,14 +547,16 @@ docs = "read"
     let mut startup_warnings = Vec::new();
 
     let (read_deny_policy, _) =
-        compile_permission_profile(&permissions, "read_deny", &mut startup_warnings)?;
+        compile_permission_profile(&permissions, "read_deny", &mut startup_warnings)?
+            .to_runtime_permissions();
     assert_eq!(
         read_deny_policy.resolve_access_for_local_path_with_cwd(cwd.path(), cwd.path()),
         FileSystemAccessMode::Deny
     );
 
     let (write_deny_policy, _) =
-        compile_permission_profile(&permissions, "write_deny", &mut startup_warnings)?;
+        compile_permission_profile(&permissions, "write_deny", &mut startup_warnings)?
+            .to_runtime_permissions();
     assert!(!write_deny_policy.has_full_disk_write_access());
     assert_eq!(
         write_deny_policy.resolve_access_for_local_path_with_cwd(cwd.path(), cwd.path()),
@@ -506,7 +564,8 @@ docs = "read"
     );
 
     let (write_read_policy, _) =
-        compile_permission_profile(&permissions, "write_read", &mut startup_warnings)?;
+        compile_permission_profile(&permissions, "write_read", &mut startup_warnings)?
+            .to_runtime_permissions();
     assert!(!write_read_policy.has_full_disk_write_access());
     assert_eq!(
         write_read_policy.resolve_access_for_local_path_with_cwd(&docs, cwd.path()),
@@ -599,6 +658,7 @@ fn read_write_trailing_glob_suffix_compiles_as_subpath() -> std::io::Result<()> 
             entries: BTreeMap::from([(
                 "workspace".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,
@@ -618,7 +678,8 @@ fn read_write_trailing_glob_suffix_compiles_as_subpath() -> std::io::Result<()> 
         },
         "workspace",
         &mut startup_warnings,
-    )?;
+    )?
+    .to_runtime_permissions();
 
     assert_eq!(
         file_system_policy,

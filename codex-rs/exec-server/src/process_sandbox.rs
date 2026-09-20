@@ -179,11 +179,7 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
     let file_system_policy = file_system_policy
         .with_additional_readable_roots(native_sandbox_policy_cwd.as_path(), &sandbox_helper_paths);
     #[cfg(unix)]
-    let permissions = PermissionProfile::from_runtime_permissions_with_enforcement(
-        permissions.enforcement(),
-        &file_system_policy,
-        network_policy,
-    );
+    let permissions = permissions.with_runtime_permissions(&file_system_policy, network_policy);
     let sandbox_manager = SandboxManager::new();
     #[cfg(target_os = "macos")]
     let sandbox_manager = sandbox_manager

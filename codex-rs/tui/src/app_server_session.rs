@@ -3086,6 +3086,7 @@ mod tests {
         let cwd = test_path_buf("/workspace/project").abs();
         let extra_root = test_path_buf("/workspace/extra").abs();
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
@@ -3280,6 +3281,7 @@ mod tests {
         let cwd = test_path_buf("/workspace/project").abs();
         let extra_root = test_path_buf("/workspace/cache").abs();
         let permission_profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
@@ -3314,6 +3316,7 @@ mod tests {
     fn sandbox_mode_projects_cwd_write_for_remote_sessions() {
         let cwd = test_path_buf("/workspace/project").abs();
         let permission_profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![

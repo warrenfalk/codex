@@ -92,6 +92,7 @@ fn stale_monthly_limit_marks_fresh_rolling_snapshot_stale() {
 
 fn app_server_workspace_write_profile(network_enabled: bool) -> PermissionProfile {
     PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: if network_enabled {
             NetworkSandboxPolicy::Enabled
         } else {
@@ -953,6 +954,7 @@ async fn status_permissions_full_disk_managed_with_network_is_danger_full_access
     config
         .permissions
         .set_permission_profile(PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Enabled,
             file_system: ManagedFileSystemPermissions::Unrestricted,
         })
@@ -976,6 +978,7 @@ async fn status_permissions_full_disk_managed_without_network_is_external_sandbo
     config
         .permissions
         .set_permission_profile(PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Unrestricted,
         })

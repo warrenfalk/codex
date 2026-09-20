@@ -321,7 +321,7 @@ pub fn run_main() -> ! {
         run_bwrap_with_proc_fallback(
             &sandbox_policy_cwd,
             command_cwd.as_deref(),
-            &file_system_sandbox_policy,
+            &permission_profile,
             bwrap_network_mode(network_sandbox_policy, allow_network_for_proxy),
             inner,
             proxy_controls,
@@ -419,7 +419,7 @@ fn ensure_legacy_landlock_mode_supports_policy(
 fn run_bwrap_with_proc_fallback(
     sandbox_policy_cwd: &Path,
     command_cwd: Option<&Path>,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    permission_profile: &PermissionProfile,
     network_mode: BwrapNetworkMode,
     inner: Vec<String>,
     proxy_controls: Vec<File>,
@@ -427,8 +427,11 @@ fn run_bwrap_with_proc_fallback(
 ) -> ! {
     let mut mount_proc = mount_proc;
     let command_cwd = command_cwd.unwrap_or(sandbox_policy_cwd);
+    let pid_namespace = permission_profile.pid_namespace();
+    let file_system_sandbox_policy = permission_profile.file_system_sandbox_policy();
 
     if mount_proc
+        && pid_namespace.is_isolated()
         && !preflight_proc_mount_support(network_mode)
             .unwrap_or_else(|err| exit_with_bwrap_build_error(err))
     {
@@ -438,6 +441,7 @@ fn run_bwrap_with_proc_fallback(
     }
 
     let options = BwrapOptions {
+        pid_namespace,
         mount_proc,
         network_mode,
         mask_wsl_interop: !file_system_sandbox_policy.has_full_disk_write_access()
@@ -446,7 +450,7 @@ fn run_bwrap_with_proc_fallback(
     };
     let mut bwrap_args = build_bwrap_argv(
         inner,
-        file_system_sandbox_policy,
+        &file_system_sandbox_policy,
         sandbox_policy_cwd,
         command_cwd,
         options,
