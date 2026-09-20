@@ -1,0 +1,68 @@
+---
+source: tui/src/agents_json_tests.rs
+expression: "serde_json::to_string_pretty(&snapshot).unwrap()"
+---
+{
+  "version": 1,
+  "connection": "connected",
+  "counts": {
+    "total": 2,
+    "working": 1,
+    "needsAttention": 1
+  },
+  "sessions": [
+    {
+      "id": "finished",
+      "title": "Latest prompt",
+      "cwd": "/project",
+      "name": null,
+      "preview": "Latest prompt\nSecond line",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "finished",
+      "rootStatus": {
+        "type": "notLoaded"
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": false,
+      "working": false,
+      "attention": []
+    },
+    {
+      "id": "root",
+      "title": "Renamed during initialization",
+      "cwd": "/project",
+      "name": "Renamed during initialization",
+      "preview": "Latest prompt\nSecond line",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "needsInput",
+      "rootStatus": {
+        "type": "notLoaded"
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": true,
+      "working": true,
+      "attention": [
+        "approval",
+        "userInput"
+      ]
+    }
+  ]
+}

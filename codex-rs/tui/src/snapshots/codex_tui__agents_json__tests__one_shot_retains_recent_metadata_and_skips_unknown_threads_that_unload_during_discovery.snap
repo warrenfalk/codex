@@ -1,0 +1,40 @@
+---
+source: tui/src/agents_json_tests.rs
+expression: "serde_json::to_string_pretty(&snapshot).unwrap()"
+---
+{
+  "version": 1,
+  "connection": "connected",
+  "counts": {
+    "total": 1,
+    "working": 0,
+    "needsAttention": 0
+  },
+  "sessions": [
+    {
+      "id": "recent",
+      "title": "Original prompt",
+      "cwd": "/project",
+      "name": null,
+      "preview": " Original prompt\nmore",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "finished",
+      "rootStatus": {
+        "type": "notLoaded"
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": false,
+      "working": false,
+      "attention": []
+    }
+  ]
+}

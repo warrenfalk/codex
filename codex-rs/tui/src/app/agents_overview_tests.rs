@@ -501,7 +501,7 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
         overview_thread(id, /*parent_thread_id*/ None, name, ThreadStatus::Idle)
     });
     let request_id = Uuid::new_v4();
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.model.request_id = Some(request_id);
     // The seed is still in flight and the command center has never been opened.
     for notification in [
         ServerNotification::ThreadStarted(ThreadStartedNotification {
@@ -538,6 +538,7 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
                 (deleted, Some(deleted_thread)),
             ]),
             recent_seed_complete: true,
+            ..Default::default()
         }),
     );
     retained_thread.name = Some("New name".to_string());
@@ -546,10 +547,10 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
         (retained, Some(retained_thread)),
         (created, Some(created_thread)),
     ]);
-    assert_eq!(app.agents_overview.threads, expected);
+    assert_eq!(app.agents_overview.model.threads, expected);
 
     let request_id = Uuid::new_v4();
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.model.request_id = Some(request_id);
     app.apply_agents_overview_thread_refresh(
         &app_server,
         request_id,
@@ -557,17 +558,18 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
             last_messages: HashMap::new(),
             threads: HashMap::from([(retained, None)]),
             recent_seed_complete: true,
+            ..Default::default()
         }),
     );
-    assert_eq!(app.agents_overview.threads, expected);
+    assert_eq!(app.agents_overview.model.threads, expected);
     let request_id = Uuid::new_v4();
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.model.request_id = Some(request_id);
     app.apply_agents_overview_thread_refresh(
         &app_server,
         request_id,
         Err("temporarily unavailable".to_string()),
     );
-    assert_eq!(app.agents_overview.threads, expected);
+    assert_eq!(app.agents_overview.model.threads, expected);
 
     let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
     app.chat_widget.show_bottom_pane_view(Box::new(view));
@@ -581,36 +583,73 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
         AppServerEvent::Lagged { skipped: 1 },
     ] {
         let old_request = Uuid::new_v4();
-        app.agents_overview.request_id = Some(old_request);
+        app.agents_overview.model.request_id = Some(old_request);
         app.agents_overview.activity.entry(retained).or_default();
-        app.agents_overview.last_messages = stale_messages.clone();
+        app.agents_overview.model.last_messages = stale_messages.clone();
         app.handle_app_server_event(&app_server, event).await;
         assert!(!app.agents_overview.activity.contains_key(&retained));
-        assert!(app.agents_overview.last_messages.is_empty());
+        assert!(app.agents_overview.model.last_messages.is_empty());
         // Fresh activity must survive an older read arriving after invalidation.
         app.track_agents_overview_notification(&reasoning_delta(
             retained,
             "new-reasoning",
             "**Checking the revised task**",
         ));
-        let current_request = app.agents_overview.request_id.unwrap();
-        for (request_id, last_messages) in [
-            (old_request, stale_messages.clone()),
-            (current_request, HashMap::new()),
-        ] {
-            app.apply_agents_overview_thread_refresh(
-                &app_server,
-                request_id,
-                Ok(AgentsOverviewThreadRefresh {
-                    threads: HashMap::new(),
-                    last_messages,
-                    recent_seed_complete: true,
-                }),
-            );
-            assert!(app.agents_overview.last_messages.is_empty());
-        }
+        app.apply_agents_overview_thread_refresh(
+            &app_server,
+            old_request,
+            Ok(AgentsOverviewThreadRefresh {
+                last_messages: stale_messages.clone(),
+                recent_seed_complete: true,
+                ..Default::default()
+            }),
+        );
+        assert!(app.agents_overview.model.last_messages.is_empty());
+        // Both rollback and lost notifications require a fresh read for titles and previews.
+        let current_request = app.agents_overview.model.request_id.unwrap();
+        assert_ne!(current_request, old_request);
+        app.apply_agents_overview_thread_refresh(
+            &app_server,
+            current_request,
+            Ok(AgentsOverviewThreadRefresh {
+                recent_seed_complete: true,
+                ..Default::default()
+            }),
+        );
+        assert!(app.agents_overview.model.last_messages.is_empty());
         assert!(app.agents_overview.activity.contains_key(&retained));
-        assert!(app.agents_overview.request_id.is_none());
+        assert!(app.agents_overview.model.request_id.is_none());
+    }
+    // These events must also schedule reads when no request is already in flight.
+    for notification in [
+        ServerNotification::ThreadReverted(codex_app_server_protocol::ThreadRevertedNotification {
+            thread_id: retained.to_string(),
+        }),
+        ServerNotification::ThreadUnarchived(
+            codex_app_server_protocol::ThreadUnarchivedNotification {
+                thread_id: archived.to_string(),
+            },
+        ),
+    ] {
+        app.handle_app_server_event(
+            &app_server,
+            AppServerEvent::ServerNotification(Box::new(notification)),
+        )
+        .await;
+        let request_id = app
+            .agents_overview
+            .model
+            .request_id
+            .expect("refresh changed metadata");
+        app.apply_agents_overview_thread_refresh(
+            &app_server,
+            request_id,
+            Ok(AgentsOverviewThreadRefresh {
+                recent_seed_complete: true,
+                ..Default::default()
+            }),
+        );
+        assert!(app.agents_overview.model.request_id.is_none());
     }
     app_server.shutdown().await?;
     Ok(())
@@ -696,13 +735,15 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
     let recent_ids: HashSet<_> = ids[2..].iter().copied().collect();
     let mut expected = recent_ids.clone();
     expected.insert(ids[0]);
-    let retained: HashSet<_> = app.agents_overview.threads.keys().copied().collect();
+    let retained: HashSet<_> = app.agents_overview.model.threads.keys().copied().collect();
     assert_eq!(retained, expected);
     assert_eq!(
-        app.agents_overview.last_messages,
+        app.agents_overview.model.last_messages,
         HashMap::from([(ids[20], "Found the regression in the parser.".to_string())])
     );
-    let thread = app.agents_overview.threads[&ids[20]].as_ref().unwrap();
+    let thread = app.agents_overview.model.threads[&ids[20]]
+        .as_ref()
+        .unwrap();
     assert_eq!(thread.status, ThreadStatus::NotLoaded);
 
     let created = app_server.start_thread(&config).await?.session.thread_id;
@@ -721,7 +762,7 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     finish_overview_refresh(&mut app, &app_server, &mut event_rx).await;
-    let retained: HashSet<_> = app.agents_overview.threads.keys().copied().collect();
+    let retained: HashSet<_> = app.agents_overview.model.threads.keys().copied().collect();
     assert_eq!(retained, expected);
 
     // A creation notification adds a session without attaching a local view.
@@ -735,7 +776,7 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
         }
     }).await.expect("creation notification received");
     expected.insert(created);
-    let retained: HashSet<_> = app.agents_overview.threads.keys().copied().collect();
+    let retained: HashSet<_> = app.agents_overview.model.threads.keys().copied().collect();
     assert_eq!(retained, expected);
 
     // Opening older history is a local addition, even without starting a turn.
@@ -778,7 +819,13 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
     restarted.app_event_tx = crate::app_event_sender::AppEventSender::new(event_tx);
     restarted.refresh_agents_overview_threads(&app_server);
     finish_overview_refresh(&mut restarted, &app_server, &mut event_rx).await;
-    let retained: HashSet<_> = restarted.agents_overview.threads.keys().copied().collect();
+    let retained: HashSet<_> = restarted
+        .agents_overview
+        .model
+        .threads
+        .keys()
+        .copied()
+        .collect();
     assert_eq!(retained, recent_ids);
     app_server.shutdown().await?;
     Ok(())
@@ -814,7 +861,7 @@ async fn hidden_system_thread_does_not_refresh_shared_overview() {
     app.chat_widget.show_bottom_pane_view(Box::new(view));
 
     let request_id = uuid::Uuid::new_v4();
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.model.request_id = Some(request_id);
 
     let parent_thread_id = ThreadId::new();
     app.primary_thread_id = Some(parent_thread_id);
@@ -844,8 +891,8 @@ async fn hidden_system_thread_does_not_refresh_shared_overview() {
 
     assert_eq!(
         (
-            app.agents_overview.request_id,
-            app.agents_overview.refresh_pending,
+            app.agents_overview.model.request_id,
+            app.agents_overview.model.refresh_pending,
         ),
         (Some(request_id), false)
     );
@@ -875,8 +922,8 @@ async fn hidden_system_thread_does_not_refresh_shared_overview() {
 
     assert_eq!(
         (
-            app.agents_overview.request_id,
-            app.agents_overview.refresh_pending,
+            app.agents_overview.model.request_id,
+            app.agents_overview.model.refresh_pending,
         ),
         (Some(request_id), true)
     );
@@ -917,12 +964,12 @@ async fn agents_overview_details_show_available_attention_without_expanding_rows
     threads[0].name = None;
     threads[2].name = None;
     threads[2].preview = "Investigate parser\nInclude edge cases\n".repeat(8);
-    app.agents_overview.threads = threads
+    app.agents_overview.model.threads = threads
         .iter()
         .cloned()
         .map(|thread| (ThreadId::from_string(&thread.id).unwrap(), Some(thread)))
         .collect();
-    app.agents_overview.last_messages.insert(
+    app.agents_overview.model.last_messages.insert(
         unloaded,
         super::super::agents_overview_details::preview_text(
             &"Found the regression\nin the parser. ".repeat(20),
@@ -974,7 +1021,7 @@ async fn agents_overview_details_show_available_attention_without_expanding_rows
     assert!(!rendered.contains("Which dependency version"));
     assert!(rendered.contains("Waiting for approval."));
     assert!(app.thread_event_channels.is_empty());
-    assert!(app.agents_overview.request_id.is_none());
+    assert!(app.agents_overview.model.request_id.is_none());
 
     let view = app.agents_overview_view(threads, Some(unloaded));
     app.chat_widget.show_bottom_pane_view(Box::new(view));
@@ -1015,6 +1062,7 @@ async fn agents_overview_reasoning_uses_existing_events_and_expires_with_attachm
     );
     thread.preview.clear();
     app.agents_overview
+        .model
         .threads
         .insert(thread_id, Some(thread.clone()));
     app.thread_event_channels
@@ -1034,7 +1082,7 @@ async fn agents_overview_reasoning_uses_existing_events_and_expires_with_attachm
     insta::with_settings!({snapshot_path => "../snapshots"}, {
         insta::assert_snapshot!("agents_overview_live_activity", render_bottom_popup(&app.chat_widget, /*width*/ 96).replace(&format!("{project}  1"), &normalized_group).replace(&project, "/tmp/project"));
     });
-    assert!(app.agents_overview.request_id.is_none());
+    assert!(app.agents_overview.model.request_id.is_none());
 
     // A working child can stream through a server attachment without a local channel.
     let parent = overview_thread(
@@ -1045,6 +1093,7 @@ async fn agents_overview_reasoning_uses_existing_events_and_expires_with_attachm
     );
     let parent_id = ThreadId::from_string(&parent.id).unwrap();
     app.agents_overview
+        .model
         .threads
         .insert(parent_id, Some(parent.clone()));
     app.track_agents_overview_notification(&ServerNotification::ItemCompleted(

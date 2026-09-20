@@ -1514,7 +1514,11 @@ impl App {
         }
         self.primary_thread_id = Some(thread_id);
         self.agents_overview.hidden_threads.remove(&thread_id);
-        self.agents_overview.threads.entry(thread_id).or_default();
+        self.agents_overview
+            .model
+            .threads
+            .entry(thread_id)
+            .or_default();
         self.primary_session_configured = Some(session.clone());
         self.upsert_agent_picker_thread(
             thread_id, /*agent_nickname*/ None, /*agent_role*/ None,

@@ -774,9 +774,10 @@ async fn connect_websocket_endpoint(
     })?
     .map(|(stream, _response)| stream)
     .map_err(|err| {
-        IoError::other(format!(
-            "failed to connect to remote app server at `{websocket_url}`: {err}"
-        ))
+        IoError::new(
+            connect_error_kind(&err),
+            format!("failed to connect to remote app server at `{websocket_url}`: {err}"),
+        )
     })?;
 
     Ok((websocket_url, stream))
@@ -804,9 +805,10 @@ async fn connect_unix_socket_endpoint(
             )
         })?
         .map_err(|err| {
-            IoError::other(format!(
-                "failed to connect to remote app server at `{endpoint}`: {err}"
-            ))
+            IoError::new(
+                err.kind(),
+                format!("failed to connect to remote app server at `{endpoint}`: {err}"),
+            )
         })?;
     match peer_policy {
         SocketPeerPolicy::ExplicitEndpoint => {}
@@ -827,12 +829,31 @@ async fn connect_unix_socket_endpoint(
     })?
     .map(|(stream, _response)| stream)
     .map_err(|err| {
-        IoError::other(format!(
-            "failed to upgrade remote app server at `{endpoint}`: {err}"
-        ))
+        IoError::new(
+            connect_error_kind(&err),
+            format!("failed to upgrade remote app server at `{endpoint}`: {err}"),
+        )
     })?;
 
     Ok((endpoint, stream))
+}
+
+fn connect_error_kind(error: &TungsteniteError) -> ErrorKind {
+    match error {
+        TungsteniteError::Io(error) => error.kind(),
+        TungsteniteError::Http(response) => match response.status().as_u16() {
+            401 | 403 => ErrorKind::PermissionDenied,
+            408 | 429 | 500..=599 => ErrorKind::ConnectionRefused,
+            _ => ErrorKind::InvalidInput,
+        },
+        TungsteniteError::Protocol(
+            tokio_tungstenite::tungstenite::error::ProtocolError::HandshakeIncomplete
+            | tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => ErrorKind::ConnectionReset,
+        TungsteniteError::Tls(_) | TungsteniteError::Protocol(_) => ErrorKind::InvalidData,
+        TungsteniteError::Url(_) | TungsteniteError::HttpFormat(_) => ErrorKind::InvalidInput,
+        _ => ErrorKind::ConnectionReset,
+    }
 }
 
 fn remote_websocket_config() -> WebSocketConfig {
@@ -897,7 +918,7 @@ where
                             break Ok(());
                         }
                         JSONRPCMessage::Error(error) if error.id == initialize_request_id => {
-                            break Err(IoError::other(format!(
+                            break Err(IoError::new(ErrorKind::InvalidInput, format!(
                                 "remote app server at `{endpoint}` rejected initialize: {}",
                                 error.error.message
                             )));

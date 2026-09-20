@@ -85,7 +85,10 @@ async fn hidden_task_stays_hidden_through_activity_and_seed_until_explicit_resum
         "Hidden task",
         ThreadStatus::Idle,
     );
-    app.agents_overview.threads.insert(id, Some(thread.clone()));
+    app.agents_overview
+        .model
+        .threads
+        .insert(id, Some(thread.clone()));
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let view = app.agents_overview_view(vec![thread.clone()], Some(id));
     app.chat_widget.show_bottom_pane_view(Box::new(view));
@@ -115,8 +118,8 @@ async fn hidden_task_stays_hidden_through_activity_and_seed_until_explicit_resum
         },
     ));
     let request_id = Uuid::new_v4();
-    app.agents_overview.initialized = false;
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.model.initialized = false;
+    app.agents_overview.model.request_id = Some(request_id);
     app.apply_agents_overview_thread_refresh(
         &app_server,
         request_id,
@@ -124,6 +127,8 @@ async fn hidden_task_stays_hidden_through_activity_and_seed_until_explicit_resum
             threads: HashMap::from([(id, Some(thread.clone()))]),
             last_messages: HashMap::new(),
             recent_seed_complete: true,
+            removed: HashSet::new(),
+            error: None,
         }),
     );
     assert_eq!(
@@ -277,7 +282,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
                 )
                 .await
                 .expect("persist spawn edge");
-            app.agents_overview.threads.insert(
+            app.agents_overview.model.threads.insert(
                 child,
                 Some(overview_thread(
                     child,
@@ -299,7 +304,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
         .await?;
         app.enqueue_primary_thread_session(resumed.session, resumed.turns)
             .await?;
-        app.agents_overview.threads.insert(
+        app.agents_overview.model.threads.insert(
             id,
             Some(overview_thread(
                 id,
@@ -380,7 +385,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
             (child, Some(background)),
             (grandchild, Some(child)),
         ] {
-            app.agents_overview.threads.insert(
+            app.agents_overview.model.threads.insert(
                 target,
                 Some(overview_thread(
                     target,
@@ -392,8 +397,8 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
         }
         // Cached details and approval state are invalidated as a group after success.
         let request_id = Uuid::new_v4();
-        app.agents_overview.request_id = Some(request_id);
-        let stale_threads = app.agents_overview.threads.clone();
+        app.agents_overview.model.request_id = Some(request_id);
+        let stale_threads = app.agents_overview.model.threads.clone();
         Box::pin(app.run_agents_overview_action(&mut tui, &mut app_server, background, action))
             .await?;
         app.apply_agents_overview_thread_refresh(
@@ -403,6 +408,8 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
                 threads: stale_threads,
                 last_messages: HashMap::new(),
                 recent_seed_complete: true,
+                removed: HashSet::new(),
+                error: None,
             }),
         );
         assert_eq!(
@@ -412,6 +419,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
         assert_eq!(app.agents_overview.visible_thread_ids, vec![id]);
         assert_eq!(
             app.agents_overview
+                .model
                 .threads
                 .keys()
                 .copied()
@@ -487,7 +495,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
             .expect("confirmation requests lifecycle action");
         if attach_child {
             // Removal must not depend on the overview having the primary or its ancestors cached.
-            app.agents_overview.threads.remove(&primary);
+            app.agents_overview.model.threads.remove(&primary);
         }
         Box::pin(app.handle_event(&mut tui, &mut app_server, confirmed)).await?;
         assert_eq!(

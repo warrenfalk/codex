@@ -169,6 +169,9 @@ mod line_truncation;
 pub(crate) mod live_wrap;
 mod local_settings;
 pub use live_wrap::RowBuilder;
+mod agents_json;
+mod agents_list;
+mod agents_model;
 mod local_chatgpt_auth;
 mod managed_new_thread_defaults;
 mod markdown;
@@ -180,6 +183,8 @@ mod model_catalog;
 mod model_migration;
 mod motion;
 mod multi_agents;
+pub use agents_json::AgentsJsonOptions;
+pub use agents_json::run_agents_json;
 mod named_session_lookup;
 mod notifications;
 #[cfg(any(not(debug_assertions), test))]

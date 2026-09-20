@@ -111,6 +111,7 @@ impl App {
     ) {
         let Some(thread) = self
             .agents_overview
+            .model
             .threads
             .get(&thread_id)
             .and_then(Option::as_ref)
@@ -221,16 +222,14 @@ impl App {
             if let Some(refresh) = self.agents_overview.refresh_task.take() {
                 refresh.abort();
             }
-            self.agents_overview.request_id = None;
-            self.agents_overview.refresh_pending = false;
-            self.agents_overview.refresh_notifications.clear();
+            self.agents_overview.model.cancel_refresh();
         }
         if result.is_ok() {
             // Invalidate cached details for the displayed group, without inferring child outcomes.
             let mut removed = HashSet::from([thread_id]);
             loop {
                 let previous_len = removed.len();
-                for (id, thread) in &self.agents_overview.threads {
+                for (id, thread) in &self.agents_overview.model.threads {
                     let Some(thread) = thread else { continue };
                     let parent = thread
                         .parent_thread_id
@@ -259,10 +258,13 @@ impl App {
                 removed.insert(primary);
             }
             for removed_id in removed {
-                self.agents_overview.threads.remove(&removed_id);
+                self.agents_overview.model.threads.remove(&removed_id);
                 self.agents_overview.activity.remove(&removed_id);
-                self.agents_overview.last_messages.remove(&removed_id);
-                self.agents_overview.refresh_thread_ids.remove(&removed_id);
+                self.agents_overview.model.last_messages.remove(&removed_id);
+                self.agents_overview
+                    .model
+                    .refresh_thread_ids
+                    .remove(&removed_id);
                 self.agents_overview.input_states.remove(&removed_id);
                 self.agents_overview.dispatched_requests.remove(&removed_id);
             }

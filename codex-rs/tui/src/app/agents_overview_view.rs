@@ -7,6 +7,9 @@ mod input;
 mod render;
 
 use super::agents_overview::AGENTS_OVERVIEW_VIEW_ID;
+pub(super) use crate::agents_list::AgentsOverviewGroup;
+use crate::agents_list::AgentsOverviewProjectGroup;
+use crate::agents_list::display_title;
 use crate::app_event::AgentsOverviewAction;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
@@ -25,7 +28,6 @@ use crate::keymap::ListKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::render::renderable::Renderable;
 use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadActiveFlag;
 use codex_app_server_protocol::ThreadStatus;
 use codex_protocol::ThreadId;
 use crossterm::event::KeyCode;
@@ -42,47 +44,12 @@ use ratatui::text::Span;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::PoisonError;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) enum AgentsOverviewGroup {
-    NeedsYou,
-    Working,
-    Ready,
-    Finished,
-}
-
-impl AgentsOverviewGroup {
-    pub(super) fn for_status(status: &ThreadStatus) -> Self {
-        match status {
-            ThreadStatus::Active { active_flags }
-                if active_flags.contains(&ThreadActiveFlag::WaitingOnApproval)
-                    || active_flags.contains(&ThreadActiveFlag::WaitingOnUserInput) =>
-            {
-                Self::NeedsYou
-            }
-            ThreadStatus::Active { .. } => Self::Working,
-            ThreadStatus::Idle => Self::Ready,
-            ThreadStatus::SystemError => Self::NeedsYou,
-            ThreadStatus::NotLoaded => Self::Finished,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::NeedsYou => "Needs input",
-            Self::Working => "Working",
-            Self::Ready => "Ready",
-            Self::Finished => "Finished",
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(super) struct AgentsOverviewRow {
@@ -91,38 +58,6 @@ pub(super) struct AgentsOverviewRow {
     pub(super) thread_id: ThreadId,
     pub(super) group: AgentsOverviewGroup,
     pub(super) is_current: bool,
-}
-
-fn display_title(thread: &Thread) -> &str {
-    let title = thread.name.as_deref().unwrap_or(&thread.preview);
-    title.trim().lines().next().unwrap_or("Untitled task")
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AgentsOverviewProjectGroup {
-    key: (PathBuf, PathBuf),
-    heading: PathBuf,
-}
-
-impl AgentsOverviewProjectGroup {
-    fn for_thread(thread: &Thread, worktrees_enabled: bool) -> Self {
-        if worktrees_enabled
-            && let Some(identity) = codex_git_utils::repository_identity(thread.cwd.as_path())
-        {
-            Self {
-                key: (
-                    identity.common_dir.into_path_buf(),
-                    identity.relative_cwd.clone(),
-                ),
-                heading: identity.primary_root.as_path().join(identity.relative_cwd),
-            }
-        } else {
-            Self {
-                key: (thread.cwd.to_path_buf(), PathBuf::new()),
-                heading: thread.cwd.to_path_buf(),
-            }
-        }
-    }
 }
 
 #[derive(Default)]

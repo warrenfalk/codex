@@ -222,11 +222,8 @@ impl App {
             if let Some(task) = self.agents_overview.refresh_task.take() {
                 task.abort();
             }
-            self.agents_overview.request_id = None;
-            self.agents_overview.refresh_pending = false;
-            self.agents_overview.refresh_notifications.clear();
+            self.agents_overview.model.reset_connection();
             self.agents_overview.activity.clear();
-            self.agents_overview.last_messages.clear();
             self.reconnect.presentation = if self
                 .chat_widget
                 .selected_index_for_active_view(agents_overview::AGENTS_OVERVIEW_VIEW_ID)
@@ -335,8 +332,8 @@ impl App {
         self.pending_thread_titles.clear();
         self.sync_thread_title_progress();
         self.agents_overview.dispatched_requests.clear();
-        self.agents_overview.request_id = None;
-        self.agents_overview.refresh_pending = false;
+        self.agents_overview.model.request_id = None;
+        self.agents_overview.model.refresh_pending = false;
         for input in self.agents_overview.input_states.values_mut() {
             input.recovered_queue = true;
         }
@@ -442,13 +439,14 @@ impl App {
         }
         // Discover tasks whose notifications were missed, without clearing retained rows.
         // A hidden overview performs this discovery when it is next opened.
-        self.agents_overview.initialized = false;
+        self.agents_overview.model.initialized = false;
         if self.reconnect.presentation == ReconnectPresentation::Overview {
             if let Ok(mut state) = self.agents_overview.view_state.lock() {
                 state.connection_notice = None;
             }
             let threads = self
                 .agents_overview
+                .model
                 .threads
                 .values()
                 .flatten()
