@@ -319,6 +319,8 @@ pub struct Permissions {
     /// overlay. The selected profile id is checked at turn time so profile
     /// switches do not retain stale repository access.
     git_metadata_write_profile_ids: BTreeSet<String>,
+    /// Resolved instruction text keyed by active permission profile identity.
+    pub(crate) profile_instructions: BTreeMap<String, String>,
     /// Thread-scoped runtime workspace roots. Symbolic `:workspace_roots`
     /// entries in the permission profile are materialized against these roots.
     workspace_roots: Vec<AbsolutePathBuf>,
@@ -356,6 +358,7 @@ impl Permissions {
             )?,
             managed_deny_read_policy: None,
             git_metadata_write_profile_ids: BTreeSet::new(),
+            profile_instructions: BTreeMap::new(),
             workspace_roots: Vec::new(),
             network: None,
             allow_login_shell: true,
@@ -3493,6 +3496,12 @@ impl Config {
         let git_metadata_write_profile_ids = git_metadata_write_profile_ids(
             effective_permission_selection.profiles.as_ref(),
         );
+        let profile_instructions = codex_config::load_permission_profile_instructions(
+            fs,
+            effective_permission_selection.profiles.as_ref(),
+            permissions::extensible_builtin_parent_profile,
+        )
+        .await?;
         let using_implicit_builtin_profile = !effective_permission_selection
             .persisted_profile_id_was_provided
             && permission_config_syntax.is_none()
@@ -4233,6 +4242,7 @@ impl Config {
                 permission_profile_state,
                 managed_deny_read_policy,
                 git_metadata_write_profile_ids,
+                profile_instructions,
                 workspace_roots,
                 network,
                 allow_login_shell,

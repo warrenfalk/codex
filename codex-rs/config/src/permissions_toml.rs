@@ -12,6 +12,7 @@ use codex_network_proxy::NetworkProxyConfig;
 use codex_network_proxy::NetworkUnixSocketPermission as ProxyNetworkUnixSocketPermission;
 use codex_network_proxy::normalize_host;
 use codex_protocol::permissions::FileSystemAccessMode;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -113,6 +114,9 @@ impl PermissionsToml {
 pub struct PermissionProfileToml {
     pub description: Option<String>,
     pub extends: Option<String>,
+    /// Markdown instructions replacing inherited and default permission guidance.
+    /// Relative paths resolve against the declaring configuration file.
+    pub instructions_file: Option<AbsolutePathBuf>,
     /// Linux PID namespace. Inherited when omitted; defaults to `isolated`.
     pub pid_namespace: Option<codex_protocol::PidNamespace>,
     pub workspace_roots: Option<WorkspaceRootsToml>,

@@ -3142,6 +3142,14 @@
         "filesystem": {
           "$ref": "#/definitions/FilesystemPermissionsToml"
         },
+        "instructions_file": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Markdown instructions replacing inherited and default permission guidance. Relative paths resolve against the declaring configuration file."
+        },
         "network": {
           "$ref": "#/definitions/NetworkToml"
         },

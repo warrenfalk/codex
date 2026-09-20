@@ -8,6 +8,10 @@ mod tests;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(test)]
+#[path = "permission_instructions_tests.rs"]
+mod permission_instructions_tests;
+
 use self::layer_io::LoadedConfigLayers;
 use crate::CONFIG_TOML_FILE;
 use crate::CloudConfigBundleLayers;
