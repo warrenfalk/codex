@@ -508,9 +508,13 @@ Use the changed area to choose the first test:
 - Nix-related changes outside the repo-root package build path: `cargo build`
 - changes to the Nix packaging/build path itself: `nix build` and expect it to take a while
 
-Follow `AGENTS.md` for required broader coverage and ask before running the
-complete `just test` suite. Do not run a full workspace test after every commit
-by default.
+Follow `AGENTS.md` for required broader coverage during the replay. After the
+entire replay is complete and focused validation passes, run the complete Rust
+workspace suite with `just test`. An update performed under this guide includes
+authorization for that final full-suite run; do not ask for separate approval,
+even if `AGENTS.md` normally requires it. Use the default features unless broader
+feature coverage is specifically needed. Do not run a full workspace suite after
+every commit by default.
 
 ## Lessons From The `v0.116.0` Replay
 
@@ -714,6 +718,8 @@ The replay is complete when:
 - every kept `[bug test]` commit either passes on the new base by itself or is immediately followed by the `[bug fix]` commit whose validation makes it pass
 - the branch is clean
 - the final targeted validation passes
+- the complete Rust workspace `just test` suite passes after the full replay;
+  this final run is authorized by the update workflow without separate approval
 - a final Rust workspace `cargo build` passes after the full replay, even if all
   focused tests passed earlier
 - repo-root `nix build` passes when the update instructions, repository
