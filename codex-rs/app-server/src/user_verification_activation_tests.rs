@@ -1,6 +1,7 @@
 //! Verifies that host initialization owns capability projection and response eligibility.
 
 use super::test_support::Harness;
+use crate::message_processor::ConnectionSessionState;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessage;
 use crate::transport::ConnectionOrigin;
@@ -63,6 +64,7 @@ async fn user_verification_initialize_owns_advertisement_and_eligibility() -> Re
             .await;
         if expected {
             assert!(matches!(h.response().await, OutgoingMessage::Request(_)));
+            let second = ConnectionSessionState::new(ConnectionOrigin::InProcess);
             let proof =
                 json!({"action":"accept", "content":{"credentialId":"AQ", "signature":"Ag"}});
             h.processor
@@ -72,6 +74,7 @@ async fn user_verification_initialize_owns_advertisement_and_eligibility() -> Re
                         id: id.clone(),
                         result: proof.clone(),
                     },
+                    &second,
                 )
                 .await;
             let mut response = std::pin::pin!(response);
@@ -86,6 +89,7 @@ async fn user_verification_initialize_owns_advertisement_and_eligibility() -> Re
                         id,
                         result: proof.clone(),
                     },
+                    &h.session,
                 )
                 .await;
             assert_eq!(response.await?, Ok(proof));

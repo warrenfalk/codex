@@ -213,15 +213,30 @@ impl Harness {
             .await
             .expect("response deadline")
             .expect("response channel");
-        let OutgoingEnvelope::ToConnection {
-            connection_id,
-            message,
-            ..
-        } = envelope
-        else {
-            panic!("unexpected broadcast")
+        let message = match envelope {
+            OutgoingEnvelope::ToConnection {
+                connection_id,
+                message,
+                ..
+            } => {
+                assert_eq!(connection_id, ConnectionId(1));
+                message
+            }
+            OutgoingEnvelope::ToConnections {
+                connection_ids,
+                message,
+            } => {
+                assert_eq!(connection_ids, vec![ConnectionId(1)]);
+                message
+            }
+            OutgoingEnvelope::Broadcast { .. } => panic!("unexpected broadcast"),
         };
-        assert_eq!(connection_id, ConnectionId(1));
+        // This dispatcher harness consumes envelopes before the outbound router.
+        if let OutgoingMessage::Request(request) = &message {
+            self.session
+                .note_answerable_server_request(request.id().clone())
+                .await;
+        }
         message
     }
 

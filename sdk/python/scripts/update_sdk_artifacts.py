@@ -318,6 +318,13 @@ def _variant_definition_name(base: str, variant: dict[str, Any]) -> str | None:
             if literal is None:
                 continue
             pascal = _to_pascal_case(literal)
+            if (
+                base == "McpServerElicitationRequestParams"
+                and key == "mode"
+                and literal == "openaiForm"
+            ):
+                # Keep the current form distinct from the legacy openai/form mode.
+                pascal = "OpenaiElicitationForm"
             if base == "ClientRequest":
                 return f"{pascal}Request"
             if base == "ServerRequest":

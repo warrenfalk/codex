@@ -383,6 +383,13 @@ class AsyncUserInputQuestion(BaseModel):
     title: str
 
 
+class AttestationGenerateParams(BaseModel):
+    pass
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
 class AuthMode(Enum):
     apikey = "apikey"
     chatgpt = "chatgpt"
@@ -514,6 +521,13 @@ class CapabilityRootLocation(RootModel[EnvironmentCapabilityRootLocation]):
         EnvironmentCapabilityRootLocation,
         Field(description="Location used to resolve a selected capability root."),
     ]
+
+
+class ChatgptAuthTokensRefreshReason(RootModel[Literal["unauthorized"]]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Literal["unauthorized"]
 
 
 class CliAuthCredentialsStoreMode(Enum):
@@ -763,6 +777,28 @@ class CommandExecWriteResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
+
+
+class AcceptWithExecpolicyAmendment(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    execpolicy_amendment: list[str]
+
+
+class AcceptWithExecpolicyAmendmentCommandExecutionApprovalDecision(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    accept_with_execpolicy_amendment: Annotated[
+        AcceptWithExecpolicyAmendment, Field(alias="acceptWithExecpolicyAmendment")
+    ]
+
+
+class CommandExecutionApprovalKind(Enum):
+    command = "command"
+    write_stdin = "writeStdin"
 
 
 class CommandExecutionOutputDeltaNotification(BaseModel):
@@ -1225,6 +1261,18 @@ class DynamicToolCallOutputContentItem(
     )
 
 
+class DynamicToolCallParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    arguments: Any
+    call_id: Annotated[str, Field(alias="callId")]
+    namespace: str | None = None
+    thread_id: Annotated[str, Field(alias="threadId")]
+    tool: str
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
 class DynamicToolCallStatus(Enum):
     in_progress = "inProgress"
     completed = "completed"
@@ -1283,6 +1331,13 @@ class EnvironmentConnectionNotification(BaseModel):
     )
     environment_id: Annotated[str, Field(alias="environmentId")]
     thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class EventFirehoseResponse(BaseModel):
+    pass
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
 
 
 class ExperimentalFeatureEnablementSetParams(BaseModel):
@@ -1452,12 +1507,71 @@ class FeedbackUploadResponse(BaseModel):
     thread_id: Annotated[str, Field(alias="threadId")]
 
 
+class AddFileChange(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    content: str
+    type: Annotated[Literal["add"], Field(title="AddFileChangeType")]
+
+
+class DeleteFileChange(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    content: str
+    type: Annotated[Literal["delete"], Field(title="DeleteFileChangeType")]
+
+
+class UpdateFileChange(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    move_path: str | None = None
+    type: Annotated[Literal["update"], Field(title="UpdateFileChangeType")]
+    unified_diff: str
+
+
+class FileChange(RootModel[AddFileChange | DeleteFileChange | UpdateFileChange]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: AddFileChange | DeleteFileChange | UpdateFileChange
+
+
 class FileChangeOutputDeltaNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
     delta: str
     item_id: Annotated[str, Field(alias="itemId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class FileChangeRequestApprovalParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    grant_root: Annotated[
+        str | None,
+        Field(
+            alias="grantRoot",
+            description="[UNSTABLE] When set, the agent is asking the user to allow writes under this root for the remainder of the session (unclear if this is honored today).",
+        ),
+    ] = None
+    item_id: Annotated[str, Field(alias="itemId")]
+    reason: Annotated[
+        str | None,
+        Field(description="Optional explanatory reason (e.g. request for extra write access)."),
+    ] = None
+    started_at_ms: Annotated[
+        int,
+        Field(
+            alias="startedAtMs",
+            description="Unix timestamp (in milliseconds) when this approval request started.",
+        ),
+    ]
     thread_id: Annotated[str, Field(alias="threadId")]
     turn_id: Annotated[str, Field(alias="turnId")]
 
@@ -2463,6 +2577,124 @@ class McpAuthStatus(Enum):
     o_auth = "oAuth"
 
 
+class McpElicitationArrayType(RootModel[Literal["array"]]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Literal["array"]
+
+
+class McpElicitationBooleanType(RootModel[Literal["boolean"]]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Literal["boolean"]
+
+
+class McpElicitationConstOption(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    const: str
+    title: str
+
+
+class McpElicitationNumberType(Enum):
+    number = "number"
+    integer = "integer"
+
+
+class McpElicitationObjectType(RootModel[Literal["object"]]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Literal["object"]
+
+
+class McpElicitationStringFormat(Enum):
+    email = "email"
+    uri = "uri"
+    date = "date"
+    date_time = "date-time"
+
+
+class McpElicitationStringType(RootModel[Literal["string"]]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Literal["string"]
+
+
+class McpElicitationTitledEnumItems(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    any_of: Annotated[list[McpElicitationConstOption], Field(alias="anyOf")]
+
+
+class McpElicitationTitledMultiSelectEnumSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: list[str] | None = None
+    description: str | None = None
+    items: McpElicitationTitledEnumItems
+    max_items: Annotated[int | None, Field(alias="maxItems", ge=0)] = None
+    min_items: Annotated[int | None, Field(alias="minItems", ge=0)] = None
+    title: str | None = None
+    type: McpElicitationArrayType
+
+
+class McpElicitationTitledSingleSelectEnumSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: str | None = None
+    description: str | None = None
+    one_of: Annotated[list[McpElicitationConstOption], Field(alias="oneOf")]
+    title: str | None = None
+    type: McpElicitationStringType
+
+
+class McpElicitationUntitledEnumItems(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    enum: list[str]
+    type: McpElicitationStringType
+
+
+class McpElicitationUntitledMultiSelectEnumSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: list[str] | None = None
+    description: str | None = None
+    items: McpElicitationUntitledEnumItems
+    max_items: Annotated[int | None, Field(alias="maxItems", ge=0)] = None
+    min_items: Annotated[int | None, Field(alias="minItems", ge=0)] = None
+    title: str | None = None
+    type: McpElicitationArrayType
+
+
+class McpElicitationUntitledSingleSelectEnumSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: str | None = None
+    description: str | None = None
+    enum: list[str]
+    title: str | None = None
+    type: McpElicitationStringType
+
+
 class McpResourceReadParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -2488,6 +2720,69 @@ class McpServerConnectionStatus(Enum):
     failed = "failed"
     cancelled = "cancelled"
     disabled = "disabled"
+
+
+class OpenaiFormMcpServerElicitationRequestParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    server_name: Annotated[str, Field(alias="serverName")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[
+        str | None,
+        Field(
+            alias="turnId",
+            description="Active Codex turn when this elicitation was observed, if app-server could correlate one.\n\nThis is nullable because MCP models elicitation as a standalone server-to-client request identified by the MCP server request id. It may be triggered during a turn, but turn context is app-server correlation rather than part of the protocol identity of the elicitation itself.",
+        ),
+    ] = None
+    field_meta: Annotated[Any | None, Field(alias="_meta")] = None
+    message: str
+    mode: Annotated[
+        Literal["openai/form"], Field(title="OpenaiFormMcpServerElicitationRequestParamsMode")
+    ]
+    requested_schema: Annotated[Any, Field(alias="requestedSchema")]
+
+
+class OpenaiElicitationFormMcpServerElicitationRequestParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    server_name: Annotated[str, Field(alias="serverName")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[
+        str | None,
+        Field(
+            alias="turnId",
+            description="Active Codex turn when this elicitation was observed, if app-server could correlate one.\n\nThis is nullable because MCP models elicitation as a standalone server-to-client request identified by the MCP server request id. It may be triggered during a turn, but turn context is app-server correlation rather than part of the protocol identity of the elicitation itself.",
+        ),
+    ] = None
+    field_meta: Annotated[Any | None, Field(alias="_meta")] = None
+    message: str
+    mode: Annotated[
+        Literal["openaiForm"],
+        Field(title="OpenaiElicitationFormMcpServerElicitationRequestParamsMode"),
+    ]
+    requested_schema: Annotated[Any, Field(alias="requestedSchema")]
+
+
+class UrlMcpServerElicitationRequestParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    server_name: Annotated[str, Field(alias="serverName")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[
+        str | None,
+        Field(
+            alias="turnId",
+            description="Active Codex turn when this elicitation was observed, if app-server could correlate one.\n\nThis is nullable because MCP models elicitation as a standalone server-to-client request identified by the MCP server request id. It may be triggered during a turn, but turn context is app-server correlation rather than part of the protocol identity of the elicitation itself.",
+        ),
+    ] = None
+    field_meta: Annotated[Any | None, Field(alias="_meta")] = None
+    elicitation_id: Annotated[str, Field(alias="elicitationId")]
+    message: str
+    mode: Annotated[Literal["url"], Field(title="UrlMcpServerElicitationRequestParamsMode")]
+    url: str
 
 
 class McpServerEventNotification(BaseModel):
@@ -2864,6 +3159,11 @@ class NetworkDomainPermission(Enum):
     deny = "deny"
 
 
+class NetworkPolicyRuleAction(Enum):
+    allow = "allow"
+    deny = "deny"
+
+
 class NetworkRequirements(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -2944,6 +3244,59 @@ class NullableGetAccountTokenUsageParams(RootModel[GetAccountTokenUsageParams | 
     root: Annotated[
         GetAccountTokenUsageParams | None, Field(title="Nullable_GetAccountTokenUsageParams")
     ]
+
+
+class ReadParsedCommand(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cmd: str
+    name: str
+    path: Annotated[
+        str,
+        Field(
+            description="(Best effort) Path to the file being read by the command. When possible, this is an absolute path, though when relative, it should be resolved against the `cwd`` that will be used to run the command to derive the absolute path."
+        ),
+    ]
+    type: Annotated[Literal["read"], Field(title="ReadParsedCommandType")]
+
+
+class ListFilesParsedCommand(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cmd: str
+    path: str | None = None
+    type: Annotated[Literal["list_files"], Field(title="ListFilesParsedCommandType")]
+
+
+class SearchParsedCommand(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cmd: str
+    path: str | None = None
+    query: str | None = None
+    type: Annotated[Literal["search"], Field(title="SearchParsedCommandType")]
+
+
+class UnknownParsedCommand(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cmd: str
+    type: Annotated[Literal["unknown"], Field(title="UnknownParsedCommandType")]
+
+
+class ParsedCommand(
+    RootModel[
+        ReadParsedCommand | ListFilesParsedCommand | SearchParsedCommand | UnknownParsedCommand
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: ReadParsedCommand | ListFilesParsedCommand | SearchParsedCommand | UnknownParsedCommand
 
 
 class PatchApplyStatus(Enum):
@@ -4723,6 +5076,38 @@ class FuzzyFileSearchSessionCompletedServerNotification(BaseModel):
     params: FuzzyFileSearchSessionCompletedNotification
 
 
+class ItemFileChangeRequestApprovalServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["item/fileChange/requestApproval"],
+        Field(title="Item/fileChange/requestApprovalRequestMethod"),
+    ]
+    params: FileChangeRequestApprovalParams
+
+
+class ItemToolCallServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["item/tool/call"], Field(title="Item/tool/callRequestMethod")]
+    params: DynamicToolCallParams
+
+
+class AttestationGenerateServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["attestation/generate"], Field(title="Attestation/generateRequestMethod")
+    ]
+    params: AttestationGenerateParams
+
+
 class ServerRequestResolvedNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6154,6 +6539,26 @@ class Tool(BaseModel):
     title: str | None = None
 
 
+class ToolRequestUserInputOption(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    description: str
+    label: str
+
+
+class ToolRequestUserInputQuestion(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    header: str
+    id: str
+    is_other: Annotated[bool | None, Field(alias="isOther")] = False
+    is_secret: Annotated[bool | None, Field(alias="isSecret")] = False
+    options: list[ToolRequestUserInputOption] | None = None
+    question: str
+
+
 class TurnDiffUpdatedNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6600,6 +7005,32 @@ class ApplicationRequirements(BaseModel):
     network: ApplicationNetworkRequirements | None = None
 
 
+class ApplyPatchApprovalParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    call_id: Annotated[
+        str,
+        Field(
+            alias="callId",
+            description="Use to correlate this with [codex_protocol::protocol::PatchApplyBeginEvent] and [codex_protocol::protocol::PatchApplyEndEvent].",
+        ),
+    ]
+    conversation_id: Annotated[ThreadId, Field(alias="conversationId")]
+    file_changes: Annotated[dict[str, FileChange], Field(alias="fileChanges")]
+    grant_root: Annotated[
+        str | None,
+        Field(
+            alias="grantRoot",
+            description="When set, the agent is asking the user to allow writes under this root for the remainder of the session (unclear if this is honored today).",
+        ),
+    ] = None
+    reason: Annotated[
+        str | None,
+        Field(description="Optional explanatory reason (e.g. request for extra write access)."),
+    ] = None
+
+
 class AppsConfig(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6638,6 +7069,20 @@ class CancelLoginAccountResponse(BaseModel):
     status: CancelLoginAccountStatus
 
 
+class ChatgptAuthTokensRefreshParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    previous_account_id: Annotated[
+        str | None,
+        Field(
+            alias="previousAccountId",
+            description="Workspace/account identifier that Codex was previously using.\n\nClients that manage multiple accounts/workspaces can use this as a hint to refresh the token for the correct workspace.\n\nThis may be `null` when the prior auth state did not include a workspace identifier (`chatgpt_account_id`).",
+        ),
+    ] = None
+    reason: ChatgptAuthTokensRefreshReason
+
+
 class InitializeRequest(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6645,6 +7090,15 @@ class InitializeRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["initialize"], Field(title="InitializeRequestMethod")]
     params: InitializeParams
+
+
+class EventFirehoseRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["event/firehose"], Field(title="Event/firehoseRequestMethod")]
+    params: None = None
 
 
 class ThreadResumeRequest(BaseModel):
@@ -7801,6 +8255,28 @@ class ContentItem(
     )
 
 
+class ExecCommandApprovalParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    approval_id: Annotated[
+        str | None,
+        Field(alias="approvalId", description="Identifier for this specific approval callback."),
+    ] = None
+    call_id: Annotated[
+        str,
+        Field(
+            alias="callId",
+            description="Use to correlate this with [codex_protocol::protocol::ExecCommandBeginEvent] and [codex_protocol::protocol::ExecCommandEndEvent].",
+        ),
+    ]
+    command: list[str]
+    conversation_id: Annotated[ThreadId, Field(alias="conversationId")]
+    cwd: str
+    parsed_cmd: Annotated[list[ParsedCommand], Field(alias="parsedCmd")]
+    reason: str | None = None
+
+
 class ExperimentalFeature(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -8310,6 +8786,79 @@ class LoginAccountParams(
     ]
 
 
+class McpElicitationBooleanSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: bool | None = None
+    description: str | None = None
+    title: str | None = None
+    type: McpElicitationBooleanType
+
+
+class McpElicitationLegacyTitledEnumSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: str | None = None
+    description: str | None = None
+    enum: list[str]
+    enum_names: Annotated[list[str] | None, Field(alias="enumNames")] = None
+    title: str | None = None
+    type: McpElicitationStringType
+
+
+class McpElicitationMultiSelectEnumSchema(
+    RootModel[
+        McpElicitationUntitledMultiSelectEnumSchema | McpElicitationTitledMultiSelectEnumSchema
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: McpElicitationUntitledMultiSelectEnumSchema | McpElicitationTitledMultiSelectEnumSchema
+
+
+class McpElicitationNumberSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: float | None = None
+    description: str | None = None
+    maximum: float | None = None
+    minimum: float | None = None
+    title: str | None = None
+    type: McpElicitationNumberType
+
+
+class McpElicitationSingleSelectEnumSchema(
+    RootModel[
+        McpElicitationUntitledSingleSelectEnumSchema | McpElicitationTitledSingleSelectEnumSchema
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: McpElicitationUntitledSingleSelectEnumSchema | McpElicitationTitledSingleSelectEnumSchema
+
+
+class McpElicitationStringSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    default: str | None = None
+    description: str | None = None
+    format: McpElicitationStringFormat | None = None
+    max_length: Annotated[int | None, Field(alias="maxLength", ge=0)] = None
+    min_length: Annotated[int | None, Field(alias="minLength", ge=0)] = None
+    title: str | None = None
+    type: McpElicitationStringType
+
+
 class McpResourceReadResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -8455,6 +9004,22 @@ class ModelListResponse(BaseModel):
             description="Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
         ),
     ] = None
+
+
+class NetworkApprovalContext(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    host: str
+    protocol: NetworkApprovalProtocol
+
+
+class NetworkPolicyAmendment(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    action: NetworkPolicyRuleAction
+    host: str
 
 
 class NewThreadModelDefaults(BaseModel):
@@ -9336,6 +9901,38 @@ class AccountLoginCompletedServerNotification(BaseModel):
     params: AccountLoginCompletedNotification
 
 
+class AccountChatgptAuthTokensRefreshServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["account/chatgptAuthTokens/refresh"],
+        Field(title="Account/chatgptAuthTokens/refreshRequestMethod"),
+    ]
+    params: ChatgptAuthTokensRefreshParams
+
+
+class ApplyPatchApprovalServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["applyPatchApproval"], Field(title="ApplyPatchApprovalRequestMethod")]
+    params: ApplyPatchApprovalParams
+
+
+class ExecCommandApprovalServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["execCommandApproval"], Field(title="ExecCommandApprovalRequestMethod")
+    ]
+    params: ExecCommandApprovalParams
+
+
 class SkillDependencies(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10002,6 +10599,25 @@ class ThreadUsage(BaseModel):
     thread_id: Annotated[str, Field(alias="threadId")]
 
 
+class ToolRequestUserInputParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    auto_resolution_ms: Annotated[
+        int | None,
+        Field(
+            alias="autoResolutionMs",
+            description="@deprecated Use `isBlocking` to decide whether the request should block.",
+            ge=0,
+        ),
+    ] = None
+    is_blocking: Annotated[bool, Field(alias="isBlocking")]
+    item_id: Annotated[str, Field(alias="itemId")]
+    questions: list[ToolRequestUserInputQuestion]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
 class ToolsV2(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10269,6 +10885,113 @@ class ConfigValueWriteRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["config/value/write"], Field(title="Config/value/writeRequestMethod")]
     params: ConfigValueWriteParams
+
+
+class ApplyNetworkPolicyAmendment(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    network_policy_amendment: NetworkPolicyAmendment
+
+
+class ApplyNetworkPolicyAmendmentCommandExecutionApprovalDecision(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    apply_network_policy_amendment: Annotated[
+        ApplyNetworkPolicyAmendment, Field(alias="applyNetworkPolicyAmendment")
+    ]
+
+
+class CommandExecutionApprovalDecision(
+    RootModel[
+        Literal["accept"]
+        | Literal["acceptForSession"]
+        | AcceptWithExecpolicyAmendmentCommandExecutionApprovalDecision
+        | ApplyNetworkPolicyAmendmentCommandExecutionApprovalDecision
+        | Literal["decline"]
+        | Literal["cancel"]
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: (
+        Literal["accept"]
+        | Literal["acceptForSession"]
+        | AcceptWithExecpolicyAmendmentCommandExecutionApprovalDecision
+        | ApplyNetworkPolicyAmendmentCommandExecutionApprovalDecision
+        | Literal["decline"]
+        | Literal["cancel"]
+    )
+
+
+class CommandExecutionRequestApprovalParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    approval_id: Annotated[
+        str | None,
+        Field(
+            alias="approvalId",
+            description="Unique identifier for this specific approval callback.\n\nFor regular shell/unified_exec approvals, this is null.\n\nFor zsh-exec-bridge subcommand approvals, multiple callbacks can belong to one parent `itemId`, so `approvalId` is a distinct opaque callback id (a UUID) used to disambiguate routing. Stdin approvals also use a distinct callback id; inspect `kind` to distinguish them.",
+        ),
+    ] = None
+    command: Annotated[str | None, Field(description="The command to be executed.")] = None
+    command_actions: Annotated[
+        list[CommandAction] | None,
+        Field(
+            alias="commandActions",
+            description="Best-effort parsed command actions for friendly display.",
+        ),
+    ] = None
+    cwd: Annotated[
+        LegacyAppPathString | None, Field(description="The command's working directory.")
+    ] = None
+    environment_id: Annotated[
+        str | None,
+        Field(alias="environmentId", description="Environment in which the command will run."),
+    ] = None
+    item_id: Annotated[str, Field(alias="itemId")]
+    kind: Annotated[
+        CommandExecutionApprovalKind | None,
+        Field(description="Kind of action under review. Defaults to `command` for older servers."),
+    ] = "command"
+    network_approval_context: Annotated[
+        NetworkApprovalContext | None,
+        Field(
+            alias="networkApprovalContext",
+            description="Optional context for a managed-network approval prompt.",
+        ),
+    ] = None
+    proposed_execpolicy_amendment: Annotated[
+        list[str] | None,
+        Field(
+            alias="proposedExecpolicyAmendment",
+            description="Optional proposed execpolicy amendment to allow similar commands without prompting.",
+        ),
+    ] = None
+    proposed_network_policy_amendments: Annotated[
+        list[NetworkPolicyAmendment] | None,
+        Field(
+            alias="proposedNetworkPolicyAmendments",
+            description="Optional proposed network policy amendments (allow/deny host) for future requests.",
+        ),
+    ] = None
+    reason: Annotated[
+        str | None,
+        Field(description="Optional explanatory reason (e.g. request for network access)."),
+    ] = None
+    started_at_ms: Annotated[
+        int,
+        Field(
+            alias="startedAtMs",
+            description="Unix timestamp (in milliseconds) when this approval request started.",
+        ),
+    ]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
 
 
 class ComputerUseConfig(BaseModel):
@@ -10569,6 +11292,91 @@ class ListMcpServerStatusResponse(BaseModel):
             description="Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
         ),
     ] = None
+
+
+class McpElicitationEnumSchema(
+    RootModel[
+        McpElicitationSingleSelectEnumSchema
+        | McpElicitationMultiSelectEnumSchema
+        | McpElicitationLegacyTitledEnumSchema
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: (
+        McpElicitationSingleSelectEnumSchema
+        | McpElicitationMultiSelectEnumSchema
+        | McpElicitationLegacyTitledEnumSchema
+    )
+
+
+class McpElicitationPrimitiveSchema(
+    RootModel[
+        McpElicitationEnumSchema
+        | McpElicitationStringSchema
+        | McpElicitationNumberSchema
+        | McpElicitationBooleanSchema
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: (
+        McpElicitationEnumSchema
+        | McpElicitationStringSchema
+        | McpElicitationNumberSchema
+        | McpElicitationBooleanSchema
+    )
+
+
+class McpElicitationSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    field_schema: Annotated[str | None, Field(alias="$schema")] = None
+    properties: dict[str, McpElicitationPrimitiveSchema]
+    required: list[str] | None = None
+    type: McpElicitationObjectType
+
+
+class FormMcpServerElicitationRequestParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    server_name: Annotated[str, Field(alias="serverName")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[
+        str | None,
+        Field(
+            alias="turnId",
+            description="Active Codex turn when this elicitation was observed, if app-server could correlate one.\n\nThis is nullable because MCP models elicitation as a standalone server-to-client request identified by the MCP server request id. It may be triggered during a turn, but turn context is app-server correlation rather than part of the protocol identity of the elicitation itself.",
+        ),
+    ] = None
+    field_meta: Annotated[Any | None, Field(alias="_meta")] = None
+    message: str
+    mode: Annotated[Literal["form"], Field(title="FormMcpServerElicitationRequestParamsMode")]
+    requested_schema: Annotated[McpElicitationSchema, Field(alias="requestedSchema")]
+
+
+class McpServerElicitationRequestParams(
+    RootModel[
+        FormMcpServerElicitationRequestParams
+        | OpenaiFormMcpServerElicitationRequestParams
+        | OpenaiElicitationFormMcpServerElicitationRequestParams
+        | UrlMcpServerElicitationRequestParams
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: (
+        FormMcpServerElicitationRequestParams
+        | OpenaiFormMcpServerElicitationRequestParams
+        | OpenaiElicitationFormMcpServerElicitationRequestParams
+        | UrlMcpServerElicitationRequestParams
+    )
 
 
 class ModelsRequirements(BaseModel):
@@ -10996,6 +11804,42 @@ class WindowsSandboxSetupCompletedServerNotification(BaseModel):
     params: WindowsSandboxSetupCompletedNotification
 
 
+class ItemCommandExecutionRequestApprovalServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["item/commandExecution/requestApproval"],
+        Field(title="Item/commandExecution/requestApprovalRequestMethod"),
+    ]
+    params: CommandExecutionRequestApprovalParams
+
+
+class ItemToolRequestUserInputServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["item/tool/requestUserInput"],
+        Field(title="Item/tool/requestUserInputRequestMethod"),
+    ]
+    params: ToolRequestUserInputParams
+
+
+class McpServerElicitationRequestServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["mcpServer/elicitation/request"],
+        Field(title="McpServer/elicitation/requestRequestMethod"),
+    ]
+    params: McpServerElicitationRequestParams
+
+
 class SubAgentSessionSource(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -11238,6 +12082,17 @@ class AdditionalFileSystemPermissions(BaseModel):
     write: Annotated[
         list[LegacyAppPathString] | None,
         Field(description="This will be removed in favor of `entries`."),
+    ] = None
+
+
+class AdditionalPermissionProfile(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    file_system: Annotated[AdditionalFileSystemPermissions | None, Field(alias="fileSystem")] = None
+    network: Annotated[
+        AdditionalNetworkPermissions | None,
+        Field(description="Partial overlay used for per-command permission requests."),
     ] = None
 
 
@@ -12080,6 +12935,7 @@ class ExternalAgentConfigImportRecordHistoryRequest(BaseModel):
 class ClientRequest(
     RootModel[
         InitializeRequest
+        | EventFirehoseRequest
         | ThreadStartRequest
         | ThreadResumeRequest
         | ThreadForkRequest
@@ -12188,6 +13044,7 @@ class ClientRequest(
     )
     root: Annotated[
         InitializeRequest
+        | EventFirehoseRequest
         | ThreadStartRequest
         | ThreadResumeRequest
         | ThreadForkRequest
@@ -12392,6 +13249,26 @@ class ItemGuardianApprovalReviewStartedNotification(BaseModel):
     turn_id: Annotated[str, Field(alias="turnId")]
 
 
+class PermissionsRequestApprovalParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cwd: LegacyAppPathString
+    environment_id: Annotated[str | None, Field(alias="environmentId")] = None
+    item_id: Annotated[str, Field(alias="itemId")]
+    permissions: RequestPermissionProfile
+    reason: str | None = None
+    started_at_ms: Annotated[
+        int,
+        Field(
+            alias="startedAtMs",
+            description="Unix timestamp (in milliseconds) when this approval request started.",
+        ),
+    ]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
 class PluginInstalledResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -12464,6 +13341,77 @@ class ItemAutoApprovalReviewCompletedServerNotification(BaseModel):
     params: ItemGuardianApprovalReviewCompletedNotification
 
 
+class ItemPermissionsRequestApprovalServerRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["item/permissions/requestApproval"],
+        Field(title="Item/permissions/requestApprovalRequestMethod"),
+    ]
+    params: PermissionsRequestApprovalParams
+
+
+class ServerRequest(
+    RootModel[
+        ItemCommandExecutionRequestApprovalServerRequest
+        | ItemFileChangeRequestApprovalServerRequest
+        | ItemToolRequestUserInputServerRequest
+        | McpServerElicitationRequestServerRequest
+        | ItemPermissionsRequestApprovalServerRequest
+        | ItemToolCallServerRequest
+        | AccountChatgptAuthTokensRefreshServerRequest
+        | AttestationGenerateServerRequest
+        | ApplyPatchApprovalServerRequest
+        | ExecCommandApprovalServerRequest
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: Annotated[
+        ItemCommandExecutionRequestApprovalServerRequest
+        | ItemFileChangeRequestApprovalServerRequest
+        | ItemToolRequestUserInputServerRequest
+        | McpServerElicitationRequestServerRequest
+        | ItemPermissionsRequestApprovalServerRequest
+        | ItemToolCallServerRequest
+        | AccountChatgptAuthTokensRefreshServerRequest
+        | AttestationGenerateServerRequest
+        | ApplyPatchApprovalServerRequest
+        | ExecCommandApprovalServerRequest,
+        Field(
+            description="Request initiated from the server and sent to the client.",
+            title="ServerRequest",
+        ),
+    ]
+
+
+class ServerRequestObservedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    request: ServerRequest
+
+
+class ServerRequestObservedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["serverRequest/observed"], Field(title="ServerRequest/observedNotificationMethod")
+    ]
+    params: ServerRequestObservedNotification
+
+
 class ServerNotification(
     RootModel[
         ErrorServerNotification
@@ -12506,6 +13454,7 @@ class ServerNotification(
         | ItemCommandExecutionTerminalInteractionServerNotification
         | ItemFileChangeOutputDeltaServerNotification
         | ItemFileChangePatchUpdatedServerNotification
+        | ServerRequestObservedServerNotification
         | ServerRequestResolvedServerNotification
         | ItemMcpToolCallProgressServerNotification
         | McpServerOauthLoginCompletedServerNotification
@@ -12594,6 +13543,7 @@ class ServerNotification(
         | ItemCommandExecutionTerminalInteractionServerNotification
         | ItemFileChangeOutputDeltaServerNotification
         | ItemFileChangePatchUpdatedServerNotification
+        | ServerRequestObservedServerNotification
         | ServerRequestResolvedServerNotification
         | ItemMcpToolCallProgressServerNotification
         | McpServerOauthLoginCompletedServerNotification
