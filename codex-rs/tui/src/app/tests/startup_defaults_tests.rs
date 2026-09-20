@@ -28,6 +28,7 @@ async fn run_startup_for_test(
         /*is_first_run*/ false,
         /*should_prompt_windows_sandbox_nux_at_startup*/ false,
         AppServerTarget::Embedded,
+        /*initial_app_server_footer_state*/ None,
         /*state_db*/ None,
         Arc::new(EnvironmentManager::default_for_tests()),
         Duration::ZERO,
