@@ -64,7 +64,7 @@ impl PickerState {
             } if current_thread_id == thread_id
         ) {
             self.inline_error = Some(String::from(
-                "Use /archive to archive the current session and exit.",
+                "Use /archive to archive the current session and start a new chat.",
             ));
             self.request_frame();
             return;

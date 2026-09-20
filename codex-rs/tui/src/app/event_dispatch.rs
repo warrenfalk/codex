@@ -91,8 +91,12 @@ impl App {
                 if cwds_differ(cwd, self.config.cwd.as_path()) => {}
             AppEvent::NewSession { name } => {
                 self.start_fresh_session_with_summary_hint(
-                    tui, app_server, /*session_start_source*/ None,
-                    /*initial_user_message*/ None, name,
+                    tui,
+                    app_server,
+                    PreviousSessionSummaryHint::Show,
+                    /*session_start_source*/ None,
+                    /*initial_user_message*/ None,
+                    name,
                 )
                 .await;
                 if self.chat_widget.has_misalignment_policy_violation() {
@@ -297,6 +301,7 @@ impl App {
                 self.start_fresh_session_with_summary_hint(
                     tui,
                     app_server,
+                    PreviousSessionSummaryHint::Show,
                     Some(ThreadStartSource::Clear),
                     /*initial_user_message*/ None,
                     name,
@@ -313,6 +318,7 @@ impl App {
                 self.start_fresh_session_with_summary_hint(
                     tui,
                     app_server,
+                    PreviousSessionSummaryHint::Show,
                     Some(ThreadStartSource::Clear),
                     crate::chatwidget::create_initial_user_message(
                         Some(text),
@@ -3484,9 +3490,6 @@ impl App {
         }
 
         Ok(match app_server.thread_archive(thread_id).await {
-            Ok(()) if matches!(self.app_server_target, AppServerTarget::Embedded) => {
-                AppRunControl::Exit(ExitReason::Archived(thread_id))
-            }
             Ok(()) => {
                 self.track_agents_overview_notification(&ServerNotification::ThreadArchived(
                     codex_app_server_protocol::ThreadArchivedNotification {
@@ -3496,18 +3499,18 @@ impl App {
                 self.discard_thread_local_state(thread_id).await;
                 self.agents_overview.input_states.remove(&thread_id);
                 self.agents_overview.dispatched_requests.remove(&thread_id);
-                self.reset_for_thread_switch(tui)?;
-                self.pending_thread_switch_resets += 1;
-                self.app_event_tx
-                    .send(AppEvent::ResetTranscriptForThreadSwitch);
-                self.reset_thread_event_state();
-                let init = self.chatwidget_init_for_forked_or_resumed_thread(
+                self.start_fresh_session_with_summary_hint(
                     tui,
-                    self.config.clone(),
+                    app_server,
+                    PreviousSessionSummaryHint::Suppress,
+                    /*session_start_source*/ None,
                     /*initial_user_message*/ None,
-                );
-                self.replace_chat_widget(ChatWidget::new_with_app_event(init));
-                self.open_agents_overview(app_server);
+                    /*new_thread_name*/ None,
+                )
+                .await;
+                self.chat_widget
+                    .add_info_message("Archived previous chat.".to_string(), /*hint*/ None);
+                tui.frame_requester().schedule_frame();
                 AppRunControl::Continue
             }
             Err(err) => {
