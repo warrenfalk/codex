@@ -735,9 +735,10 @@ async fn windows_sandbox_setup_starts_a_fresh_status_clock() {
     let setup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(setup.contains("Setting up sandbox"));
     assert!(setup.contains("(0s"));
+    let short_cwd = PathBuf::from("tmp").join("project");
     assert_chatwidget_snapshot!(
         "windows_sandbox_setup_fresh_clock",
-        setup.replace(&chat.config.cwd.display().to_string(), "[CWD]")
+        setup.replace(&short_cwd.display().to_string(), "[CWD]")
     );
 
     chat.clear_windows_sandbox_setup_status();

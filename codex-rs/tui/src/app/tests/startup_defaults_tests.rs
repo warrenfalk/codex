@@ -363,12 +363,19 @@ async fn fresh_startup_reads_destination_and_cleared_model_uses_catalog() -> Res
         let (mut app, _, _) = make_test_app_with_channels().await;
         app.chat_widget.handle_thread_session_quiet(started.session);
         if !remote {
+            let short_cwd = destination.path().strip_prefix(
+                destination
+                    .path()
+                    .ancestors()
+                    .nth(/*n*/ 2)
+                    .expect("temporary directory has a grandparent"),
+            )?;
             let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 80)
-                .replace(&destination.path().display().to_string(), "<PROJECT>");
+                .replace(&short_cwd.display().to_string(), "<PROJECT>");
             insta::assert_snapshot!(rendered, @r"
             › Ask Codex to do anything
 
-              gpt-6-astra high · <PROJECT>
+              6-astra high · <PROJECT>
             ");
         }
         let expected_cwd = if override_cwd {

@@ -48,6 +48,7 @@ pub(crate) fn normalize_snapshot_paths(text: impl Into<String>) -> String {
         }
     }
     text = text.replace("/tmp/project\\", "/tmp/project/");
+    text = text.replace("tmp\\project", "tmp/project");
 
     let platform_test_cwd = test_path_display("/tmp/project");
     if platform_test_cwd == "/tmp/project" {
