@@ -28,6 +28,7 @@ use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
 use codex_hooks::Hooks;
 use codex_http_client::RouteAwareClientPool;
+use codex_inference_profiles::InferenceProfileRuntime;
 use codex_login::AuthManager;
 use codex_mcp::McpRuntime;
 use codex_models_manager::manager::SharedModelsManager;
@@ -67,6 +68,7 @@ pub(crate) struct SessionServices {
     pub(crate) openai_file_upload_client_pool: RouteAwareClientPool,
     pub(crate) models_manager: SharedModelsManager,
     pub(crate) git_root_discovery: Arc<GitRootDiscovery>,
+    pub(crate) inference_profiles: Arc<InferenceProfileRuntime>,
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) tool_approvals: Mutex<ApprovalStore>,
     pub(crate) runtime_handle: Handle,

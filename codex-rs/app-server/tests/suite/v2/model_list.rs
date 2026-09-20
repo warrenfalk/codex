@@ -92,6 +92,7 @@ async fn api_key_model_discovery_startup_enablement_respects_user_config(
     );
     ModelPreset::mark_default_by_picker_visibility(&mut bundled);
     let mut remote = vec![ModelPreset::from(remote_model)];
+    remote.push(codex_models_manager::model_info::kimi_k3_model_info().into());
     ModelPreset::mark_default_by_picker_visibility(&mut remote);
     let _: ExperimentalFeatureEnablementSetResponse = mcp
         .request(
@@ -270,7 +271,7 @@ async fn list_models_includes_hidden_models() -> Result<()> {
 #[test_case("chatgpt-access-token", None; "chatgpt")]
 #[test_case("test-api-key", Some("test-api-key"); "api key")]
 #[tokio::test]
-async fn list_models_uses_remote_catalog_as_source_of_truth(
+async fn list_models_uses_remote_catalog_plus_trusted_profiles(
     bearer_token: &str,
     api_key: Option<&str>,
 ) -> Result<()> {
@@ -385,6 +386,7 @@ api_key_model_discovery = true
     } = serde_json::from_value(response.result)?;
     let mut expected_presets: Vec<ModelPreset> =
         remote_models.into_iter().map(Into::into).collect();
+    expected_presets.push(codex_models_manager::model_info::kimi_k3_model_info().into());
     ModelPreset::mark_default_by_picker_visibility(&mut expected_presets);
     let mut expected_items = expected_presets
         .iter()

@@ -24,6 +24,7 @@ use codex_features::Feature;
 use codex_history::RolloutItem;
 use codex_login::CodexAuth;
 use codex_models_manager::manager::RefreshStrategy;
+use codex_models_manager::model_info::kimi_k3_model_info;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -1000,7 +1001,9 @@ async fn guardian_reviews_delayed_and_new_actions_after_catalog_refresh() -> Res
         .build_with_auto_env(&server)
         .await?;
     let models_manager = test.thread_manager.get_models_manager();
-    assert_eq!(models_manager.get_remote_models().await, catalog.models);
+    let mut expected_models = catalog.models.clone();
+    expected_models.push(kimi_k3_model_info());
+    assert_eq!(models_manager.get_remote_models().await, expected_models);
     let mut events = Vec::new();
     for (call_id, marker) in [("captured-action", "action-a"), ("new-action", "action-b")] {
         events.push(sse(vec![
@@ -1072,6 +1075,8 @@ async fn guardian_reviews_delayed_and_new_actions_after_catalog_refresh() -> Res
         timeout_instructions: None,
     });
     mount_models_once(&server, catalog.clone()).await;
+    let mut expected_catalog = catalog;
+    expected_catalog.models.push(kimi_k3_model_info());
     assert_eq!(
         models_manager
             .raw_model_catalog(
@@ -1079,7 +1084,7 @@ async fn guardian_reviews_delayed_and_new_actions_after_catalog_refresh() -> Res
                 codex_core::test_support::default_http_client_factory(),
             )
             .await,
-        catalog
+        expected_catalog
     );
     pause.resume.notify_one();
     wait_for_event(&test.codex, |event| {

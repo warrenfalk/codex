@@ -3001,6 +3001,7 @@ dependencies = [
  "codex-hooks",
  "codex-http-client",
  "codex-image-generation-extension",
+ "codex-inference-profiles",
  "codex-install-context",
  "codex-login",
  "codex-mcp",
@@ -3745,6 +3746,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-inference-profiles"
+version = "0.155.1"
+dependencies = [
+ "anyhow",
+ "codex-model-provider-info",
+ "codex-responses-chat-completions-proxy",
+ "dirs",
+ "dotenvy",
+ "pretty_assertions",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "codex-install-context"
 version = "0.155.1"
 dependencies = [
@@ -4056,6 +4072,7 @@ dependencies = [
  "chrono",
  "codex-collaboration-mode-templates",
  "codex-http-client",
+ "codex-inference-profiles",
  "codex-login",
  "codex-otel",
  "codex-protocol",
@@ -4356,6 +4373,35 @@ dependencies = [
  "serde_json",
  "tiny_http",
  "zeroize",
+]
+
+[[package]]
+name = "codex-responses-chat-completions-proxy"
+version = "0.155.1"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "axum",
+ "bytes",
+ "clap",
+ "codex-core",
+ "codex-model-provider-info",
+ "codex-process-hardening",
+ "codex-protocol",
+ "core_test_support",
+ "ctor 0.6.3",
+ "eventsource-stream",
+ "futures",
+ "http 1.4.0",
+ "pretty_assertions",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -4740,6 +4786,7 @@ dependencies = [
  "codex-git-utils",
  "codex-history",
  "codex-http-client",
+ "codex-inference-profiles",
  "codex-install-context",
  "codex-login",
  "codex-mcp",

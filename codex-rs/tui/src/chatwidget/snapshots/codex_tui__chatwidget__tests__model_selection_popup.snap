@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-expression: "render_bottom_popup(&chat, 80)"
+expression: popup
 ---
   Select Model and Effort
   Access legacy models by running codex -m <model_name> or in your config.toml
@@ -12,5 +12,7 @@ expression: "render_bottom_popup(&chat, 80)"
   4. gpt-5.6-luna           Fast and affordable agentic coding model.
 › 5. gpt-5.5 (current)      Frontier model for complex coding, research, and
                             real-world work.
+  6. kimi-k3                Moonshot AI flagship model with deep reasoning and
+                            a 1M-token context window.
 
   Press enter to confirm or esc to go back

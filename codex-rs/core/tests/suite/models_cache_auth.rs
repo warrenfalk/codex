@@ -9,6 +9,7 @@ use codex_login::CodexAuth;
 use codex_login::login_with_api_key;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::manager::RefreshStrategy;
+use codex_models_manager::model_info::kimi_k3_model_info;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::ModelsResponse;
 use core_test_support::responses;
@@ -50,7 +51,7 @@ async fn auth_and_provider_switches_do_not_reuse_chatgpt_catalog() -> Result<()>
             .get_models_manager()
             .get_remote_models()
             .await,
-        vec![model.clone()]
+        vec![model.clone(), kimi_k3_model_info()]
     );
     login_with_api_key(
         home.path(),
@@ -154,7 +155,7 @@ async fn auth_and_provider_switches_do_not_reuse_chatgpt_catalog() -> Result<()>
             .get_models_manager()
             .get_remote_models()
             .await,
-        vec![model]
+        vec![model, kimi_k3_model_info()]
     );
     assert_eq!(other_models.requests().len(), 1);
     Ok(())

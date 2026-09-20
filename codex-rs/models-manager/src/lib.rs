@@ -12,7 +12,11 @@ pub use config::ModelsManagerConfig;
 /// Load the bundled model catalog shipped with `codex-models-manager`.
 pub fn bundled_models_response()
 -> std::result::Result<codex_protocol::openai_models::ModelsResponse, serde_json::Error> {
-    serde_json::from_str(include_str!("../models.json"))
+    let mut response = serde_json::from_str::<codex_protocol::openai_models::ModelsResponse>(
+        include_str!("../models.json"),
+    )?;
+    response.models.push(model_info::kimi_k3_model_info());
+    Ok(response)
 }
 
 /// Convert the client version string to a whole version string (e.g. "1.2.3-alpha.4" -> "1.2.3").

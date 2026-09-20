@@ -457,9 +457,10 @@ async fn spawn_agent_service_tier_inheritance_uses_root_preference_and_child_mod
 
     {
         let (mut session, turn) = make_session_and_context().await;
-        let mut turn = turn
-            .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-            .await;
+        let mut turn = session
+            .turn_context_with_model(&turn, "gpt-5.5".to_string())
+            .await
+            .expect("test model provider should resolve");
         let mut config = (*turn.config).clone();
         config.model_catalog = Some(service_tier_test_catalog());
         config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
@@ -503,9 +504,10 @@ async fn spawn_agent_service_tier_inheritance_uses_root_preference_and_child_mod
 
     {
         let (mut session, turn) = make_session_and_context().await;
-        let mut turn = turn
-            .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-            .await;
+        let mut turn = session
+            .turn_context_with_model(&turn, "gpt-5.5".to_string())
+            .await
+            .expect("test model provider should resolve");
         let mut config = (*turn.config).clone();
         config.model_catalog = Some(service_tier_test_catalog());
         config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
@@ -619,9 +621,10 @@ async fn spawn_agent_role_service_tier_cannot_override_root_preference() {
     }
 
     let (mut session, turn) = make_session_and_context().await;
-    let mut turn = turn
-        .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-        .await;
+    let mut turn = session
+        .turn_context_with_model(&turn, "gpt-5.5".to_string())
+        .await
+        .expect("test model provider should resolve");
     tokio::fs::create_dir_all(&turn.config.codex_home)
         .await
         .expect("codex home should be created");
@@ -691,9 +694,10 @@ async fn spawn_agent_full_history_fork_inherits_root_service_tier() {
     }
 
     let (mut session, turn) = make_session_and_context().await;
-    let mut turn = turn
-        .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-        .await;
+    let mut turn = session
+        .turn_context_with_model(&turn, "gpt-5.5".to_string())
+        .await
+        .expect("test model provider should resolve");
     let mut config = (*turn.config).clone();
     config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
     turn.config = Arc::new(config);
@@ -741,9 +745,10 @@ async fn multi_agent_v2_full_history_fork_inherits_root_service_tier() {
     }
 
     let (mut session, turn) = make_session_and_context().await;
-    let mut turn = turn
-        .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-        .await;
+    let mut turn = session
+        .turn_context_with_model(&turn, "gpt-5.5".to_string())
+        .await
+        .expect("test model provider should resolve");
     let mut config = (*turn.config).clone();
     config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
     config
