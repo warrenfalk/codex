@@ -25,6 +25,14 @@ impl From<&Config> for LocalSettings {
     fn from(config: &Config) -> Self {
         Self {
             tui: Tui {
+                // This preference belongs to the client; the core runtime does not consume it.
+                tts: config
+                    .config_layer_stack
+                    .effective_config()
+                    .get("tui")
+                    .and_then(|tui| tui.get("tts"))
+                    .and_then(|value| value.clone().try_into().ok())
+                    .unwrap_or_default(),
                 notification_settings: config.tui_notifications.clone(),
                 animations: config.animations,
                 whimsy: config.tui_whimsy,

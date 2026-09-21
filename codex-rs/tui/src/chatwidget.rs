@@ -386,6 +386,7 @@ mod model_popup_state;
 mod model_popups;
 mod notes;
 mod notifications;
+mod tts;
 pub(crate) use self::notifications::Notification;
 mod permission_discovery;
 mod permission_popups;
@@ -585,6 +586,7 @@ pub(crate) struct ChatWidget {
     bottom_pane: BottomPane,
     transcript: TranscriptState,
     pub(crate) notes: crate::notes::NotesState,
+    pub(crate) speech: crate::tts::Speech,
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
     raw_output_mode: bool,

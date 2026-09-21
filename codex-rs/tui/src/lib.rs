@@ -232,6 +232,7 @@ mod thread_transcript;
 mod token_usage;
 mod tooltips;
 mod transcript_reflow;
+mod tts;
 mod tui;
 mod ui_consts;
 mod unarchive_prompt;

@@ -464,6 +464,9 @@ impl ChatWidget {
                 );
             }
             TurnStatus::Interrupted => {
+                if replay_kind.is_none() {
+                    self.speech.stop();
+                }
                 self.last_non_retry_error = None;
                 let reason = if self
                     .turn_lifecycle

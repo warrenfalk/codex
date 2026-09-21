@@ -19,6 +19,9 @@ auto_recap = false
 vim_mode_default = true
 terminal_resize_reflow_max_rows = 0
 session_picker_view = "comfortable"
+[tui.tts]
+defaultMode = "progress-and-final"
+command = ["custom-say", "--voice", "Charles"]
 [history]
 persistence = "none"
 max_bytes = 4096
@@ -47,6 +50,10 @@ fast_default_opt_out = true
             expected.show_tooltips = false;
             expected.show_server_version_notice = false;
             expected.auto_recap = false;
+            expected.tts = codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::ProgressAndFinal,
+                command: vec!["custom-say".into(), "--voice".into(), "Charles".into()],
+            };
             expected.vim_mode_default = true;
             expected.terminal_resize_reflow_max_rows = Some(0);
             expected.session_picker_view = Some(SessionPickerViewMode::Comfortable);
@@ -106,5 +113,44 @@ async fn local_writes_preserve_selected_user_file_and_home_destinations() -> any
         Some("comfortable")
     );
     assert_eq!(home_config["tui"].get("theme"), None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn tts_command_line_overrides_preserve_other_local_speech_settings() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[tui.tts]\ndefaultMode = 'final'\ncommand = ['saved-say']\n",
+    )?;
+    for (key, value, expected) in [
+        (
+            "tui.tts.command".into(),
+            vec!["override-say", "argument with spaces"].into(),
+            codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::Final,
+                command: vec!["override-say".into(), "argument with spaces".into()],
+            },
+        ),
+        (
+            "tui.tts.defaultMode".into(),
+            "progress-and-final".into(),
+            codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::ProgressAndFinal,
+                command: vec!["saved-say".into()],
+            },
+        ),
+    ] {
+        let config = ConfigBuilder::default()
+            .codex_home(home.path().to_path_buf())
+            .loader_overrides(LoaderOverrides {
+                ignore_project_config: true,
+                ..LoaderOverrides::without_managed_config_for_tests()
+            })
+            .cli_overrides(vec![(key, value)])
+            .build()
+            .await?;
+        assert_eq!(LocalSettings::from(&config).tui.tts, expected);
+    }
     Ok(())
 }

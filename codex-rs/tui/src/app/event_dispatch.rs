@@ -33,6 +33,8 @@ impl App {
         let allowed_offline = matches!(
             &event,
             AppEvent::InsertHistoryCell(_)
+                | AppEvent::SetTtsMode(_)
+                | AppEvent::TtsFailed { .. }
                 | AppEvent::ResetTranscriptForThreadSwitch
                 | AppEvent::ManagedWorktreeCreated(_)
                 | AppEvent::AppendMessageHistoryEntry { .. }
@@ -72,6 +74,10 @@ impl App {
         }
 
         match event {
+            AppEvent::SetTtsMode(mode) => self.chat_widget.set_tts_mode(mode),
+            AppEvent::TtsFailed { generation, message } => {
+                self.chat_widget.on_tts_failure(generation, message);
+            }
             AppEvent::UserVerificationApproved { thread_id, server_name, request_id } => {
                 Box::pin(self.start_user_verification(app_server, thread_id, server_name, request_id)).await?;
             }
@@ -3338,6 +3344,7 @@ impl App {
         app_server: &mut AppServerSession,
         mode: ExitMode,
     ) -> AppRunControl {
+        self.chat_widget.speech.stop();
         for (request_id, (_, task)) in self.dynamic_tool_tasks.drain() {
             task.abort();
             let response = crate::dynamic_tools::failure_response(

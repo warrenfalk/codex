@@ -731,10 +731,17 @@ pub struct ModelAvailabilityNuxConfig {
 /// Fallback resize-reflow row cap when Codex cannot identify a terminal-specific scrollback size.
 pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 
+pub use crate::tts::TtsConfig;
+pub use crate::tts::TtsMode;
+
 /// Collection of settings that are specific to the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct Tui {
+    /// Automatic speech through a local command.
+    #[serde(default)]
+    pub tts: TtsConfig,
+
     #[serde(default, flatten)]
     pub notification_settings: TuiNotificationSettings,
 

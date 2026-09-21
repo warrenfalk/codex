@@ -484,6 +484,7 @@ impl App {
     /// This helper copies every known nickname/role from `AgentNavigationState` into the
     /// replacement widget so that replayed collab items render agent names immediately.
     pub(super) fn replace_chat_widget(&mut self, mut chat_widget: ChatWidget) {
+        chat_widget.inherit_tts(&mut self.chat_widget);
         self.retain_realtime_replay_state_before_replace();
         chat_widget.cyber_policy_notice = self.chat_widget.cyber_policy_notice.clone();
         self.commit_animation = None;

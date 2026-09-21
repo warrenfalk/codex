@@ -319,7 +319,16 @@ impl ChatWidget {
                     from_replay,
                 );
             }
-            ThreadItem::Plan { text, .. } => self.on_plan_item_completed(text),
+            ThreadItem::Plan { id, text } => {
+                if !from_replay {
+                    let fallback = text
+                        .trim()
+                        .is_empty()
+                        .then(|| self.transcript.plan_delta_buffer.clone());
+                    self.speak_text(&turn_id, &id, fallback.as_deref().unwrap_or(&text));
+                }
+                self.on_plan_item_completed(text);
+            }
             ThreadItem::Reasoning {
                 id,
                 summary,
