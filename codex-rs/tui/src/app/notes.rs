@@ -48,7 +48,10 @@ impl App {
         let task = tokio::spawn(async move {
             let result = read_notes(request_handle, thread_id)
                 .await
-                .map_err(|error| error.to_string());
+                .map_err(|error| {
+                    tracing::warn!(%thread_id, %generation, error = %error, "failed to load notes to self");
+                    error.to_string()
+                });
             app_event_tx.send(AppEvent::NotesLoaded {
                 thread_id,
                 generation,
