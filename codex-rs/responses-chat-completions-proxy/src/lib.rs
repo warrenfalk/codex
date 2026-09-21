@@ -1,4 +1,5 @@
 mod config;
+mod content;
 mod error;
 mod history;
 mod protocol;
@@ -220,3 +221,7 @@ mod stream_failure_integration_tests;
 #[cfg(test)]
 #[path = "codex_tool_error_conformance_tests.rs"]
 mod codex_tool_error_conformance_tests;
+
+#[cfg(test)]
+#[path = "codex_image_conformance_tests.rs"]
+mod codex_image_conformance_tests;

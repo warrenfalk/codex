@@ -102,7 +102,7 @@ pub(crate) enum ChatMessage {
     },
     Tool {
         tool_call_id: String,
-        content: String,
+        content: Value,
     },
 }
 

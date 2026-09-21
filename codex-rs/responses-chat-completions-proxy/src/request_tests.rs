@@ -88,7 +88,7 @@ fn compiles_calls_outputs_and_text_into_chat_history() -> anyhow::Result<()> {
             },
             ChatMessage::Tool {
                 tool_call_id: "call_1".to_string(),
-                content: "/workspace".to_string()
+                content: json!("/workspace")
             },
             ChatMessage::Assistant {
                 content: Some("Done.".to_string()),

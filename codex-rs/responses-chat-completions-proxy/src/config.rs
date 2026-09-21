@@ -21,6 +21,8 @@ pub struct ProxyConfig {
 pub struct BackendCapabilities {
     pub developer_role: bool,
     pub image_input: bool,
+    /// The backend accepts image content parts in messages with the `tool` role.
+    pub image_tool_output: bool,
     pub parallel_tool_calls: bool,
     pub prompt_cache_key: PromptCacheKeyPolicy,
     pub reasoning_content: ReasoningContentPolicy,
@@ -34,6 +36,7 @@ impl Default for BackendCapabilities {
         Self {
             developer_role: false,
             image_input: false,
+            image_tool_output: false,
             parallel_tool_calls: false,
             prompt_cache_key: PromptCacheKeyPolicy::Omit,
             reasoning_content: ReasoningContentPolicy::Unsupported,
@@ -95,6 +98,9 @@ pub struct Args {
     #[arg(long)]
     pub supports_image_input: bool,
 
+    #[arg(long, requires = "supports_image_input")]
+    pub supports_image_tool_output: bool,
+
     #[arg(long)]
     pub supports_parallel_tool_calls: bool,
 
@@ -137,6 +143,7 @@ impl Args {
             capabilities: BackendCapabilities {
                 developer_role: self.supports_developer_role,
                 image_input: self.supports_image_input,
+                image_tool_output: self.supports_image_tool_output,
                 parallel_tool_calls: self.supports_parallel_tool_calls,
                 prompt_cache_key: if self.forwards_prompt_cache_key {
                     PromptCacheKeyPolicy::Forward

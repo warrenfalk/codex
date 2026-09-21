@@ -11,7 +11,7 @@ trusted model metadata, and atomic provider switching.
 
 - original implementation baseline: `412e615b8269cbe0e281e6ebbd96cef0ad49e59f`
 - Kimi follow-up baseline: `ae8fae7be5`
-- status date: 2026-07-18
+- status date: 2026-09-20
 - adapter crate/binary: `codex-rs/responses-chat-completions-proxy`
 - profile runtime: `codex-rs/inference-profiles`
 - built-in model/profile: `kimi-k3` / provider `kimi`
@@ -32,6 +32,8 @@ server-executed Responses built-ins remain outside the compatibility profile.
 | Kimi credential handling | Complete | `~/.kimi-codex` must contain a non-empty `API_KEY`. The adapter owns the bearer; Codex does not send it to the loopback listener. Missing/invalid credentials are actionable errors with no provider fallback. |
 | Kimi model profile | Complete | Trusted model-picker entry, 1,048,576-token window, image input, parallel tools, shell/freeform patch tools, structured output, and `max` reasoning. Hosted Responses web/image tools are bounded off. |
 | Provider switching | Complete | Model/provider changes are validated before state mutation. Switching away restores the configured baseline provider; previous-model compaction and first-turn prewarm use the correct provider. |
+| Image tool results | Complete | Text/image parts remain on their original Chat tool message, including call ID and image detail. The Kimi profile enables this separately declared backend capability. |
+| Kimi cold resume | Complete | A persisted `kimi-k3` / `kimi` pair rebuilds the embedded adapter without a static provider entry; the configured baseline remains available. |
 | TUI integration | Complete | Kimi is visible in the model picker and does not trigger OpenAI-login gating inherited from the baseline provider. |
 | Documentation | Complete | The feature contract, adapter README, implementation plan, and this status document describe the final profile and downgrade boundaries. |
 
@@ -52,6 +54,39 @@ server-executed Responses built-ins remain outside the compatibility profile.
   an empty summary and no encrypted payload
 
 ## Validation completed
+
+### September 20 regression follow-up
+
+- Fixed the adapter rejection after `view_image`: structured text results are supported, and an
+  explicit image-tool-output capability forwards multimodal parts on the original Chat tool
+  message. The Kimi profile enables it; generic backends remain opt-in.
+- Fixed cold resume of a persisted `kimi-k3` / `kimi` pair. Configuration loading keeps the
+  configured baseline provider instead of looking up the runtime-derived `kimi` label as a
+  static provider; session startup creates a fresh embedded adapter. Rollouts and user config
+  need no migration.
+- Direct Kimi protocol probes accepted a synthetic red image in a tool result, both without
+  detail and with `detail: "original"`, and answered `Red`.
+- All 50 focused adapter/profile/configuration tests passed, including a real Codex `view_image`
+  continuation and replay on the next turn, and cold resume from the saved effective provider.
+- A source-built adapter completed two live Kimi requests with the synthetic image: the tool
+  continuation and a subsequent full-history replay both answered `Red`, captured reasoning,
+  and ended with `response.completed`.
+- The affected-crate run executed 4,336 tests: 4,023 passed, 313 failed, and 8 were skipped.
+  All 504 core configuration tests, all adapter/profile tests, and all new regressions passed.
+  The broader core run is not green;
+  failures include read-only home paths, missing `test_stdio_server`, and hook/notification/tool
+  harness failures. A representative read-only-home failure passed when rerun outside the sandbox.
+- A source-built app-server resumed an isolated copy of rollout
+  `01a0bfb6-3d6e-7523-8932-8e6091da57c5` through `thread/resume`, first with the saved Kimi pair
+  explicitly supplied, then in a fresh process with no model/provider override. Both returned
+  `kimi-k3` / `kimi`. No inference was requested, and the original rollout checksum was unchanged.
+- Build artifacts were relocated to the checkout filesystem after the `/tmp` build mount filled.
+- Scoped `just fix` completed successfully; unrelated pre-existing cleanup suggestions were
+  reverted. `just fmt` completed successfully. Tests were not rerun after these final passes.
+  The duplicate build cache was removed; validation logs and the smoke-tested executables remain
+  under `.cache/kimi-validation/`.
+
+### Original profile validation
 
 - `cargo check --tests` passed for the adapter, inference profile, model provider, model manager,
   core, and TUI after the profile wiring changes.
@@ -79,9 +114,8 @@ server-executed Responses built-ins remain outside the compatibility profile.
 
 ## Remaining validation boundary
 
-There is no known feature blocker. The complete workspace `just test` has not been run: repository
-policy requires separate approval after shared/core changes, and the narrower core/TUI runs already
-expose unrelated checkout/sandbox failures that a workspace run would repeat.
+The complete workspace `just test` has not been run; the user explicitly requested validation
+scoped to affected crates. The core crate's broader suite still has the failures recorded above.
 
 The existing `~/.kimi-codex` file was observed with Unix mode `0644`. The implementation does not
 mutate files outside the workspace; changing it to `0600` is recommended.

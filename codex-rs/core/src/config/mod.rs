@@ -78,6 +78,8 @@ use codex_features::TokenBudgetConfigToml;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
+use codex_inference_profiles::InferenceProfile;
+use codex_inference_profiles::inference_profile_for_model;
 use codex_install_context::InstallContext;
 use codex_login::AuthManagerConfig;
 use codex_login::AuthRouteConfig;
@@ -3788,8 +3790,18 @@ impl Config {
             merge_configured_model_providers(built_in_model_providers(openai_base_url), cfg.model_providers)
                 .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
 
+        // Resume metadata reports the effective profile provider (for example `kimi`),
+        // not a configured provider. Keep the configured baseline here; session startup
+        // resolves the model's profile and creates its process-local adapter endpoint.
+        let profile_provider_id = model
+            .as_deref()
+            .or(cfg.model.as_deref())
+            .and_then(inference_profile_for_model)
+            .map(InferenceProfile::provider_id);
         let model_provider_id = model_provider
-            .or(cfg.model_provider)
+            .into_iter()
+            .chain(cfg.model_provider)
+            .find(|id| Some(id.as_str()) != profile_provider_id)
             .unwrap_or_else(|| "openai".to_string());
         let model_provider = model_providers
             .get(&model_provider_id)
@@ -4876,3 +4888,7 @@ mod tests;
 #[cfg(test)]
 #[path = "config_loader_tests.rs"]
 mod config_loader_tests;
+
+#[cfg(test)]
+#[path = "inference_profile_tests.rs"]
+mod inference_profile_tests;

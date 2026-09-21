@@ -1,5 +1,7 @@
 use crate::config::BackendCapabilities;
 use crate::config::ReasoningContentPolicy;
+use crate::content::tool_content;
+use crate::content::user_content;
 use crate::error::ProxyError;
 use crate::protocol::ChatFunctionCall;
 use crate::protocol::ChatMessage;
@@ -8,11 +10,9 @@ use crate::tool_registry::ToolIdentity;
 use crate::tool_registry::ToolRegistry;
 use codex_protocol::models::AgentMessageInputContent;
 use codex_protocol::models::ContentItem;
-use codex_protocol::models::ImageDetail;
 use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::plaintext_agent_message_content;
-use serde_json::Map;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
@@ -173,13 +173,13 @@ pub(crate) fn compile_history(
                     ProxyError::unsupported("function call output history without call_id")
                 })?;
                 resolve_call(&mut calls, &call_id, HistoryCallKind::Function)?;
-                push_tool_output(&mut messages, &mut assistant, call_id, output)?;
+                push_tool_output(&mut messages, &mut assistant, call_id, output, capabilities)?;
             }
             ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } => {
                 resolve_call(&mut calls, &call_id, HistoryCallKind::Custom)?;
-                push_tool_output(&mut messages, &mut assistant, call_id, output)?;
+                push_tool_output(&mut messages, &mut assistant, call_id, output, capabilities)?;
             }
             _ => {
                 return Err(ProxyError::unsupported(format!(
@@ -264,14 +264,12 @@ fn push_tool_output(
     assistant: &mut PendingAssistant,
     call_id: String,
     output: codex_protocol::models::FunctionCallOutputPayload,
+    capabilities: BackendCapabilities,
 ) -> Result<(), ProxyError> {
     flush_assistant(messages, assistant);
-    let content = output
-        .text_content()
-        .ok_or_else(|| ProxyError::unsupported("structured or image tool-call output history"))?;
     messages.push(ChatMessage::Tool {
         tool_call_id: call_id,
-        content: content.to_string(),
+        content: tool_content(output.body, capabilities)?,
     });
     Ok(())
 }
@@ -367,47 +365,6 @@ fn plaintext_reasoning(content: Option<Vec<ReasoningItemContent>>) -> Result<Str
     Ok(reasoning)
 }
 
-fn user_content(
-    content: Vec<ContentItem>,
-    capabilities: BackendCapabilities,
-) -> Result<Value, ProxyError> {
-    let mut parts = Vec::with_capacity(content.len());
-    let mut contains_image = false;
-    for item in content {
-        match item {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
-                parts.push(json!({"type": "text", "text": text}));
-            }
-            ContentItem::InputImage { image_url, detail } => {
-                if !capabilities.image_input {
-                    return Err(ProxyError::unsupported(
-                        "image input; start the proxy with --supports-image-input or use text-only input",
-                    ));
-                }
-                contains_image = true;
-                let mut image = Map::from_iter([("url".to_string(), Value::String(image_url))]);
-                if let Some(detail) = detail {
-                    image.insert(
-                        "detail".to_string(),
-                        Value::String(image_detail_name(detail).to_string()),
-                    );
-                }
-                parts.push(json!({"type": "image_url", "image_url": image}));
-            }
-            ContentItem::InputAudio { .. } => {
-                return Err(ProxyError::unsupported("audio input"));
-            }
-        }
-    }
-    if !contains_image && parts.len() == 1 {
-        return Ok(parts
-            .pop()
-            .and_then(|part| part.get("text").cloned())
-            .unwrap_or_else(|| Value::String(String::new())));
-    }
-    Ok(Value::Array(parts))
-}
-
 fn text_content(content: Vec<ContentItem>, role: &str) -> Result<String, ProxyError> {
     let mut text = Vec::with_capacity(content.len());
     for item in content {
@@ -428,15 +385,6 @@ fn text_content(content: Vec<ContentItem>, role: &str) -> Result<String, ProxyEr
         }
     }
     Ok(text.join(""))
-}
-
-fn image_detail_name(detail: ImageDetail) -> &'static str {
-    match detail {
-        ImageDetail::Auto => "auto",
-        ImageDetail::Low => "low",
-        ImageDetail::High => "high",
-        ImageDetail::Original => "original",
-    }
 }
 
 fn chat_tool_call(call_id: String, name: String, arguments: String) -> ChatToolCall {

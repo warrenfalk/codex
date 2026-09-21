@@ -51,5 +51,6 @@ uuid = { workspace = true, features = ["v7"] }
 codex-core = { workspace = true }
 codex-model-provider-info = { workspace = true }
 core_test_support = { workspace = true }
+image = { workspace = true }
 pretty_assertions = { workspace = true }
 wiremock = { workspace = true }

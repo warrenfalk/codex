@@ -92,10 +92,14 @@ API_KEY=your-kimi-api-key
 Then select `Kimi K3` in the model picker or run Codex with `-m kimi-k3`. Codex starts a
 session-owned loopback proxy automatically and targets
 `https://api.moonshot.ai/v1/chat/completions` with upstream model `kimi-k3`. The profile enables
-the backend behaviors already validated for Kimi: image input, parallel calls, structured output,
-`max` reasoning effort, plaintext `reasoning_content`, and `prompt_cache_key` forwarding. It does
+the backend behaviors already validated for Kimi: user and tool-result image input, parallel calls,
+structured output, `max` reasoning effort, plaintext `reasoning_content`, and `prompt_cache_key` forwarding. It does
 not enable hosted Responses web search or image generation, and it does not impose a completion
 token limit.
+
+Saved Kimi sessions resume without adding a `[model_providers.kimi]` entry. The saved `kimi`
+provider label identifies the built-in profile; resume starts a fresh local adapter and retains
+the configured baseline provider for switching back to another model.
 
 The file must contain a non-empty `API_KEY`. Missing or invalid credentials reject model selection
 without changing the active thread settings; there is no fallback to OpenAI. Protect this file as
@@ -141,6 +145,8 @@ The upstream URL must use HTTP or HTTPS and must not embed credentials.
 | Call/output history | Full history is validated, grouped into assistant/tool messages, and correlated by call ID. |
 | Structured output | Requires `--supports-structured-output`; Responses `text.format` becomes Chat `response_format.json_schema`. |
 | User image input | Requires `--supports-image-input`; image URLs and declared detail are passed as Chat image content. |
+| Structured text tool output | Text parts become one newline-separated Chat tool string. Empty output remains an empty string. |
+| Image tool output | Requires both `--supports-image-input` and `--supports-image-tool-output`. The backend must accept content-part arrays in `role: "tool"` messages. Text/image order, call ID, URLs and detail are preserved. Enabled by the built-in Kimi profile. |
 | Developer role | Instructions use `system` by default; `--supports-developer-role` selects `developer`. |
 | Reasoning effort request | `--supports-reasoning-effort` forwards the Responses effort string as Chat `reasoning_effort`. |
 | Plaintext reasoning | `--supports-reasoning-content` maps Chat `reasoning_content` into Responses reasoning events/items and restores it to Chat assistant history for tool continuations. It does not provide encrypted-reasoning or summary parity. |
@@ -165,8 +171,8 @@ The proxy rejects these instead of silently discarding model-visible information
 - remote/in-band compaction and compaction input items;
 - Responses Lite, `additional_tools`, `tool_search`, and deferred tool loading;
 - server-executed web search, image generation, code interpreter, and remote MCP built-ins;
-- audio input, encrypted agent messages, image-bearing assistant messages, and structured/image
-  tool outputs;
+- audio input, encrypted agent/tool messages, image-bearing assistant messages, and image
+  tool outputs without the explicit backend capability;
 - Responses verbosity controls;
 - multiple Chat choices and unknown Chat finish reasons;
 - non-streaming inbound Responses requests.

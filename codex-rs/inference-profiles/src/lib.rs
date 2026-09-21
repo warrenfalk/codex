@@ -24,6 +24,14 @@ pub enum InferenceProfile {
     KimiK3,
 }
 
+impl InferenceProfile {
+    pub fn provider_id(self) -> &'static str {
+        match self {
+            Self::KimiK3 => KIMI_PROVIDER_ID,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ResolvedProvider {
     pub id: String,
@@ -128,7 +136,7 @@ pub fn inference_profile_for_model(model: &str) -> Option<InferenceProfile> {
 
 pub fn effective_provider_id<'a>(model: &str, baseline_provider_id: &'a str) -> &'a str {
     match inference_profile_for_model(model) {
-        Some(InferenceProfile::KimiK3) => KIMI_PROVIDER_ID,
+        Some(profile) => profile.provider_id(),
         None => baseline_provider_id,
     }
 }
@@ -165,6 +173,7 @@ fn kimi_proxy_config(api_key: String) -> ProxyConfig {
         capabilities: BackendCapabilities {
             developer_role: false,
             image_input: true,
+            image_tool_output: true,
             parallel_tool_calls: true,
             prompt_cache_key: PromptCacheKeyPolicy::Forward,
             reasoning_content: ReasoningContentPolicy::Plaintext,

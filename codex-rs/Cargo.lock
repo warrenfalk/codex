@@ -4393,6 +4393,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "http 1.4.0",
+ "image",
  "pretty_assertions",
  "reqwest 0.12.28",
  "serde",

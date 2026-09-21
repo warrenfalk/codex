@@ -24,6 +24,10 @@ that Codex expects and performs inference through a configured `/v1/chat/complet
 - Names that Chat cannot accept are mapped deterministically and reverse-mapped before Codex sees
   a call. Backend calls to undeclared names fail.
 - Function and custom call IDs survive streaming, execution, later history, compaction, and retry.
+- Structured text tool results become a Chat tool string with newline-separated text parts.
+  A backend may separately declare image-bearing tool-result support: text/image parts then remain
+  in order in the original Chat `tool` message, preserving call ID, image URL and detail. They are
+  never moved into a synthetic user message or dropped. User-image support alone is insufficient.
 - History is rejected before inference when it contains orphaned outputs, unresolved calls,
   duplicate call IDs, duplicate outputs, or mismatched function/custom output types.
 - Assistant text is streamed as Responses text deltas and is also emitted as one complete output
@@ -56,7 +60,8 @@ that Codex expects and performs inference through a configured `/v1/chat/complet
 V1 deliberately does not claim support for Responses WebSockets, previous-response state,
 Responses Lite, deferred tool search, server-executed built-ins, encrypted reasoning replay or
 agent messages, reasoning-summary replay, remote compaction, multiple Chat choices, verbosity
-controls, audio input, or structured/image-bearing tool outputs. Accepting Codex's encrypted
+controls, audio input, or encrypted tool outputs. Image-bearing tool outputs require a separately
+enabled backend dialect. Accepting Codex's encrypted
 reasoning include hint does not imply encrypted-reasoning support. Plaintext reasoning is a
 separate, explicitly enabled backend dialect and does not imply encrypted-reasoning or
 reasoning-summary parity.
@@ -82,12 +87,17 @@ forwarding means the selected backend is known to accept the translated Chat sha
   baseline provider, including for previous-model compaction.
 - The TUI does not require an OpenAI login merely because the baseline provider does when the
   selected model is `kimi-k3`.
+- A saved `kimi-k3` / `kimi` model/provider pair can be resumed without a manually configured
+  `kimi` provider or a running adapter from the original process. A fresh session-owned adapter is
+  created from the credential file. The configured baseline remains available when switching away;
+  unrelated unknown provider IDs still fail normally. Existing rollouts do not need to be rewritten.
 - The profile advertises a 1,048,576-token context window, text and image input, parallel tool
   calls, the shell-command tool, freeform patching, and `max` reasoning effort. It does not expose
   hosted Responses web search or image generation.
 - The Kimi Chat dialect uses `system` instructions, native streaming, structured output, image
-  input, parallel calls, plaintext `reasoning_content`, `reasoning_effort`, and forwarded
-  `prompt_cache_key`. It deliberately omits an adapter-imposed completion-token limit.
+  input (including `view_image` and other image-bearing tool results), parallel calls, plaintext
+  `reasoning_content`, `reasoning_effort`, and forwarded `prompt_cache_key`. It deliberately omits
+  an adapter-imposed completion-token limit.
 - Codex may request encrypted reasoning inclusion or a reasoning summary as part of its normal
   Responses shape. For this profile those controls are accepted as a compatibility downgrade:
   the adapter returns and replays plaintext reasoning, an empty summary, and no encrypted payload.
@@ -116,13 +126,14 @@ forwarding means the selected backend is known to accept the translated Chat sha
 - HTTP tests cover exact Chat requests, exact Responses event ordering, buffered backends, status
   mapping, secret redaction, timeouts, malformed streams, and downstream cancellation.
 - An unmodified Codex test client must complete streamed text, parallel function calls, a
-  freeform patch call, structured JSON output, local compaction, and retry after a translated
-  stream failure.
+  freeform patch call, an image-viewing call and subsequent history replay, structured JSON output,
+  local compaction, and retry after a translated stream failure.
 - Plaintext-reasoning conformance must prove that reasoning is captured as a Responses item and
   replayed on the next Chat assistant message beside its original parallel calls. It must also
   prove that the same non-empty cache key reaches both Chat requests.
 - Kimi profile tests must cover trusted catalog metadata, embedded-provider selection, missing-key
-  rejection without a partial settings update, and OpenAI-login bypass.
+  rejection without a partial settings update, OpenAI-login bypass, and cold resume from saved
+  effective provider metadata while retaining the configured baseline provider.
 - A real backend smoke test must use only capabilities that backend explicitly documents and must
   confirm a text turn plus at least one tool round trip before the profile is relied on for normal
   work.
