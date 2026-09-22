@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tts_tests.rs
 expression: "render_bottom_popup(&chat, 80)"
 ---
   Text to speech
-  Choose what Codex reads aloud. Use /speak stop to stop playback.
+  Choose what Codex reads aloud. Esc or Ctrl+C stops playback.
 
 › 1. Off (current)       Keep messages silent.
   2. Final               Speak final answers and interactive questions.

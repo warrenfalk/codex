@@ -90,7 +90,9 @@ async fn speech_queue_and_individual_messages_are_bounded() {
         .enqueue("turn", "overflow", "text".into(), &config, &events)
         .unwrap_err();
     assert_eq!(error.to_string(), "speech queue is full");
+    assert!(speech.is_speaking());
     speech.stop();
+    assert!(!speech.is_speaking());
 }
 
 #[cfg(unix)]
@@ -124,12 +126,10 @@ async fn commands_receive_literal_arguments_and_stdin_in_order_without_duplicate
     )?;
     speech.enqueue("turn", "first", "duplicate".into(), &config, &events)?;
     speech.enqueue("turn", "second", "Second message".into(), &config, &events)?;
+    assert!(speech.is_speaking());
     let expected = "literal argument; $(not-a-command)\n--hello; $(literal)\n¡Sí!\nEND\nliteral argument; $(not-a-command)\nSecond message\nEND\n";
     tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            if std::fs::read_to_string(&output).is_ok_and(|contents| contents == expected) {
-                break;
-            }
+        while speech.is_speaking() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
@@ -172,11 +172,13 @@ async fn stopping_or_dropping_speech_kills_the_active_command_and_discards_queue
             }
         })
         .await?;
+        assert!(speech.is_speaking());
         if drop_speech {
             drop(speech);
         } else {
             speech.stop();
             assert_eq!(speech.mode(), TtsMode::Final);
+            assert!(!speech.is_speaking());
         }
         tokio::time::timeout(Duration::from_secs(5), async {
             // Signal zero probes existence without sending a signal to the fake command.

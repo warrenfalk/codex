@@ -14,6 +14,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.handle_speech_key(key_event) {
+            return;
+        }
         if self.handle_question_key(key_event) {
             return;
         }
@@ -618,14 +621,16 @@ impl ChatWidget {
 
     /// Handles a Ctrl+C press at the chat-widget layer.
     ///
-    /// The first press arms a time-bounded quit shortcut and shows a footer hint via the bottom
-    /// pane. If cancellable work is active, Ctrl+C also submits `Op::Interrupt` after the shortcut
-    /// is armed.
+    /// Active narration consumes the press to stop playback. Otherwise, the first press arms a
+    /// time-bounded quit shortcut and shows a footer hint via the bottom pane. If cancellable work
+    /// is active, Ctrl+C also submits `Op::Interrupt` after the shortcut is armed.
     ///
     /// When the double-press quit shortcut is enabled, pressing the same shortcut again before
     /// expiry requests a shutdown-first quit.
     pub(super) fn on_ctrl_c(&mut self) {
-        self.speech.stop();
+        if self.handle_speech_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)) {
+            return;
+        }
         let key = key_hint::ctrl(KeyCode::Char('c'));
         let modal_or_popup_active = !self.bottom_pane.no_modal_or_popup_active();
         let should_pause_active_goal = self

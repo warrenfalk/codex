@@ -12,16 +12,25 @@ every answer or question on screen.
   progress messages. Messages without phase metadata count as final answers.
 - `/speak off`, `/speak final`, and `/speak progress-and-final` select a mode directly.
   These controls work during running turns and side conversations.
+- Changing from Off to an active mode while no agent turn is running immediately
+  reads the most recently completed response, including a restored response or
+  proposed plan. Turning speech off and on again can replay that response. Enabling
+  speech mid-turn waits for subsequent completed messages; changing between active
+  modes or selecting the current mode does not replay the previous response.
 - `/speak stop` cancels active playback and discards pending speech without changing
-  the selected mode. Later messages can still be spoken. Ctrl+C also stops speech
-  while retaining its usual editing, interruption, and exit behavior.
+  the selected mode. Later messages can still be spoken. While speech is playing
+  or queued, Escape and Ctrl+C stop it and consume that keypress, preserving the
+  draft, open views, and running turn. Once playback stops, those keys resume their
+  usual navigation, editing, interruption, and exit behavior.
 - An active speech mode is visible above the composer, including while a turn is
   running. Changing modes stops pending speech. The selection lasts for the TUI
   process, including switching threads, starting new sessions, and side
   conversations. Switching threads stops the previous thread's playback.
-- Resuming, switching threads, and loading older history never narrate historical
-  messages or questions. Repeated delivery of a recent completed message does not
-  speak it twice. Only messages from the currently viewed conversation are spoken.
+- Resuming, switching threads, and loading older history do not automatically
+  narrate historical messages or questions. Explicitly enabling speech while idle
+  can read the latest restored response. Repeated delivery of a recent completed
+  message does not speak it twice. Only messages from the currently viewed
+  conversation are spoken.
 
 ## Configuration and command contract
 
@@ -64,9 +73,11 @@ playback must not disable a newer selection.
 ## Validation expectations
 
 Verify mode selection and the visible indicator with snapshots, including a narrow
-terminal and a running turn. Verify live final/progress filtering, both kinds of
-interactive questions and choices, legacy messages without phases, history replay
-suppression, and duplicate delivery. Use a fake command to verify literal argv,
-UTF-8 stdin, serial playback, cancellation, shutdown cleanup, failure recovery, and
-bounded buffering without requiring audio hardware. Check layered configuration
-loading and regenerate the config schema when settings change.
+terminal and a running turn. Verify idle activation reads only the latest response,
+mid-turn activation waits for new messages, and Escape/Ctrl+C cancel playback before
+other key handlers while retaining the speech mode. Verify live final/progress
+filtering, both kinds of interactive questions and choices, legacy messages without
+phases, history replay suppression, and duplicate delivery. Use a fake command to
+verify literal argv, UTF-8 stdin, serial playback, cancellation, shutdown cleanup,
+failure recovery, and bounded buffering without requiring audio hardware. Check
+layered configuration loading and regenerate the config schema when settings change.

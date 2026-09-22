@@ -72,6 +72,8 @@ mod stream_animation_tests;
 mod thread_usage;
 #[path = "tests/transcript_composer.rs"]
 mod transcript_composer;
+#[path = "tests/tts_tests.rs"]
+mod tts;
 #[path = "tests/turn_submission.rs"]
 mod turn_submission;
 #[path = "tests/user_verification_routes_tests.rs"]

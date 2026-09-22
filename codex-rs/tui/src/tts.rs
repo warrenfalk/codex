@@ -2,6 +2,9 @@
 
 use std::collections::VecDeque;
 use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use anyhow::Context;
 use codex_config::types::TtsConfig;
@@ -31,11 +34,17 @@ pub(crate) struct Speech {
     recent_items: VecDeque<(String, String)>,
     sender: Option<mpsc::Sender<String>>,
     worker: Option<JoinHandle<()>>,
+    /// Includes both queued messages and the command currently playing one.
+    pending: Arc<AtomicUsize>,
 }
 
 impl Speech {
     pub(crate) fn mode(&self) -> TtsMode {
         self.mode
+    }
+
+    pub(crate) fn is_speaking(&self) -> bool {
+        self.pending.load(Ordering::Relaxed) > 0
     }
 
     pub(crate) fn set_mode(&mut self, mode: TtsMode) {
@@ -49,6 +58,9 @@ impl Speech {
     pub(crate) fn stop(&mut self) {
         self.generation = Uuid::new_v4();
         self.sender = None;
+        // A cancelled worker may still finish its current message on another executor thread.
+        // Give later playback its own counter so that completion cannot affect the new queue.
+        self.pending = Arc::default();
         if let Some(worker) = self.worker.take() {
             worker.abort();
         }
@@ -98,6 +110,7 @@ impl Speech {
             let program = program.clone();
             let args = args.to_vec();
             let events = events.clone();
+            let pending = self.pending.clone();
             let generation = Uuid::new_v4();
             self.generation = generation;
             self.sender = Some(sender);
@@ -127,6 +140,7 @@ impl Speech {
                         Ok::<(), anyhow::Error>(())
                     }
                     .await;
+                    pending.fetch_sub(1, Ordering::Relaxed);
                     if let Err(error) = result {
                         events.send(AppEvent::TtsFailed {
                             generation,
@@ -137,14 +151,19 @@ impl Speech {
                 }
             }));
         }
-        self.sender
+        let sender = self
+            .sender
             .as_ref()
-            .context("speech worker is unavailable")?
-            .try_send(text)
-            .map_err(|error| match error {
+            .context("speech worker is unavailable")?;
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        if let Err(error) = sender.try_send(text) {
+            self.pending.fetch_sub(1, Ordering::Relaxed);
+            return Err(match error {
                 mpsc::error::TrySendError::Full(_) => anyhow::anyhow!("speech queue is full"),
                 mpsc::error::TrySendError::Closed(_) => anyhow::anyhow!("speech command stopped"),
-            })
+            });
+        }
+        Ok(())
     }
 }
 

@@ -37,8 +37,7 @@ impl ChatWidget {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
                     title: Some("Text to speech".to_string()),
                     subtitle: Some(
-                        "Choose what Codex reads aloud. Use /speak stop to stop playback."
-                            .to_string(),
+                        "Choose what Codex reads aloud. Esc or Ctrl+C stops playback.".to_string(),
                     ),
                     footer_hint: Some(standard_popup_hint_line()),
                     items,
@@ -59,6 +58,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn set_tts_mode(&mut self, mode: TtsMode) {
+        let read_latest = self.speech.mode() == TtsMode::Off
+            && mode != TtsMode::Off
+            && !self.is_user_turn_pending_or_running();
         self.speech.set_mode(mode);
         self.bottom_pane.set_tts_mode(mode);
         let label = match mode {
@@ -67,6 +69,28 @@ impl ChatWidget {
             TtsMode::ProgressAndFinal => "progress and final",
         };
         self.add_info_message(format!("Text to speech: {label}."), /*hint*/ None);
+        if read_latest && let Some(markdown) = self.transcript.last_agent_markdown.clone() {
+            // Explicit activation is a fresh request, even if this response was spoken before.
+            self.speak_text("manual", &uuid::Uuid::new_v4().to_string(), &markdown);
+        }
+    }
+
+    pub(crate) fn handle_speech_key(&mut self, key: KeyEvent) -> bool {
+        let stop = (key.code == KeyCode::Esc && key.modifiers.is_empty())
+            || matches!(key.code, KeyCode::Char('c' | 'C'))
+                && key.modifiers.contains(KeyModifiers::CONTROL);
+        if !stop
+            || !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+            || !self.speech.is_speaking()
+        {
+            return false;
+        }
+        self.speech.stop();
+        self.quit_shortcut_expires_at = None;
+        self.quit_shortcut_key = None;
+        self.bottom_pane.clear_quit_shortcut_hint();
+        self.request_redraw();
+        true
     }
 
     pub(crate) fn inherit_tts(&mut self, previous: &mut ChatWidget) {
