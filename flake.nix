@@ -68,6 +68,13 @@
           rust = pkgs.rust-bin.stable.latest.minimal.override {
             extensions = [ "clippy" "rust-src" "rust-analyzer" "rustfmt" ];
           };
+          nativeAudioLibraries = [
+            pkgs.glib
+            pkgs.gst_all_1.gstreamer
+            pkgs.gst_all_1.gst-plugins-base
+            pkgs.gst_all_1.gst-plugins-good
+            pkgs.libopus
+          ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.alsa-lib ];
         in
         {
           default = pkgs.mkShell ({
@@ -85,8 +92,9 @@
               pkgs.llvmPackages.libclang.lib
               pkgs.python3
               pkgs.uv
-            ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libcap ];
-            PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+            ] ++ nativeAudioLibraries ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libcap ];
+            PKG_CONFIG_PATH = pkgs.lib.makeSearchPathOutput "dev" "lib/pkgconfig"
+              ([ pkgs.openssl ] ++ nativeAudioLibraries);
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             # Use clang for BoringSSL compilation (avoids GCC 15 warnings-as-errors)
             shellHook = ''
