@@ -92,6 +92,8 @@
             shellHook = ''
               export CC=clang
               export CXX=clang++
+              export HOST_CC="$CC"
+              export HOST_CXX="$CXX"
               export UV_CACHE_DIR="''${UV_CACHE_DIR:-$PWD/.cache/uv}"
             '';
           } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
