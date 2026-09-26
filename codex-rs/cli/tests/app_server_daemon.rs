@@ -525,7 +525,8 @@ fn packaged_daemon_launch(action: &str, initial: InitialDaemon) -> Result<()> {
     std::fs::write(
         package.join("codex-package.json"),
         serde_json::to_vec(&serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"), "target": target, "entrypoint": "bin/codex"
+            // Exercise an unversioned local package even when the fork has a release version.
+            "version": "0.0.0", "target": target, "entrypoint": "bin/codex"
         }))?,
     )?;
     if action == "start" && initial == InitialDaemon::Missing {
