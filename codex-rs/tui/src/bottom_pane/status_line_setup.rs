@@ -617,7 +617,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · /repo".to_string())
+            Some("5 · /repo".to_string())
         );
     }
 
@@ -655,7 +655,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · feat/awesome-feature".to_string())
+            Some("5 · feat/awesome-feature".to_string())
         );
     }
 
@@ -699,7 +699,7 @@ mod tests {
                     /*use_theme_colors*/ true,
                 )
             ),
-            Some("gpt-5 · Roadmap cleanup".to_string())
+            Some("5 · Roadmap cleanup".to_string())
         );
     }
 
