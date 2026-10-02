@@ -3962,6 +3962,11 @@ class ProjectChangedNotification(BaseModel):
     project_id: Annotated[str, Field(alias="projectId")]
 
 
+class ProjectEnvMode(Enum):
+    auto = "auto"
+    bypass = "bypass"
+
+
 class ProjectRoot(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -5986,6 +5991,41 @@ class ThreadNameUpdatedNotification(BaseModel):
     thread_name: Annotated[str | None, Field(alias="threadName")] = None
 
 
+class ThreadProjectEnvReadParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadProjectEnvState(Enum):
+    disabled = "disabled"
+    none = "none"
+    building = "building"
+    ready = "ready"
+    failed = "failed"
+
+
+class ThreadProjectEnvStatus(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cwd: AbsolutePathBuf | None = None
+    envrc_path: Annotated[AbsolutePathBuf | None, Field(alias="envrcPath")] = None
+    message: str | None = None
+    status: ThreadProjectEnvState
+    thread_id: Annotated[str, Field(alias="threadId")]
+    updated_at: Annotated[int, Field(alias="updatedAt")]
+    watched_input_count: Annotated[int, Field(alias="watchedInputCount", ge=0)]
+
+
+class ThreadProjectEnvStatusChangedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    project_env: Annotated[ThreadProjectEnvStatus, Field(alias="projectEnv")]
+
+
 class ThreadProjectUpdatedNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -6439,6 +6479,13 @@ class ThreadShellCommandParams(BaseModel):
             description="Shell command string evaluated by the thread's configured shell. Unlike `command/exec`, this intentionally preserves shell syntax such as pipes, redirects, and quoting. This runs unsandboxed with full access rather than inheriting the thread sandbox policy."
         ),
     ]
+    project_env: Annotated[
+        ProjectEnvMode | None,
+        Field(
+            alias="projectEnv",
+            description="Project environment loading mode for this command. Omitted defaults to `auto`.",
+        ),
+    ] = None
     thread_id: Annotated[str, Field(alias="threadId")]
     timeout_ms: Annotated[
         int | None,
@@ -7369,6 +7416,17 @@ class ThreadShellCommandRequest(BaseModel):
         Literal["thread/shellCommand"], Field(title="Thread/shellCommandRequestMethod")
     ]
     params: ThreadShellCommandParams
+
+
+class ThreadProjectEnvReadRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/projectEnv/read"], Field(title="Thread/projectEnv/readRequestMethod")
+    ]
+    params: ThreadProjectEnvReadParams
 
 
 class ThreadApproveGuardianDeniedActionRequest(BaseModel):
@@ -9604,6 +9662,24 @@ class ThreadStatusChangedServerNotification(BaseModel):
     params: ThreadStatusChangedNotification
 
 
+class ThreadProjectEnvStatusChangedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/projectEnv/statusChanged"],
+        Field(title="Thread/projectEnv/statusChangedNotificationMethod"),
+    ]
+    params: ThreadProjectEnvStatusChangedNotification
+
+
 class ThreadArchivedServerNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10607,6 +10683,13 @@ class ThreadListParams(BaseModel):
             description="If true, return from the state DB without scanning JSONL rollouts to repair thread metadata. Omitted or false preserves scan-and-repair behavior.",
         ),
     ] = None
+
+
+class ThreadProjectEnvReadResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    project_env: Annotated[ThreadProjectEnvStatus, Field(alias="projectEnv")]
 
 
 class TranscriptSegmentThreadRealtimeItem(BaseModel):
@@ -13319,6 +13402,7 @@ class ClientRequest(
         | ThreadUnarchiveRequest
         | ThreadCompactStartRequest
         | ThreadShellCommandRequest
+        | ThreadProjectEnvReadRequest
         | ThreadApproveGuardianDeniedActionRequest
         | ThreadRevertRequest
         | ThreadListRequest
@@ -13430,6 +13514,7 @@ class ClientRequest(
         | ThreadUnarchiveRequest
         | ThreadCompactStartRequest
         | ThreadShellCommandRequest
+        | ThreadProjectEnvReadRequest
         | ThreadApproveGuardianDeniedActionRequest
         | ThreadRevertRequest
         | ThreadListRequest
@@ -13786,6 +13871,7 @@ class ServerNotification(
         ErrorServerNotification
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
+        | ThreadProjectEnvStatusChangedServerNotification
         | ThreadArchivedServerNotification
         | ThreadDeletedServerNotification
         | ThreadUnarchivedServerNotification
@@ -13876,6 +13962,7 @@ class ServerNotification(
         ErrorServerNotification
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
+        | ThreadProjectEnvStatusChangedServerNotification
         | ThreadArchivedServerNotification
         | ThreadDeletedServerNotification
         | ThreadUnarchivedServerNotification

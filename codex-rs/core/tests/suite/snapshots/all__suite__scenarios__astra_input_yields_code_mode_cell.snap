@@ -6,8 +6,8 @@ Scenario: Astra continues after new user input yields a running code cell, then 
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=b035de0e31ab087e):
-        - namespace/functions; hash=a0b6a7ae1ecf9f28
+00:additional_tools/developer (3; hash=4080e0a1989a664b):
+        - namespace/functions; hash=a50f454dfed11853
           - custom/exec
           - function/wait
           - function/request_user_input
@@ -30,7 +30,7 @@ Scenario: Astra continues after new user input yields a running code cell, then 
 
     User authorization and preferences persist across turns. Do not request permission again when the user h... any guidelines provided in skills or external files. [hash=911f91c92c72882c]
 
-    <OMITTED 155 LINES; ~4935 TOKENS; hash=5573869716192298>
+    <OMITTED 155 LINES; ~4964 TOKENS; hash=f8a8d3179d51fc4c>
 
     - Skill naming: If a plugin contributes skills, those skill entries are prefixed with plugin_name: in the Skills list.
     - MCP naming: Plugin-provided MCP tools keep standard MCP identifiers such as mcp__server__tool; use tool provenance to tell which plugin they come from.

@@ -16,8 +16,8 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (request) --
-00:additional_tools/developer (3; hash=e33e09a2c1478914):
-        - namespace/functions; hash=99a630cff25563aa
+00:additional_tools/developer (3; hash=df6d03b530942fb9):
+        - namespace/functions; hash=bc198f66061845d5
           - custom/exec
           - function/wait
           - function/request_user_input
@@ -40,7 +40,7 @@ Settings:
 
     User authorization and preferences persist across turns. Do not request permission again when the user h... any guidelines provided in skills or external files. [hash=911f91c92c72882c]
 
-    <OMITTED 155 LINES; ~4935 TOKENS; hash=5573869716192298>
+    <OMITTED 155 LINES; ~4964 TOKENS; hash=f8a8d3179d51fc4c>
 
     - Skill naming: If a plugin contributes skills, those skill entries are prefixed with plugin_name: in the Skills list.
     - MCP naming: Plugin-provided MCP tools keep standard MCP identifiers such as mcp__server__tool; use tool provenance to tell which plugin they come from.

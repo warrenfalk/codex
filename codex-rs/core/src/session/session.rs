@@ -29,6 +29,8 @@ use codex_http_client::ClientRouteClass;
 use codex_http_client::RouteAwareClientPool;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::SharedModelProvider;
+use codex_project_env::ProjectEnvConfig;
+use codex_project_env::ProjectEnvManager;
 use codex_prompts::render_model_instructions;
 use codex_protocol::SessionId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -1692,6 +1694,9 @@ impl Session {
                     config.background_terminal_max_timeout,
                 ),
                 elicitations: crate::elicitation::ElicitationService::new(),
+                project_env_manager: ProjectEnvManager::new(ProjectEnvConfig::from_current_process(
+                    config.disable_project_env,
+                )),
                 shell_zsh_path: config.zsh_path.clone(),
                 main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
                 analytics_events_client,
@@ -1863,6 +1868,7 @@ impl Session {
                 sess.send_event_raw(event).await;
             }
             turn_environments.start_connection_event_forwarding(tx_event.clone());
+            sess.prewarm_project_env_for_primary_local_cwd().await;
 
             let startup_auth_changed = mcp_auth_changes.has_changed().unwrap_or(false);
             if startup_auth_changed {

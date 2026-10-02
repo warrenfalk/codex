@@ -654,6 +654,9 @@ pub struct Config {
     /// Effective permission configuration for shell tool execution.
     pub permissions: Permissions,
 
+    /// Disable automatic project environment loading for thread-scoped commands.
+    pub disable_project_env: bool,
+
     /// Whether config explicitly selected named permissions profiles instead
     /// of the legacy `sandbox_mode` syntax.
     pub explicit_permission_profile_mode: bool,
@@ -4308,6 +4311,7 @@ impl Config {
                 windows_sandbox_mode,
                 windows_sandbox_type,
             },
+            disable_project_env: cfg.disable_project_env.unwrap_or(false),
             explicit_permission_profile_mode,
             custom_permission_profiles,
             approvals_reviewer: constrained_approvals_reviewer.value(),

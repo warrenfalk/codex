@@ -481,6 +481,8 @@ async fn failed_initial_end_for_unstored_process_uses_fallback_output() {
         additional_permissions_preapproved: false,
         justification: None,
         prefix_rule: None,
+        project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
     };
 
     let output_buffer = Arc::new(tokio::sync::Mutex::new(OutputBuffers::default()));
