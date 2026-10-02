@@ -37,7 +37,6 @@ const SIDE_STARTING_CONTEXT_LABEL: &str = "Side starting...";
 const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to close the side conversation first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
-const NTS_USAGE: &str = "Usage: /nts <note>";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
@@ -346,7 +345,7 @@ impl ChatWidget {
                 });
             }
             SlashCommand::Nts => {
-                self.add_error_message(NTS_USAGE.to_string());
+                self.app_event_tx.send(AppEvent::OpenNotes);
             }
             SlashCommand::Side | SlashCommand::Btw => {
                 self.request_empty_side_conversation(cmd);

@@ -243,6 +243,7 @@ mod turn_tips;
 pub(crate) use new_session::has_launch_setting;
 mod clipboard;
 mod native_history;
+mod notes;
 mod owned_transcript;
 mod pending_interactive_replay;
 mod permission_shortcuts;

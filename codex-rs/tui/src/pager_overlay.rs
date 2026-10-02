@@ -3,9 +3,11 @@
 //! Static content retains its generic pager. Transcript previews share the main conversation
 //! viewport, including its scrolling, selection, search and bounded text layouts.
 
+mod notes;
 mod scrolling;
 mod transcript;
 
+pub(crate) use notes::NotesOverlay;
 pub(crate) use transcript::TranscriptOverlay;
 
 #[cfg(test)]
@@ -45,6 +47,7 @@ pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
     Analytics(Box<crate::analytics::AnalyticsView>),
+    Notes(NotesOverlay),
 }
 
 impl Overlay {
@@ -78,7 +81,7 @@ impl Overlay {
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         let input = match self {
             Overlay::Transcript(_) => tui::OverlayInput::Transcript,
-            Overlay::Static(_) => tui::OverlayInput::StaticPager,
+            Overlay::Static(_) | Overlay::Notes(_) => tui::OverlayInput::StaticPager,
             Overlay::Analytics(_) => tui::OverlayInput::Usage,
         };
         tui.set_overlay_input(input)?;
@@ -86,6 +89,7 @@ impl Overlay {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
             Overlay::Analytics(o) => o.handle_event(tui, event),
+            Overlay::Notes(o) => o.handle_event(tui, event),
         };
         if result.is_err() || self.is_done() {
             let restore = tui.set_overlay_input(tui::OverlayInput::Default);
@@ -99,6 +103,7 @@ impl Overlay {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
             Overlay::Analytics(o) => o.is_done,
+            Overlay::Notes(o) => o.is_done(),
         }
     }
 }

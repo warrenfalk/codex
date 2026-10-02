@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/tests/notes_tests.rs
+expression: "render_bottom_popup(&chat, 65)"
+---
+• Working (0s • esc to interrupt)
+
+1 note to self · /nts to view
+
+› Draft stays here
+
+  tab to queue message                        100% context left

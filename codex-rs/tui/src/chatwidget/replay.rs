@@ -290,7 +290,8 @@ impl ChatWidget {
                     &turn_id,
                 );
             }
-            ThreadItem::NoteToSelf { note, .. } => {
+            ThreadItem::NoteToSelf { id, note } => {
+                self.record_note(id, note.clone());
                 self.add_to_history(history_cell::new_note_to_self(note));
             }
             ThreadItem::AgentMessage {

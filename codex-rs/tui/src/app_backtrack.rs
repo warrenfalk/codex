@@ -345,6 +345,9 @@ impl App {
     /// source of truth for the active cell and its cache invalidation key, and because `App` owns
     /// overlay lifecycle and frame scheduling for animations.
     fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+        if let Some(Overlay::Notes(notes)) = &mut self.overlay {
+            notes.sync(&self.chat_widget.notes);
+        }
         let width = tui.terminal.last_known_screen_size.width.max(/*other*/ 1);
         let footer = self.prompt_navigation_footer(width.saturating_sub(/*rhs*/ 2));
         if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
