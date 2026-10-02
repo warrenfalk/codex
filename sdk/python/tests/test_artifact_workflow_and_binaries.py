@@ -500,6 +500,17 @@ def test_python_codegen_schema_annotation_adds_stable_variant_titles() -> None:
     assert "ErrorNotification" not in server_notification_titles
     assert "Thread/startedNotification" not in server_notification_titles
 
+    elicitation_titles = [
+        variant.get("title")
+        for variant in definitions["McpServerElicitationRequestParams"]["oneOf"]
+    ]
+    assert elicitation_titles == [
+        "FormMcpServerElicitationRequestParams",
+        "OpenaiFormMcpServerElicitationRequestParams",
+        "OpenaiElicitationFormMcpServerElicitationRequestParams",
+        "UrlMcpServerElicitationRequestParams",
+    ]
+
     ask_for_approval_titles = [
         variant.get("title") for variant in definitions["AskForApproval"]["oneOf"]
     ]
