@@ -7685,6 +7685,96 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
 }
 
 #[tokio::test]
+async fn backtrack_overlay_ctrl_i_copies_selected_prompt() {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        thread_id,
+        test_path_buf("/home/user/project"),
+    ));
+    while app_event_rx.try_recv().is_ok() {}
+
+    let user_cell = |text: &str| -> Arc<dyn HistoryCell> {
+        Arc::new(UserHistoryCell {
+            message: text.to_string(),
+            text_elements: Vec::new(),
+            local_image_paths: Vec::new(),
+            remote_image_urls: Vec::new(),
+            spoken: false,
+        }) as Arc<dyn HistoryCell>
+    };
+    let agent_cell = |text: &str| -> Arc<dyn HistoryCell> {
+        Arc::new(AgentMessageCell::new(
+            vec![Line::from(text.to_string())],
+            /*is_first_line*/ true,
+        )) as Arc<dyn HistoryCell>
+    };
+
+    app.transcript_cells = vec![
+        user_cell("first prompt"),
+        agent_cell("first answer"),
+        user_cell("selected prompt"),
+    ];
+    app.backtrack.base_id = Some(thread_id);
+    app.backtrack.overlay_preview_active = true;
+    app.backtrack.nth_user_message = 1;
+
+    let mut copied = None;
+    app.copy_selected_backtrack_prompt_with(|input| {
+        copied = Some(input.to_string());
+        Ok(crate::clipboard_copy::CopyStatus::Confirmed)
+    });
+
+    assert_eq!(copied, Some("selected prompt".to_string()));
+    let status_cell = match app_event_rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        other => panic!("expected copy status history cell, got {other:?}"),
+    };
+    let rendered = lines_to_single_string(&status_cell.display_lines(/*width*/ 80));
+    assert_app_snapshot!("backtrack_overlay_ctrl_i_copies_selected_prompt", rendered);
+}
+
+#[tokio::test]
+async fn backtrack_ctrl_i_routes_in_both_transcript_modes() -> Result<()> {
+    for owned in [false, true] {
+        let (mut app, mut rx, _op_rx) = make_test_app_with_channels().await;
+        let mut app_server =
+            Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+        tui.set_owned_screen(owned)?;
+        app.open_transcript_overlay(&mut tui);
+        app.chat_widget
+            .apply_external_edit("preserved draft".to_string());
+        app.backtrack.overlay_preview_active = true;
+        while rx.try_recv().is_ok() {}
+        let event = TuiEvent::Key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL));
+        let handled = if owned {
+            app.handle_owned_backtrack_event(&mut tui, &event)?
+        } else {
+            app.handle_backtrack_overlay_event(&mut tui, &mut app_server, event)
+                .await?
+        };
+        assert!(handled);
+        assert!(app.backtrack.overlay_preview_active);
+        assert_eq!(
+            app.chat_widget.composer_text_with_pending(),
+            "preserved draft"
+        );
+        let cell = match rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+            other => panic!("expected empty selection feedback, got {other:?}"),
+        };
+        assert_app_snapshot!(
+            "backtrack_ctrl_i_empty_selection",
+            lines_to_single_string(&cell.display_lines(/*width*/ 80)),
+        );
+        tui.set_owned_screen(/*owned*/ false)?;
+        app_server.shutdown().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn backtrack_branch_failure_restores_selected_prompt_snapshot() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
 

@@ -434,6 +434,23 @@ impl App {
         selection
     }
 
+    pub(crate) fn copy_selected_backtrack_prompt_with(
+        &mut self,
+        copy_fn: impl FnOnce(&str) -> crate::clipboard_copy::worker::CopyResult,
+    ) {
+        let selected_prompt = self
+            .backtrack_selection(self.backtrack.nth_user_message)
+            .map(|selection| selection.prompt.text)
+            .unwrap_or_default();
+        if selected_prompt.is_empty() {
+            self.chat_widget
+                .add_error_message("No selected prompt to copy".into());
+        } else {
+            let result = copy_fn(&selected_prompt);
+            self.chat_widget.show_copy_result("selected prompt", result);
+        }
+    }
+
     /// Clear all backtrack-related state and composer hints.
     pub(crate) fn reset_backtrack_state(&mut self) {
         self.backtrack.origin = None;
