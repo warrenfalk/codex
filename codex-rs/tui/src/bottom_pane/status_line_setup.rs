@@ -107,11 +107,14 @@ pub(crate) enum StatusLineItem {
     #[strum(to_string = "context-used", serialize = "context-usage")]
     ContextUsed,
 
-    /// Remaining usage on the primary rate limit.
+    /// Pace-relative headroom or deficit on the primary rate limit.
     FiveHourLimit,
 
-    /// Remaining usage on the secondary rate limit.
+    /// Remaining usage and time percentages on the weekly rate limit.
     WeeklyLimit,
+
+    /// Remaining weekly usage bar with a time-remaining marker.
+    WeeklyLimitBar,
 
     /// Codex application version.
     CodexVersion,
@@ -184,10 +187,13 @@ impl StatusLineItem {
                 "Percentage of context window used (omitted when unknown)"
             }
             StatusLineItem::FiveHourLimit => {
-                "Remaining usage on the primary usage limit (omitted when unavailable)"
+                "Headroom or deficit versus pace on the primary usage limit (omitted when unavailable)"
             }
             StatusLineItem::WeeklyLimit => {
-                "Remaining usage on the secondary usage limit (omitted when unavailable)"
+                "Usage limit and time remaining as percentages (omitted when unavailable)"
+            }
+            StatusLineItem::WeeklyLimitBar => {
+                "Usage remaining bar with a time-left marker (omitted when unavailable)"
             }
             StatusLineItem::CodexVersion => "Codex application version",
             StatusLineItem::ContextWindowSize => {
@@ -236,6 +242,7 @@ impl StatusLineItem {
             StatusLineItem::ContextUsed => StatusSurfacePreviewItem::ContextUsed,
             StatusLineItem::FiveHourLimit => StatusSurfacePreviewItem::FiveHourLimit,
             StatusLineItem::WeeklyLimit => StatusSurfacePreviewItem::WeeklyLimit,
+            StatusLineItem::WeeklyLimitBar => StatusSurfacePreviewItem::WeeklyLimitBar,
             StatusLineItem::CodexVersion => StatusSurfacePreviewItem::CodexVersion,
             StatusLineItem::ContextWindowSize => StatusSurfacePreviewItem::ContextWindowSize,
             StatusLineItem::UsedTokens => StatusSurfacePreviewItem::UsedTokens,
@@ -380,6 +387,16 @@ impl StatusLineSetupView {
             StatusLineItem::FiveHourLimit | StatusLineItem::WeeklyLimit => (
                 preview_data.rate_limit_item_name(item.preview_item(), &default_name),
                 preview_data.rate_limit_item_description(item.preview_item(), default_description),
+            ),
+            StatusLineItem::WeeklyLimitBar => (
+                format!(
+                    "{}-bar",
+                    preview_data.rate_limit_item_name(
+                        StatusSurfacePreviewItem::WeeklyLimit,
+                        "weekly-limit",
+                    )
+                ),
+                default_description.to_string(),
             ),
             _ => (default_name, default_description.to_string()),
         };
