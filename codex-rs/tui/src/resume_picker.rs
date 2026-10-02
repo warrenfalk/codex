@@ -74,6 +74,7 @@ use unicode_width::UnicodeWidthStr;
 use uuid::Uuid;
 
 mod archive;
+mod directory_filter;
 mod layout;
 mod page_loading;
 
@@ -81,6 +82,8 @@ mod page_loading;
 #[path = "resume_picker_color_tests.rs"]
 mod color_tests;
 
+use directory_filter::CycleDirection;
+use directory_filter::SessionFilterMode;
 use page_loading::PageCwdFilter;
 use page_loading::PageLoadMode;
 use page_loading::PaginationState;
@@ -174,6 +177,7 @@ struct PageLoadRequest {
     search_token: Option<usize>,
     mode: PageLoadMode,
     cwd_filter: Option<PathBuf>,
+    filter_mode: SessionFilterMode,
     status: SessionStatus,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
@@ -200,30 +204,6 @@ enum PickerLoadRequest {
 enum ProviderFilter {
     Any,
     MatchDefault(String),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SessionFilterMode {
-    Cwd,
-    All,
-}
-
-impl SessionFilterMode {
-    fn from_show_all(show_all: bool, filter_cwd: Option<&Path>) -> Self {
-        if show_all || filter_cwd.is_none() {
-            Self::All
-        } else {
-            Self::Cwd
-        }
-    }
-
-    fn toggle(self, filter_cwd: Option<&Path>) -> Self {
-        match self {
-            Self::Cwd => Self::All,
-            Self::All if filter_cwd.is_some() => Self::Cwd,
-            Self::All => Self::All,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -568,7 +548,18 @@ async fn run_session_picker_with_loader(
     state.local_filter_cwd = options.local_filter_cwd;
     state.use_theme_colors = options.use_theme_colors;
     state.copy_on_select = options.copy_on_select;
-    state.worktrees_enabled = options.worktrees_enabled;
+    state.repo_filter_available = options.worktrees_enabled
+        && state
+            .local_filter_cwd
+            .as_deref()
+            .and_then(codex_git_utils::repository_identity)
+            .is_some();
+    state.filter_mode = SessionFilterMode::from_show_all(
+        options.show_all,
+        state.filter_cwd.as_deref(),
+        state.repo_filter_available,
+        options.action,
+    );
     state.density = options.initial_density;
     state.view_persistence = options.view_persistence;
     state.keymap = options.keymap;
@@ -720,9 +711,7 @@ fn spawn_app_server_page_loader(
                         request.cursor.as_ref(),
                         request.cwd_filter.as_deref(),
                         uses_remote_filesystem,
-                        config.as_ref().is_some_and(|config| {
-                            config.features.enabled(codex_features::Feature::Worktrees)
-                        }),
+                        request.filter_mode,
                     );
                     let cursor = request.cursor.map(|PageCursor::AppServer(cursor)| cursor);
                     let params = thread_list_params(
@@ -872,7 +861,7 @@ struct PickerState {
     status: SessionStatus,
     filter_cwd: Option<PathBuf>,
     local_filter_cwd: Option<PathBuf>,
-    worktrees_enabled: bool,
+    repo_filter_available: bool,
     toolbar_focus: ToolbarControl,
     density: SessionListDensity,
     launch_context: SessionPickerLaunchContext,
@@ -1067,11 +1056,16 @@ impl PickerState {
             view_rows: None,
             view_width: None,
             provider_filter,
-            filter_mode: SessionFilterMode::from_show_all(show_all, filter_cwd.as_deref()),
+            filter_mode: SessionFilterMode::from_show_all(
+                show_all,
+                filter_cwd.as_deref(),
+                /*repo_filter_available*/ false,
+                action,
+            ),
             status: SessionStatus::Active,
             local_filter_cwd: filter_cwd.clone(),
             local_cwd_matches: HashMap::new(),
-            worktrees_enabled: false,
+            repo_filter_available: false,
             filter_cwd,
             toolbar_focus: ToolbarControl::Filter,
             density: SessionListDensity::Comfortable,
@@ -1405,7 +1399,12 @@ impl PickerState {
                 && (self.keymap.list.move_left.is_pressed(key)
                     || self.keymap.list.move_right.is_pressed(key)) =>
             {
-                self.change_focused_toolbar_value();
+                let direction = if self.keymap.list.move_left.is_pressed(key) {
+                    CycleDirection::Previous
+                } else {
+                    CycleDirection::Next
+                };
+                self.change_focused_toolbar_value(direction);
                 self.request_frame();
             }
             KeyEvent {
@@ -1487,6 +1486,7 @@ impl PickerState {
             search_token,
             mode,
             cwd_filter: self.active_cwd_filter(),
+            filter_mode: self.filter_mode,
             status: self.status,
             provider_filter: self.provider_filter.clone(),
             sort_key: self.sort_key,
@@ -1527,6 +1527,7 @@ impl PickerState {
                         search_token,
                         mode: PageLoadMode::StoreDefault,
                         cwd_filter: self.active_cwd_filter(),
+                        filter_mode: self.filter_mode,
                         status: self.status,
                         provider_filter: self.provider_filter.clone(),
                         sort_key: self.sort_key,
@@ -1682,7 +1683,7 @@ impl PickerState {
             return false;
         };
         paths_match(row_cwd, filter_cwd)
-            || (self.worktrees_enabled
+            || (self.filter_mode == SessionFilterMode::Repo
                 && codex_git_utils::repository_identity(row_cwd)
                     .zip(codex_git_utils::repository_identity(filter_cwd))
                     .is_some_and(|(row, filter)| {
@@ -1840,6 +1841,7 @@ impl PickerState {
             search_token,
             mode,
             cwd_filter: self.active_cwd_filter(),
+            filter_mode: self.filter_mode,
             status: self.status,
             provider_filter: self.provider_filter.clone(),
             sort_key: self.sort_key,
@@ -1878,8 +1880,12 @@ impl PickerState {
         self.start_initial_load();
     }
 
-    fn toggle_filter_mode(&mut self) {
-        let next_filter_mode = self.filter_mode.toggle(self.filter_cwd.as_deref());
+    fn toggle_filter_mode(&mut self, direction: CycleDirection) {
+        let next_filter_mode = self.filter_mode.cycle(
+            direction,
+            self.filter_cwd.as_deref(),
+            self.repo_filter_available,
+        );
         if self.filter_mode == next_filter_mode {
             return;
         }
@@ -1897,7 +1903,7 @@ impl PickerState {
 
     fn active_cwd_filter(&self) -> Option<PathBuf> {
         match self.filter_mode {
-            SessionFilterMode::Cwd => self.filter_cwd.clone(),
+            SessionFilterMode::Cwd | SessionFilterMode::Repo => self.filter_cwd.clone(),
             SessionFilterMode::All => None,
         }
     }
@@ -1910,10 +1916,10 @@ impl PickerState {
         self.toolbar_focus = self.toolbar_focus.next();
     }
 
-    fn change_focused_toolbar_value(&mut self) {
+    fn change_focused_toolbar_value(&mut self, direction: CycleDirection) {
         match self.toolbar_focus {
             ToolbarControl::Sort => self.toggle_sort_key(),
-            ToolbarControl::Filter => self.toggle_filter_mode(),
+            ToolbarControl::Filter => self.toggle_filter_mode(direction),
             ToolbarControl::Status => self.toggle_status(),
         }
     }
@@ -2246,25 +2252,19 @@ fn filter_control_spans(state: &PickerState, compact: bool) -> Vec<Span<'static>
         return vec![
             "Filter:".set_style(secondary_text_style()),
             toolbar_value(
-                filter_mode_label(state.filter_mode),
+                state.filter_mode.label(),
                 /*active*/ true,
                 filter_focused,
             ),
         ];
     }
-    vec![
-        "Filter: ".set_style(secondary_text_style()),
-        toolbar_value(
-            filter_mode_label(SessionFilterMode::Cwd),
-            state.filter_mode == SessionFilterMode::Cwd,
-            filter_focused,
-        ),
-        toolbar_value(
-            filter_mode_label(SessionFilterMode::All),
-            state.filter_mode == SessionFilterMode::All,
-            filter_focused,
-        ),
-    ]
+    let mut spans = vec!["Filter: ".set_style(secondary_text_style())];
+    spans.extend(
+        SessionFilterMode::available(state.filter_cwd.as_deref(), state.repo_filter_available)
+            .iter()
+            .map(|mode| toolbar_value(mode.label(), state.filter_mode == *mode, filter_focused)),
+    );
+    spans
 }
 
 fn toolbar_value(label: &'static str, active: bool, focused: bool) -> Span<'static> {
@@ -2278,13 +2278,6 @@ fn toolbar_value(label: &'static str, active: bool, focused: bool) -> Span<'stat
         })
     } else {
         value.set_style(secondary_text_style())
-    }
-}
-
-fn filter_mode_label(filter_mode: SessionFilterMode) -> &'static str {
-    match filter_mode {
-        SessionFilterMode::Cwd => "Cwd",
-        SessionFilterMode::All => "All",
     }
 }
 
@@ -2866,7 +2859,7 @@ fn render_comfortable_session_lines(
         .as_ref()
         .map(|path| format_directory_display(path, /*max_width*/ None));
     let show_cwd = state.filter_mode == SessionFilterMode::All
-        || (state.worktrees_enabled
+        || (state.filter_mode == SessionFilterMode::Repo
             && row
                 .cwd
                 .as_deref()
@@ -3599,7 +3592,7 @@ mod tests {
     use std::sync::Mutex;
     use tempfile::tempdir;
 
-    fn page(
+    pub(super) fn page(
         rows: Vec<Row>,
         next_cursor: Option<&str>,
         num_scanned_files: usize,
@@ -3614,7 +3607,9 @@ mod tests {
         }
     }
 
-    fn page_only_loader(loader: impl Fn(PageLoadRequest) + Send + Sync + 'static) -> PickerLoader {
+    pub(super) fn page_only_loader(
+        loader: impl Fn(PageLoadRequest) + Send + Sync + 'static,
+    ) -> PickerLoader {
         Arc::new(move |request| {
             if let PickerLoadRequest::Page(request) = request {
                 loader(request);
@@ -3642,7 +3637,7 @@ mod tests {
         Ok(page(rows, next_cursor, n, /*reached_scan_cap*/ false))
     }
 
-    fn make_row(path: &str, ts: &str, preview: &str) -> Row {
+    pub(super) fn make_row(path: &str, ts: &str, preview: &str) -> Row {
         let timestamp = parse_timestamp_str(ts).expect("timestamp should parse");
         Row {
             path: Some(PathBuf::from(path)),
@@ -3768,7 +3763,12 @@ mod tests {
         row.cwd = Some(linked.clone());
         let single = ThreadListCwdFilter::One(primary.display().to_string());
         for enabled in [false, true] {
-            state.worktrees_enabled = enabled;
+            state.repo_filter_available = enabled;
+            state.filter_mode = if enabled {
+                SessionFilterMode::Repo
+            } else {
+                SessionFilterMode::Cwd
+            };
             state.start_initial_load();
             state.ingest_page(page(
                 vec![row.clone()],
@@ -3821,9 +3821,12 @@ mod tests {
             .features
             .set_enabled(codex_features::Feature::Worktrees, /*enabled*/ true)
             .unwrap();
+        let unrelated = root.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).unwrap();
         for (filename_ts, timestamp, cwd) in [
             ("2025-01-02T10-00-00", "2025-01-02T10:00:00Z", &primary),
             ("2025-01-02T11-00-00", "2025-01-02T11:00:00Z", &linked),
+            ("2025-01-02T12-00-00", "2025-01-02T12:00:00Z", &unrelated),
         ] {
             crate::tests::write_session_rollout(
                 root.path(),
@@ -3861,8 +3864,32 @@ mod tests {
             SessionPickerAction::Resume,
         );
         live_picker.local_filter_cwd = Some(primary.clone());
-        live_picker.worktrees_enabled = true;
+        live_picker.repo_filter_available = true;
         live_picker.start_initial_load();
+        for mut expected in [
+            vec![primary.clone()],
+            vec![primary.clone(), linked.clone()],
+            vec![primary.clone(), linked.clone(), unrelated],
+            vec![primary.clone()],
+        ] {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(10), bg_rx.recv())
+                .await
+                .expect("app-server page response")
+                .expect("page event");
+            live_picker
+                .handle_background_event(event)
+                .await
+                .expect("ingest app-server page");
+            let mut actual: Vec<_> = live_picker
+                .all_rows
+                .iter()
+                .map(|row| row.cwd.clone().unwrap())
+                .collect();
+            actual.sort();
+            expected.sort();
+            assert_eq!(actual, expected);
+            live_picker.toggle_filter_mode(CycleDirection::Next);
+        }
         let event = tokio::time::timeout(std::time::Duration::from_secs(10), bg_rx.recv())
             .await
             .expect("app-server page response")
@@ -3893,7 +3920,7 @@ mod tests {
         let mut local = crate::latest_session_lookup_params(
             /*uses_remote_filesystem*/ false,
             /*model_provider*/ None,
-            &config,
+            crate::LastSessionScope::Repo,
             Some(&primary),
             /*include_non_interactive*/ false,
             crate::LatestSessionLookupMode::StateDbOnly,
@@ -3904,7 +3931,7 @@ mod tests {
             crate::latest_session_lookup_params(
                 /*uses_remote_filesystem*/ true,
                 /*model_provider*/ None,
-                &config,
+                crate::LastSessionScope::Repo,
                 Some(&primary),
                 /*include_non_interactive*/ false,
                 crate::LatestSessionLookupMode::StateDbOnly,

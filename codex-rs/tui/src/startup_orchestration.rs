@@ -227,7 +227,7 @@ pub(super) async fn run_main_inner(
     };
     let session_action = if cli.fork_picker || cli.fork_last || cli.fork_session_id.is_some() {
         startup_draft::StartupDraftSessionAction::Fork
-    } else if cli.resume_picker || cli.resume_last || cli.resume_session_id.is_some() {
+    } else if cli.resume_picker || cli.resume_last.is_some() || cli.resume_session_id.is_some() {
         startup_draft::StartupDraftSessionAction::Resume
     } else {
         startup_draft::StartupDraftSessionAction::New

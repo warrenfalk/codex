@@ -4,6 +4,9 @@
 #![recursion_limit = "256"]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+pub use crate::latest_session::LastSessionScope;
+use crate::latest_session::LatestSessionLookupMode;
+use crate::latest_session::latest_session_lookup_params;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
@@ -41,10 +44,6 @@ use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::GetAccountResponse;
 use codex_app_server_protocol::Thread as AppServerThread;
-#[cfg(test)]
-use codex_app_server_protocol::ThreadListCwdFilter;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSortKey as AppServerThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
 use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
@@ -168,6 +167,7 @@ mod footer_hint;
 mod key_hint;
 mod keymap;
 mod keymap_setup;
+mod latest_session;
 mod line_truncation;
 pub(crate) mod live_wrap;
 mod local_settings;
@@ -846,6 +846,7 @@ async fn lookup_latest_session_target_with_app_server(
     app_server: &mut AppServerSession,
     config: &Config,
     cwd_filter: Option<&Path>,
+    scope: LastSessionScope,
     include_non_interactive: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
     let uses_remote_workspace = app_server.uses_remote_workspace();
@@ -858,7 +859,7 @@ async fn lookup_latest_session_target_with_app_server(
             .thread_list(latest_session_lookup_params(
                 uses_remote_filesystem,
                 model_provider.clone(),
-                config,
+                scope,
                 cwd_filter,
                 include_non_interactive,
                 lookup_mode,
@@ -875,48 +876,6 @@ async fn lookup_latest_session_target_with_app_server(
         }
     }
     Ok(None)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LatestSessionLookupMode {
-    StateDbOnly,
-    ScanAndRepair,
-}
-
-fn latest_session_lookup_params(
-    uses_remote_filesystem: bool,
-    model_provider: Option<String>,
-    config: &Config,
-    cwd_filter: Option<&Path>,
-    include_non_interactive: bool,
-    lookup_mode: LatestSessionLookupMode,
-) -> ThreadListParams {
-    ThreadListParams {
-        originators: None,
-        cursor: None,
-        limit: Some(1),
-        sort_key: Some(AppServerThreadSortKey::UpdatedAt),
-        sort_direction: None,
-        model_providers: model_provider.map(|provider| vec![provider]),
-        source_kinds: Some(resume_source_kinds(include_non_interactive)),
-        archived: Some(false),
-        section_id: None,
-        project_id: None,
-        parent_thread_id: None,
-        ancestor_thread_id: None,
-        cwd: cwd_filter.map(|cwd| {
-            resume_picker::repository_cwd_filter(
-                cwd,
-                uses_remote_filesystem,
-                config.features.enabled(codex_features::Feature::Worktrees),
-            )
-        }),
-        use_state_db_only: match lookup_mode {
-            LatestSessionLookupMode::StateDbOnly => true,
-            LatestSessionLookupMode::ScanAndRepair => false,
-        },
-        search_term: None,
-    }
 }
 
 fn config_cwd_for_app_server_target(
@@ -1526,6 +1485,11 @@ async fn run_ratatui_app(
                         startup_app_server,
                         &config,
                         filter_cwd,
+                        if config.features.enabled(Feature::Worktrees) {
+                            LastSessionScope::Repo
+                        } else {
+                            LastSessionScope::Cwd
+                        },
                         /*include_non_interactive*/ false,
                     ),
                 )
@@ -1607,7 +1571,7 @@ async fn run_ratatui_app(
                 );
             }
         }
-    } else if cli.resume_last {
+    } else if let Some(scope) = cli.resume_last {
         let filter_cwd = latest_session_cwd_filter(
             uses_remote_workspace,
             remote_cwd_override.as_deref(),
@@ -1625,6 +1589,7 @@ async fn run_ratatui_app(
                     startup_app_server,
                     &config,
                     filter_cwd,
+                    scope,
                     cli.resume_include_non_interactive,
                 ),
             )
@@ -3272,137 +3237,6 @@ requires_openai_auth = {requires_openai_auth}
     }
 
     #[tokio::test]
-    async fn latest_session_lookup_params_keep_local_filters_for_embedded_sessions()
-    -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let cwd = temp_dir.path().join("project");
-
-        let params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ false,
-            /*model_provider*/ None,
-            &config,
-            Some(cwd.as_path()),
-            /*include_non_interactive*/ false,
-            LatestSessionLookupMode::StateDbOnly,
-        );
-
-        assert_eq!(params.model_providers, None);
-        assert_eq!(
-            params.cwd,
-            Some(ThreadListCwdFilter::One(cwd.to_string_lossy().to_string()))
-        );
-        assert!(params.use_state_db_only);
-
-        let scan_params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ false,
-            /*model_provider*/ None,
-            &config,
-            Some(cwd.as_path()),
-            /*include_non_interactive*/ false,
-            LatestSessionLookupMode::ScanAndRepair,
-        );
-        assert!(!scan_params.use_state_db_only);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn latest_session_lookup_params_honor_explicit_provider() -> color_eyre::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let cwd = temp_dir.path().join("project");
-        let params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ false,
-            Some("selected-provider".to_string()),
-            &config,
-            Some(cwd.as_path()),
-            /*include_non_interactive*/ false,
-            LatestSessionLookupMode::StateDbOnly,
-        );
-
-        assert_eq!(
-            params.model_providers,
-            Some(vec!["selected-provider".to_string()])
-        );
-        assert_eq!(
-            params.cwd,
-            Some(ThreadListCwdFilter::One(cwd.to_string_lossy().to_string()))
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn latest_session_lookup_params_omit_local_filters_for_remote_sessions()
-    -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-
-        let params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ true,
-            /*model_provider*/ None,
-            &config,
-            /*cwd_filter*/ None,
-            /*include_non_interactive*/ false,
-            LatestSessionLookupMode::StateDbOnly,
-        );
-
-        assert_eq!(params.model_providers, None);
-        assert_eq!(params.cwd, None);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn latest_session_lookup_params_can_include_non_interactive_sources()
-    -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-
-        let params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ true,
-            /*model_provider*/ None,
-            &config,
-            /*cwd_filter*/ None,
-            /*include_non_interactive*/ true,
-            LatestSessionLookupMode::StateDbOnly,
-        );
-
-        assert_eq!(
-            params.source_kinds,
-            Some(vec![
-                ThreadSourceKind::Cli,
-                ThreadSourceKind::VsCode,
-                ThreadSourceKind::Exec,
-                ThreadSourceKind::AppServer,
-            ])
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn latest_session_lookup_params_keep_explicit_cwd_filter_for_remote_sessions()
-    -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let cwd = Path::new("repo/on/server");
-
-        let params = latest_session_lookup_params(
-            /*uses_remote_filesystem*/ true,
-            /*model_provider*/ None,
-            &config,
-            Some(cwd),
-            /*include_non_interactive*/ false,
-            LatestSessionLookupMode::StateDbOnly,
-        );
-
-        assert_eq!(params.model_providers, None);
-        assert_eq!(
-            params.cwd,
-            Some(ThreadListCwdFilter::One(String::from("repo/on/server")))
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn latest_session_cwd_filter_respects_scope_options() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
@@ -3426,166 +3260,6 @@ requires_openai_auth = {requires_openai_auth}
         assert_eq!(local_filter, Some(config.cwd.as_path()));
         assert_eq!(show_all_filter, None);
         assert_eq!(remote_filter, Some(remote_cwd));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn fork_last_filters_latest_session_by_cwd_unless_show_all() -> color_eyre::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_cwd = temp_dir.path().join("project");
-        let linked_cwd = temp_dir.path().join("linked-project");
-        let other_cwd = temp_dir.path().join("other-project");
-        let admin = project_cwd.join(".git/worktrees/linked");
-        std::fs::create_dir_all(&admin)?;
-        std::fs::create_dir_all(&linked_cwd)?;
-        std::fs::create_dir_all(&other_cwd)?;
-        std::fs::write(project_cwd.join(".git/HEAD"), "ref: refs/heads/main\n")?;
-        std::fs::write(admin.join("commondir"), "../..\n")?;
-        std::fs::write(
-            admin.join("gitdir"),
-            linked_cwd.join(".git").display().to_string(),
-        )?;
-        std::fs::write(
-            linked_cwd.join(".git"),
-            format!("gitdir: {}", admin.display()),
-        )?;
-
-        let mut config = ConfigBuilder::default()
-            .codex_home(temp_dir.path().to_path_buf())
-            .harness_overrides(ConfigOverrides {
-                cwd: Some(project_cwd.clone()),
-                ..Default::default()
-            })
-            .build()
-            .await?;
-        config
-            .features
-            .set_enabled(codex_features::Feature::Worktrees, /*enabled*/ false)?;
-        let model_provider = config.model_provider_id.as_str();
-        let project_thread_id = write_session_rollout(
-            temp_dir.path(),
-            "2025-01-02T10-00-00",
-            "2025-01-02T10:00:00Z",
-            "older project session",
-            model_provider,
-            &project_cwd,
-        )?;
-        let linked_thread_id = write_session_rollout(
-            temp_dir.path(),
-            "2025-01-02T11-00-00",
-            "2025-01-02T11:00:00Z",
-            "newer linked-worktree session",
-            model_provider,
-            &linked_cwd,
-        )?;
-        let other_thread_id = write_session_rollout(
-            temp_dir.path(),
-            "2025-01-02T12-00-00",
-            "2025-01-02T12:00:00Z",
-            "newer other project session",
-            model_provider,
-            &other_cwd,
-        )?;
-
-        let mut app_server = AppServerSession::new(
-            codex_app_server_client::AppServerClient::InProcess(
-                start_test_embedded_app_server(config.clone()).await?,
-            ),
-            ThreadParamsMode::Embedded,
-        );
-        let filter_cwd = latest_session_cwd_filter(
-            /*uses_remote_workspace*/ false, /*remote_cwd_override*/ None, &config,
-            /*show_all*/ false,
-        );
-        let disabled_target = lookup_latest_session_target_with_app_server(
-            /*uses_remote_filesystem*/ false,
-            &mut app_server,
-            &config,
-            filter_cwd,
-            /*include_non_interactive*/ false,
-        )
-        .await?
-        .expect("expected current-checkout target with worktrees disabled");
-        config
-            .features
-            .set_enabled(codex_features::Feature::Worktrees, /*enabled*/ true)?;
-        let filter_cwd = latest_session_cwd_filter(
-            /*uses_remote_workspace*/ false, /*remote_cwd_override*/ None, &config,
-            /*show_all*/ false,
-        );
-        let scoped_target = lookup_latest_session_target_with_app_server(
-            /*uses_remote_filesystem*/ false,
-            &mut app_server,
-            &config,
-            filter_cwd,
-            /*include_non_interactive*/ false,
-        )
-        .await?
-        .expect("expected project-scoped fork --last target");
-        let show_all_filter_cwd = latest_session_cwd_filter(
-            /*uses_remote_workspace*/ false, /*remote_cwd_override*/ None, &config,
-            /*show_all*/ true,
-        );
-        let show_all_target = lookup_latest_session_target_with_app_server(
-            /*uses_remote_filesystem*/ false,
-            &mut app_server,
-            &config,
-            show_all_filter_cwd,
-            /*include_non_interactive*/ false,
-        )
-        .await?
-        .expect("expected global fork --last target");
-        app_server.shutdown().await?;
-
-        assert_eq!(disabled_target.thread_id, project_thread_id);
-        assert_eq!(scoped_target.thread_id, linked_thread_id);
-        assert_eq!(show_all_target.thread_id, other_thread_id);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn latest_session_lookup_falls_back_for_rollout_missing_from_state_db()
-    -> color_eyre::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_cwd = temp_dir.path().join("project");
-        std::fs::create_dir_all(&project_cwd)?;
-        let config = ConfigBuilder::default()
-            .codex_home(temp_dir.path().to_path_buf())
-            .harness_overrides(ConfigOverrides {
-                cwd: Some(project_cwd.clone()),
-                ..Default::default()
-            })
-            .build()
-            .await?;
-        let mut app_server = AppServerSession::new(
-            codex_app_server_client::AppServerClient::InProcess(
-                start_test_embedded_app_server(config.clone()).await?,
-            ),
-            ThreadParamsMode::Embedded,
-        );
-
-        // Simulate a legacy writer creating a rollout after the state DB backfill completed.
-        let thread_id = write_session_rollout(
-            temp_dir.path(),
-            "2025-01-02T10-00-00",
-            "2025-01-02T10:00:00Z",
-            "legacy writer session",
-            config.model_provider_id.as_str(),
-            &project_cwd,
-        )?;
-
-        let target = lookup_latest_session_target_with_app_server(
-            /*uses_remote_filesystem*/ false,
-            &mut app_server,
-            &config,
-            Some(project_cwd.as_path()),
-            /*include_non_interactive*/ false,
-        )
-        .await?
-        .expect("expected scan-and-repair fallback to find the rollout");
-        app_server.shutdown().await?;
-
-        assert_eq!(target.thread_id, thread_id);
         Ok(())
     }
 

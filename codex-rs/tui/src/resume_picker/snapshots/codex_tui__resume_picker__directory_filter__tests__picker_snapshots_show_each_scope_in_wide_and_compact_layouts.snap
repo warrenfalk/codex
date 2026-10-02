@@ -1,0 +1,164 @@
+---
+source: tui/src/resume_picker/directory_filter_tests.rs
+expression: "snapshots.join(\"\\n\")"
+---
+Resume, default Cwd, width 110
+ Resume a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Resume, default Cwd, width 38
+ Resume a previous session
+ Filter: Cwd   Active  Sort: Updated
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Resume, selected Cwd, width 110
+ Resume a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Resume, selected Cwd, width 38
+ Resume a previous session
+ Filter: Cwd   Active  Sort: Updated
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Resume, selected Repo, width 110
+ Resume a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Resume, selected Repo, width 38
+ Resume a previous session
+ Filter: Repo
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Resume, selected All, width 110
+ Resume a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Resume, selected All, width 38
+ Resume a previous session
+ Filter: All   Active  Sort: Updated
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter resume   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Fork, default Repo, width 110
+ Fork a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Fork, default Repo, width 38
+ Fork a previous session
+ Filter: Repo
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Fork, selected Cwd, width 110
+ Fork a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Fork, selected Cwd, width 38
+ Fork a previous session
+ Filter: Cwd   Active  Sort: Updated
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Fork, selected Repo, width 110
+ Fork a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Fork, selected Repo, width 38
+ Fork a previous session
+ Filter: Repo
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
+Fork, selected All, width 110
+ Fork a previous session
+ Filter:  Cwd  Repo  All    Status:  Active  Archived    Sort:  Updated  Created
+ Type to search
+  No sessions yet
+
+
+─────────────────────────────────────────────────────────────────────────────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit   tab focus   ←/→ option
+ ctrl+o dense   ctrl+t preview   ctrl+e exp   ↑/↓ browse
+Fork, selected All, width 38
+ Fork a previous session
+ Filter: All   Active  Sort: Updated
+ Type to search
+  No sessions yet
+
+
+─────────────────────── 0 / 0 · 100% ─
+ enter fork   esc new   ctrl+c quit
+ ctrl+o dense   ctrl+t preview
