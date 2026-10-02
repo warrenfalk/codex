@@ -289,9 +289,12 @@ async fn read_thread_from_rollout_path(
     if thread.history_mode == ThreadHistoryMode::Legacy
         && let Ok(Some(name)) =
             find_thread_name_by_id(store.config.codex_home.as_path(), &thread.thread_id).await
-        && !name.trim().is_empty()
     {
-        set_thread_name(&mut thread, name);
+        if name.trim().is_empty() {
+            thread.name = None;
+        } else {
+            set_thread_name(&mut thread, name);
+        }
     }
     Ok(thread)
 }
@@ -442,12 +445,16 @@ async fn thread_name_from_metadata(
             if title.is_some() && !has_guardian_default_title(metadata) {
                 title
             } else {
-                find_thread_name_by_id(store.config.codex_home.as_path(), &metadata.id)
+                // An explicit clear must suppress a derived fallback, while a distinct
+                // SQLite title keeps precedence over legacy index entries.
+                match find_thread_name_by_id(store.config.codex_home.as_path(), &metadata.id)
                     .await
                     .ok()
                     .flatten()
-                    .filter(|name| !name.trim().is_empty())
-                    .or(title)
+                {
+                    Some(name) => (!name.trim().is_empty()).then_some(name),
+                    None => title,
+                }
             }
         }
     }
