@@ -2384,6 +2384,64 @@ async fn copy_shortcut_can_be_remapped() {
 }
 
 #[tokio::test]
+async fn ctrl_i_copy_reports_when_no_input_exists() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert_matches!(
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL)),
+        crate::chatwidget::KeyEventAction::None
+    );
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("ctrl_i_copy_no_input_message", rendered);
+    assert!(
+        rendered.contains("No input to copy"),
+        "expected no-input message, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn ctrl_i_copy_uses_raw_composer_text_with_pending() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let placeholder = "[Pasted Content]";
+    let text = format!("first line {placeholder}\nlast line");
+    let placeholder_start = "first line ".len();
+    let placeholder_end = placeholder_start + placeholder.len();
+    chat.bottom_pane.set_composer_text(
+        text,
+        vec![TextElement::new(
+            (placeholder_start..placeholder_end).into(),
+            Some(placeholder.to_string()),
+        )],
+        Vec::new(),
+    );
+    chat.bottom_pane.set_composer_pending_pastes(vec![(
+        placeholder.to_string(),
+        "second line\nthird line".to_string(),
+    )]);
+
+    assert_matches!(
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL)),
+        crate::chatwidget::KeyEventAction::CopyComposerText(input)
+            if &*input == "first line second line\nthird line\nlast line"
+    );
+    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
+    chat.show_copy_result(
+        "current input",
+        Ok(crate::clipboard_copy::CopyStatus::Pending(1)),
+    );
+    let _pending = drain_insert_history(&mut rx);
+    chat.finish_clipboard(
+        &(1, Ok(crate::clipboard_copy::CopyStatus::Unconfirmed)),
+        /*composer_visible*/ true,
+    );
+    let rendered = lines_to_single_string(&drain_insert_history(&mut rx)[0]);
+    assert_chatwidget_snapshot!("ctrl_i_copy_unconfirmed_message", rendered);
+}
+
+#[tokio::test]
 async fn copy_shortcut_submits_markdown_and_reports_completion_once() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.transcript.last_agent_markdown = Some("copy me".to_string());

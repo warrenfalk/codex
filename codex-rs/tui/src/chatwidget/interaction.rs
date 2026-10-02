@@ -11,6 +11,7 @@ use crate::clipboard_copy::worker::CopyResult;
 pub(crate) enum KeyEventAction {
     None,
     CopyLastResponse(Arc<str>),
+    CopyComposerText(Arc<str>),
     PasteImage,
 }
 
@@ -131,6 +132,18 @@ impl ChatWidget {
         }
 
         match key_event {
+            // Ctrl+I - copy the current composer input from the main view.
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) && c.eq_ignore_ascii_case(&'i') => {
+                self.bottom_pane.clear_quit_shortcut_hint();
+                self.quit_shortcut_expires_at = None;
+                self.quit_shortcut_key = None;
+                return self.prepare_composer_text_copy();
+            }
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
@@ -360,6 +373,20 @@ impl ChatWidget {
         self.add_to_history(history_cell::new_error_event(message));
         self.request_redraw();
         false
+    }
+
+    /// Capture the expanded composer text for the app's clipboard worker.
+    pub(super) fn prepare_composer_text_copy(&mut self) -> KeyEventAction {
+        self.app_event_tx.send(AppEvent::FollowTranscript);
+        let input = self.composer_text_with_pending();
+        let action = if input.is_empty() {
+            self.add_error_message("No input to copy".into());
+            KeyEventAction::None
+        } else {
+            KeyEventAction::CopyComposerText(input.into())
+        };
+        self.request_redraw();
+        action
     }
 
     /// Capture the last response for the app to copy before processing another key.
