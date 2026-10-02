@@ -8,8 +8,8 @@ not a replacement test runner. Rust tests still run through `just test`.
 ## Preflight
 
 1. Check available RAM and free space on the Cargo target, temporary directory,
-   repository, and Nix store filesystems. Resolve the target symlink first;
-   checking only the repository filesystem can miss a full `/tmp`.
+   repository, and Nix store filesystems. Resolve any target symlink and check
+   environment/configuration overrides; these locations can use different disks.
 2. Enter the pinned flake shell and verify the required tools, including Rust,
    `just`, `cargo-nextest`, formatters, and any native dependencies changed by the
    release. Record version output. Keep V8 archives/bindings and other external
@@ -32,6 +32,37 @@ feature unification requires an explicit feature, record and test that choice.
 For v0.155.1, the full suite needed `codex-v8-poc/sandbox` to match the sandbox
 already enabled by code-mode runtime. This is a diagnostic hint for later
 versions, not a permanent instruction to enable arbitrary features or all features.
+
+## Cargo target and fixture storage
+
+Use a persistent `codex-rs/target` directory by default, or retain the user's
+chosen persistent `CARGO_TARGET_DIR`. Cargo build artifacts do not need to live
+in `/tmp`. Do not restore an old temporary target symlink simply because a prior
+replay used one. Keep upstream comparison artifacts in their own persistent
+target directory.
+
+After moving or unlinking a target, check Cargo configuration, inherited
+`CARGO_TARGET_DIR`, and ignored launchers under `personal/`. A launcher can
+silently redirect builds to the old path even after the symlink is gone. Update
+its bind mounts and helper-binary paths to use the selected target. The existing
+incremental-cleanup script follows `codex-rs/target`; an explicitly overridden
+target needs its own correctly scoped cleanup.
+
+Keep the target readable outside a test's deliberately denied `/tmp`. A private
+test `/tmp` may be backed by a directory on persistent storage; it need not use
+the host's `/tmp` filesystem. For fixtures that hard-link large executables,
+keep the prepared binaries and fixture directories on the same filesystem and
+visible through the same mount inside the test namespace. Matching devices
+alone does not guarantee that a hard link across separate bind mounts works.
+Probe a real hard link in that namespace, and refresh prepared binaries from
+the current build after relinking. Preserve serialization of genuine package
+copy tests; moving storage does not eliminate I/O contention.
+
+Unlinking a target does not move its cache. An empty replacement will rebuild
+on demand. Reusing the old cache is optional; migrate it only while no build
+uses either location, and let Cargo recheck freshness after relocation. Do not
+rerun the complete suite solely because the cache moved; repeat the affected
+launcher and helper preflight before the next behavioral validation.
 
 ## Linux/Nix shell fixtures
 

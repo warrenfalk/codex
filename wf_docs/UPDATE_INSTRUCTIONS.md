@@ -198,6 +198,12 @@ Do not use an entire workspace suite to discover missing tools or a broken runne
 - Retain the Cargo target and rooted native/V8 inputs across attempts when their
   configuration remains valid. Keep upstream comparison targets separate. Do not
   delete the whole target or alternate profiles as a routine troubleshooting step.
+- Use the persistent `codex-rs/target` directory by default, or the user's chosen
+  persistent `CARGO_TARGET_DIR`. Do not recreate an old `/tmp` symlink or override
+  that choice from a previous replay's launcher. Temporary paths in historical
+  logs are evidence of that run, not requirements for the next one. Follow the
+  [target and fixture storage checks](UPDATE_TEST_ENVIRONMENT.md#cargo-target-and-fixture-storage)
+  after changing locations.
 - Check free disk and available RAM before expensive commands. Choose Cargo/Nix
   concurrency from observed compiler memory use early; do not retain a temporary
   two-job limit for the entire update after resource pressure has passed. Recheck
