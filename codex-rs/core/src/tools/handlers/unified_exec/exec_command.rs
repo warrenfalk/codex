@@ -347,7 +347,7 @@ impl ExecCommandHandler {
             && prompt_is_rejected_by_policy(approval_policy, /*prompt_is_rule*/ false).is_some()
         {
             return Err(FunctionCallError::RespondToModel(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {approval_policy:?}"
+                "approval policy is {approval_policy:?}; reject command — this policy does not allow model-requested permission overrides"
             )));
         }
 

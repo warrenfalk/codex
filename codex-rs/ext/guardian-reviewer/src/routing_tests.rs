@@ -11,6 +11,8 @@ fn approval_routing_depends_on_policy_and_reviewer() {
     for (policy, expected) in [
         (AskForApproval::UnlessTrusted, [false, false]),
         (AskForApproval::OnRequest, [false, true]),
+        (AskForApproval::TrustSandbox, [false, true]),
+        (AskForApproval::TrustSandboxTimeout, [false, true]),
         (
             AskForApproval::Granular(GranularApprovalConfig {
                 sandbox_approval: true,

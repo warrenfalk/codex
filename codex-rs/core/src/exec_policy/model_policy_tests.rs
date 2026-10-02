@@ -2,6 +2,7 @@ use super::AllowPrefixRules;
 use super::ExecPolicyManager;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::sandboxing::SandboxPermissions;
+use crate::tools::sandboxing::ExecApprovalPromptCause;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use codex_execpolicy::Decision;
 use codex_execpolicy::MatchOptions;
@@ -152,6 +153,7 @@ async fn cyber_policy_requires_approval_for_broad_wrapped_and_resolved_prefixes(
             requirement,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: ExecApprovalPromptCause::SandboxOverride,
                 proposed_execpolicy_amendment: None,
             },
             "command {command:?} must not inherit a saved prefix approval",

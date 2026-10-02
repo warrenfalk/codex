@@ -559,19 +559,63 @@ fn empty_catalog_non_on_request_approval_messages_suppress_legacy_approval_text(
 }
 
 #[test]
-fn auto_review_approvals_append_auto_review_specific_guidance() {
+fn trust_sandbox_instructions_describe_sandbox_boundary_without_timeout() {
     let text = approval_text(
-        AskForApproval::OnRequest,
-        ApprovalsReviewer::AutoReview,
+        AskForApproval::TrustSandbox,
+        ApprovalsReviewer::User,
         ResolvedApprovalMessages::new(/*messages*/ None),
         &[],
         /*exec_permission_approvals_enabled*/ false,
         /*request_permissions_tool_enabled*/ false,
     );
 
-    assert!(text.contains("`approvals_reviewer` is `auto_review`"));
-    assert!(!text.contains("`approvals_reviewer` is `guardian_subagent`"));
-    assert!(text.contains("materially safer alternative"));
+    assert!(text.contains("`approval_policy` is `trust-sandbox`"));
+    assert!(text.contains("dangerous command shapes"));
+    assert!(text.contains("managed restricted filesystem sandbox"));
+    assert!(text.contains("sandbox_permissions: \"require_escalated\""));
+    assert!(text.contains("Explicit exec-policy prompt rules still require approval"));
+    assert!(!text.contains("300 seconds"));
+}
+
+#[test]
+fn trust_sandbox_timeout_instructions_include_timeout_and_permission_guidance() {
+    let text = approval_text(
+        AskForApproval::TrustSandboxTimeout,
+        ApprovalsReviewer::User,
+        ResolvedApprovalMessages::new(/*messages*/ None),
+        &[],
+        /*exec_permission_approvals_enabled*/ true,
+        /*request_permissions_tool_enabled*/ true,
+    );
+
+    assert!(text.contains("`approval_policy` is `trust-sandbox-timeout`"));
+    assert!(text.contains("with_additional_permissions"));
+    assert!(text.contains("# request_permissions Tool"));
+    assert!(text.contains("Sandbox-override command prompts can auto-approve after 300 seconds"));
+    assert!(text.contains("does not persist session approval"));
+    assert!(text.contains("Explicit exec-policy prompt rules still require approval"));
+}
+
+#[test]
+fn auto_review_approvals_append_auto_review_specific_guidance() {
+    for approval_policy in [
+        AskForApproval::OnRequest,
+        AskForApproval::TrustSandbox,
+        AskForApproval::TrustSandboxTimeout,
+    ] {
+        let text = approval_text(
+            approval_policy,
+            ApprovalsReviewer::AutoReview,
+            ResolvedApprovalMessages::new(/*messages*/ None),
+            &[],
+            /*exec_permission_approvals_enabled*/ false,
+            /*request_permissions_tool_enabled*/ false,
+        );
+
+        assert!(text.contains("`approvals_reviewer` is `auto_review`"));
+        assert!(!text.contains("`approvals_reviewer` is `guardian_subagent`"));
+        assert!(text.contains("materially safer alternative"));
+    }
 }
 
 #[test]

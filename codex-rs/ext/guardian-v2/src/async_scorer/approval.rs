@@ -15,13 +15,12 @@ use codex_extension_api::ApprovalDecision;
 use codex_extension_api::ApprovalDecisionInput;
 use codex_extension_api::ApprovalReviewContributor;
 use codex_extension_api::ExtensionFuture;
+use codex_guardian_reviewer::routes_approval_policy_to_guardian;
 use codex_protocol::approvals::GuardianReviewReason;
-use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::mcp::is_node_repl_backed_connector;
 use codex_protocol::openai_models::GuardianModelPolicy;
 use codex_protocol::openai_models::GuardianReviewMode;
 use codex_protocol::openai_models::GuardianScope;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::TruncationPolicy;
 use std::sync::Weak;
 
@@ -57,11 +56,7 @@ impl GuardianApprovalReviewer {
             return ApprovalDecision::Allow;
         }
         if !input.require_guardian
-            && (input.approvals_reviewer == ApprovalsReviewer::User
-                || !matches!(
-                    input.approval_policy,
-                    AskForApproval::OnRequest | AskForApproval::Granular(_)
-                ))
+            && !routes_approval_policy_to_guardian(input.approval_policy, input.approvals_reviewer)
         {
             return ApprovalDecision::AskUser;
         }

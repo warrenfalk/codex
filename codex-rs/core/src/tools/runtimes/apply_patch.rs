@@ -136,6 +136,7 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
             AskForApproval::Never => false,
             AskForApproval::Granular(granular_config) => granular_config.allows_sandbox_approval(),
             AskForApproval::OnRequest => true,
+            AskForApproval::TrustSandbox | AskForApproval::TrustSandboxTimeout => true,
             AskForApproval::UnlessTrusted => true,
         }
     }

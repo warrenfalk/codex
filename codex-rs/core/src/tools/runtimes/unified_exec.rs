@@ -889,6 +889,7 @@ mod tests {
             SandboxPermissions::RequireEscalated,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: crate::tools::sandboxing::ExecApprovalPromptCause::SandboxOverride,
                 proposed_execpolicy_amendment: None,
             },
         );
@@ -914,6 +915,7 @@ mod tests {
             SandboxPermissions::WithAdditionalPermissions,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: crate::tools::sandboxing::ExecApprovalPromptCause::SandboxOverride,
                 proposed_execpolicy_amendment: None,
             },
         );
