@@ -26,6 +26,9 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 
+#[path = "permission_profile_instructions.rs"]
+mod profile_instructions;
+
 const APPROVAL_POLICY_TRUST_SANDBOX: &str =
     include_str!("../templates/permissions/approval_policy/trust_sandbox.md");
 const APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT: &str =
@@ -63,6 +66,7 @@ pub struct ApprovalPromptContext<'a> {
     reviewer: ApprovalsReviewer,
     messages: ResolvedApprovalMessages<'a>,
     permission_messages: ResolvedPermissionMessages<'a>,
+    profile_instructions: Option<&'a str>,
 }
 
 impl<'a> ApprovalPromptContext<'a> {
@@ -71,7 +75,13 @@ impl<'a> ApprovalPromptContext<'a> {
             reviewer,
             messages: model_messages.approvals(),
             permission_messages: model_messages.permissions(),
+            profile_instructions: None,
         }
+    }
+
+    pub fn with_profile_instructions(mut self, instructions: &'a str) -> Self {
+        self.profile_instructions = Some(instructions);
+        self
     }
 }
 
@@ -103,6 +113,15 @@ impl PermissionsInstructions {
         context: PermissionsRenderContext<'_>,
         approval_context: ApprovalPromptContext<'_>,
     ) -> Self {
+        if let Some(instructions) = approval_context.profile_instructions {
+            return Self {
+                text: profile_instructions::render(
+                    context,
+                    approval_context.reviewer,
+                    instructions,
+                ),
+            };
+        }
         let mut remaining_path_bytes =
             MAX_PERMISSION_PATH_BYTES - OMITTED_PERMISSION_PATHS.len() - 1;
         let mut paths_omitted = false;

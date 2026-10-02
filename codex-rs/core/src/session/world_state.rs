@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::session::Session;
 use super::step_context::StepContext;
+use super::turn_context::TurnEnvironment;
 use crate::connectors;
 use crate::context::TokenBudgetContext;
 use crate::context::world_state::AgentsMdState;
@@ -181,10 +182,26 @@ impl Session {
             let cwd = environment
                 .and_then(|environment| environment.cwd().to_abs_path().ok())
                 .unwrap_or_else(|| turn_context.cwd.clone());
+            let active_profile = environment.map_or_else(
+                || turn_context.config.permissions.active_permission_profile(),
+                TurnEnvironment::active_permission_profile,
+            );
+            let profile_instructions = active_profile.as_ref().and_then(|profile| {
+                turn_context
+                    .config
+                    .permissions
+                    .profile_instructions
+                    .get(&profile.id)
+            });
+            let mut approval_context =
+                ApprovalPromptContext::new(settings.approvals_reviewer(), model_messages);
+            if let Some(instructions) = profile_instructions {
+                approval_context = approval_context.with_profile_instructions(instructions);
+            }
             world_state.add_section(PermissionsState::new(
                 &permission_profile,
                 settings.approval_policy(),
-                ApprovalPromptContext::new(settings.approvals_reviewer(), model_messages),
+                approval_context,
                 exec_policy.as_ref(),
                 &cwd,
                 paths.as_ref(),

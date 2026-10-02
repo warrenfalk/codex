@@ -28,6 +28,9 @@ use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 use tempfile::TempDir;
 
+#[path = "permission_profile_instructions.rs"]
+mod permission_profile_instructions;
+
 fn permissions_texts(request: &ResponsesRequest) -> Vec<String> {
     request
         .message_input_texts("developer")
