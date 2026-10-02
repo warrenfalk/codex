@@ -3,7 +3,7 @@
 use super::*;
 
 impl ChatWidget {
-    pub(super) fn notify(&mut self, notification: Notification) {
+    pub(crate) fn notify(&mut self, notification: Notification) {
         if !notification.allowed_for(&self.local_settings.tui.notification_settings.notifications) {
             return;
         }
@@ -24,11 +24,12 @@ impl ChatWidget {
 }
 
 #[derive(Debug)]
-pub(super) enum Notification {
+pub(crate) enum Notification {
     AgentTurnComplete { response: String },
     ExecApprovalRequested { command: String },
     EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
     ElicitationRequested { server_name: String },
+    FocusRequested,
     PlanModePrompt { title: String },
     AsyncQuestion { title: String },
 }
@@ -60,6 +61,7 @@ impl Notification {
             Notification::ElicitationRequested { server_name } => {
                 format!("Approval requested by {server_name}")
             }
+            Notification::FocusRequested => "Click to focus this Codex session".to_string(),
             Notification::PlanModePrompt { title } => {
                 format!("Plan mode prompt: {title}")
             }
@@ -75,6 +77,7 @@ impl Notification {
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. } => "approval-requested",
+            Notification::FocusRequested => "focus-requested",
             Notification::PlanModePrompt { .. } => "plan-mode-prompt",
             Notification::AsyncQuestion { .. } => "async-question",
         }
@@ -82,7 +85,7 @@ impl Notification {
 
     fn priority(&self) -> u8 {
         match self {
-            Notification::AgentTurnComplete { .. } => 0,
+            Notification::AgentTurnComplete { .. } | Notification::FocusRequested => 0,
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. }

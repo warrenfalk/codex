@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/notifications.rs
+expression: notification.display()
+---
+Click to focus this Codex session
