@@ -382,14 +382,18 @@ impl ThreadMetadata {
             return;
         }
 
+        if self.has_derived_title() {
+            self.title = existing.title.clone();
+        }
+    }
+
+    /// Whether the title is empty or a known history-derived fallback.
+    pub(crate) fn has_derived_title(&self) -> bool {
         let title = self.title.trim();
-        if title.is_empty()
+        title.is_empty()
             || self.first_user_message.as_deref().map(str::trim) == Some(title)
             || (title == crate::GUARDIAN_THREAD_TITLE
                 && crate::extract::metadata_is_guardian_review(self))
-        {
-            self.title = existing.title.clone();
-        }
     }
 
     /// Return the list of field names that differ between `self` and `other`.

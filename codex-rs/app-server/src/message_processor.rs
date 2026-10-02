@@ -108,6 +108,8 @@ use tracing::Instrument;
 use crate::models_refresh_worker::ModelsRefreshWorker;
 use crate::turn_admission::TurnAdmission;
 
+mod request_future;
+
 const CONNECTION_RPC_DRAIN_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
 
 fn deserialize_client_request(request: JSONRPCRequest) -> Result<ClientRequest, JSONRPCErrorError> {
@@ -1345,8 +1347,8 @@ impl MessageProcessor {
                 .map(|response| Some(response.into())),
             ClientRequest::EventFirehose { .. } => Ok(Some(EventFirehoseResponse {}.into())),
             ClientRequest::ThreadStart { params, .. } => {
-                self.thread_processor
-                    .thread_start(
+                request_future::boxed(|| {
+                    self.thread_processor.thread_start(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
@@ -1354,7 +1356,8 @@ impl MessageProcessor {
                         client_mcp_extensions.clone(),
                         request_context,
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadUnsubscribe { params, .. } => {
                 let thread_id = params.thread_id.clone();
@@ -1368,26 +1371,28 @@ impl MessageProcessor {
                 Ok(response)
             }
             ClientRequest::ThreadResume { params, .. } => {
-                self.thread_processor
-                    .thread_resume(
+                request_future::boxed(|| {
+                    self.thread_processor.thread_resume(
                         ThreadResumeTarget::Client(request_id.clone()),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                         client_mcp_extensions.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadFork { params, .. } => {
-                self.thread_processor
-                    .thread_fork(
+                request_future::boxed(|| {
+                    self.thread_processor.thread_fork(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                         client_mcp_extensions.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadArchive { params, .. } => {
                 self.thread_processor
@@ -1696,24 +1701,26 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::TurnStart { params, .. } => {
-                self.turn_processor
-                    .turn_start(
+                request_future::boxed(|| {
+                    self.turn_processor.turn_start(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::TurnStartModelOnly { params, .. } => {
-                self.turn_processor
-                    .turn_start_model_only(
+                request_future::boxed(|| {
+                    self.turn_processor.turn_start_model_only(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadInjectItems { params, .. } => {
                 self.turn_processor

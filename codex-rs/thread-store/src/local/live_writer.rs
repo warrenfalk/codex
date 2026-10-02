@@ -267,7 +267,7 @@ async fn sync_materialized_rollout_path(
         if metadata.rollout_path != rollout_path {
             metadata.rollout_path = rollout_path.to_path_buf();
             state_db
-                .upsert_thread(&metadata)
+                .upsert_thread_with_observed_title(&metadata, &metadata.title)
                 .await
                 .map_err(|err| ThreadStoreError::Internal {
                     message: format!("failed to update thread metadata for {thread_id}: {err}"),

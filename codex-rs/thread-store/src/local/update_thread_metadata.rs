@@ -517,7 +517,14 @@ async fn apply_metadata_update(
             if let Some(existing) = existing.as_ref() {
                 metadata.prefer_existing_explicit_title(existing);
             }
-            let upsert_result = state_db.upsert_thread(&metadata).await;
+            let upsert_result = match existing.as_ref() {
+                Some(existing) => {
+                    state_db
+                        .upsert_thread_with_observed_title(&metadata, &existing.title)
+                        .await
+                }
+                None => state_db.upsert_thread(&metadata).await,
+            };
             if existing.is_none()
                 && metadata.project_id.is_some()
                 && matches!(&upsert_result, Err(err) if err.to_string().contains("FOREIGN KEY constraint failed"))
