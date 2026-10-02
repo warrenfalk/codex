@@ -10,13 +10,15 @@ Reapply a source range onto a new base by:
 
 1. checking each source commit just enough to identify its type and scope
 2. replaying it either by cherry-picking with `--no-commit` or by rerunning a recorded `!exec` command or by following `!instruct` command
-3. keeping the fast path fast: if the replay applies cleanly and validates, accept it
+3. keeping the fast path fast: commit clean replays individually and validate them at checkpoints
 4. resolving conflicts and compatibility drift in the smallest possible way when the fast path fails.
 5. preserving the right commit message shape for that replay
-6. validating the tree after that commit
-7. committing only when that individual replay is healthy (ALWAYS preserve any `!exec` or `!instruct` command in the original commit)
+6. validating the combined behavior at each checkpoint, with immediate probes where required
+7. recording separately which commits were replayed and which have validation evidence (ALWAYS preserve any `!exec` or `!instruct` command in the original commit)
 
-This keeps history understandable and makes it clear which replayed commit introduced which fix.
+This preserves the individual history while avoiding a rebuild for every small
+change. A clean application is provisional until its checkpoint passes; it is
+not evidence that an intermediate commit was independently tested.
 
 The exception is an intentional `[bug test]` / `[bug fix]` pair. A `[bug test]`
 commit may be committed with a known failing validation only when the
@@ -27,16 +29,17 @@ The core rule is:
 
 - A source commit is evidence of purpose, not sacred patch text.
 - Your default move is still the fast path: try to apply it first.
-- If it applies without conflict and the right validation passes, keep it and move on.
+- If it applies cleanly, inspect the staged diff, commit it, and add its validation obligations to the current checkpoint.
 - Only when the replay conflicts, fails validation, or may already be obviated upstream do you slow down and reconstruct the commit's intent against the newer architecture.
 
 ## Ground Rules
 
 - Do not use `git rebase`.
 - Replay one source commit at a time. Use `git cherry-pick --no-commit` for normal commits.
+- Batch validation, not commits. The [checkpoint policy](#checkpoint-policy) takes precedence over per-commit test and formatter scheduling in `AGENTS.md` for this update workflow. It does not waive final tests, lint, formatting, or builds.
 - If a source commit message begins with `!exec `, do not cherry-pick it. Verify the working tree is clean, run the exact command after `!exec `, then `git add -A` and commit with the exact same `!exec ...` message.
 - Inspect each source commit with `git show` before replaying it, but keep that inspection cheap on the fast path: identify whether it is a normal commit, `!exec`, or `!instruct`, and what area it touches.
-- For a normal commit, attempt the cherry-pick first. If it applies cleanly and the validation for that commit passes, assume the commit is still needed and the old implementation is acceptable on the new base. Do not do extra archaeology just to prove that again.
+- For a normal commit, attempt the cherry-pick first. If it applies cleanly, use the checkpoint fast path. After its checkpoint passes, assume the commit is still needed and the old implementation is acceptable on the new base. Do not do extra archaeology just to prove that again.
 - None of our replayed commits should add new build warnings. Treat any new warning like an error: find the source commit that introduced it, fix it in that commit's replay, and do not move on while the warning remains.
 - Treat commit subjects beginning with `[bug test]` and `[bug fix]` as an intentional probe/fix pair for a branch-local bug. Replay the `[bug test]` first and run its targeted validation before replaying the matching `[bug fix]`. Keep the `[bug fix]` only if the test still fails on the newer base without it.
 - Escalate to intent-level analysis only when one of these is true:
@@ -77,6 +80,27 @@ The core rule is:
   git fetch upstream tag rust-v0.116.0
   ```
 
+Before switching away from the source branch, preserve the maintained logging
+helper in ignored storage so it remains available before its own replay:
+
+```bash
+mkdir -p personal/replay-tools
+cp scripts/replay.py personal/replay-tools/replay.py
+```
+
+Capture the queue using the saved source tip, not a branch that might move during
+the update. Replace these example versions with the actual old and new tags:
+
+```bash
+python3 personal/replay-tools/replay.py init \
+  --state-dir personal/replay-v0.116.0 \
+  --base rust-v0.115.0 --source wf-v0.115.0 --target rust-v0.116.0
+```
+
+This records resolved commit IDs and source messages in `queue.json`. Keep that
+file immutable; record replay decisions and validation separately in the ledger.
+The helper does not switch branches, apply patches, or make keep/skip decisions.
+
 Start from the new base (replace `116` below with the new target version):
 
 ```bash
@@ -86,16 +110,18 @@ git switch -c manual-replay-v0.116.0 rust-v0.116.0
 List the source commits you intend to replay:
 
 ```bash
-git log --reverse --oneline rust-v0.115.0..main
+git log --reverse --oneline rust-v0.115.0..wf-v0.115.0
 ```
 
 Track progress in a durable replay ledger under ignored `personal/`, for example
 `personal/update-rust-v0.116.0-ledger.md`. Do not rely only on a scratch buffer.
-Treat the captured `git log --reverse --oneline <old-base>..main` output as a fixed
+Treat the captured `git log --reverse --oneline <old-base>..<saved-source-tip>` output as a fixed
 replay queue. Generate queue entries from Git instead of transcribing them.
 Record:
 
 - source SHA, replay SHA, and status (pending, replayed, or skipped with a reason)
+- validation state separately: deferred to a named checkpoint, passed individually, passed at a checkpoint, expected bug-probe failure, or a classified failure
+- each checkpoint's source entries, replay tip, required checks, actual results, and any owning fixup commits
 - each validation attempt's exact command and working directory
 - elapsed time, command exit status, result summary, and complete log path
 - replay note / known deviation
@@ -110,18 +136,40 @@ a distinct log file, for example
 `personal/replay-v0.116.0/logs/<source-sha>-<check>-<attempt>.log`. Preserve earlier
 attempts. Capture elapsed time and exit status mechanically; if using `tee`,
 preserve the wrapped command's exit status rather than reporting `tee`'s status.
-Reuse a logging/status helper if one exists; keep compatibility explanations and
-keep/skip decisions explicit rather than inferring them from exit codes.
+Use the maintained helper instead of creating a new release-specific logger:
+
+```bash
+nix develop -c python3 personal/replay-tools/replay.py run \
+  --state-dir personal/replay-v0.116.0 --label checkpoint-tui \
+  -- just test -p codex-tui
+python3 personal/replay-tools/replay.py report personal/replay-v0.116.0
+```
+
+The logger runs literal argument vectors, preserves the command's exit status,
+and saves a durable start record before launching it. Every attempt has separate
+JSON metadata and complete output under `logs/`; an unfinished record is not a
+pass. Put the logger inside the selected dev shell/test launcher when recording
+its effective environment. Keep compatibility explanations, checkpoint coverage,
+and keep/skip decisions explicit in the ledger; exit status alone cannot establish them.
+
+`report` also accepts an older `attempts.jsonl`. It separates summed command time
+from overlapping wall time and lists long attempts. Review this at checkpoints
+when compilation or environment repair dominates; do not rerun commands to
+collect timing data already in the logs.
 
 Return concise diagnostics to the session: exit status, test summary when
 applicable, relevant error or warning lines, and the log path. Read the saved log
 when more detail is needed instead of rerunning a command to recover truncated
 output. Update the ledger after each attempt and replay decision.
 
-After any interruption, long conflict, or cluster of similar commits, audit the
+After any interruption, long conflict, or checkpoint, audit the
 ledger against the fixed queue before continuing. Do not rely on memory or the
 latest replayed commit subject to decide what is next. Similar TUI or protocol
 commit subjects are especially easy to skip accidentally.
+
+An audit must account for deferred validation as well as pending replay entries.
+Verify source entries against the captured IDs, replay ancestry/order, and
+checkpoint coverage. Never infer completion merely because every patch was applied.
 
 Before spending time on the first commit, note any environment-only failures you already know about, such as:
 
@@ -134,6 +182,97 @@ that evidence while the relevant environment is unchanged; do not treat a known
 limitation as a blanket explanation for a different failure.
 
 If you are working in a sandboxed worktree, check early whether the `.git` metadata for this worktree is writable from your environment and whether commit hooks will run successfully. It is better to discover any needed escalation or `--no-verify` exception before the final commit than at the very end of a validated replay.
+
+## Preflight and cache reuse
+
+Follow [Update test environment](UPDATE_TEST_ENVIRONMENT.md) before behavioral
+validation and whenever the toolchain or launcher changes. Reuse the known shell
+fixture and baseline setup, then verify them with small representative checks.
+Do not use an entire workspace suite to discover missing tools or a broken runner.
+
+- Record the toolchain, Cargo profile, package selection, features, target paths,
+  native dependencies, and relevant environment once. Keep them stable within a
+  checkpoint; change the test filter when narrowing a failure. A stable package
+  set avoids repeatedly changing Cargo's unified features. Broaden it deliberately
+  when the next checkpoint needs more coverage, not for every test invocation.
+- Retain the Cargo target and rooted native/V8 inputs across attempts when their
+  configuration remains valid. Keep upstream comparison targets separate. Do not
+  delete the whole target or alternate profiles as a routine troubleshooting step.
+- Check free disk and available RAM before expensive commands. Choose Cargo/Nix
+  concurrency from observed compiler memory use early; do not retain a temporary
+  two-job limit for the entire update after resource pressure has passed. Recheck
+  headroom at checkpoints. Run the supplied `personal/cleanup-target-incremental`
+  when needed, with no build using that target, before an out-of-space failure.
+- Serialize Cargo commands sharing a target directory. Parallelize independent
+  reads and analysis while builds run. Use separate targets and a resource budget
+  for genuinely concurrent builds; duplicate cold builds can erase the benefit.
+- Reuse one invocation for independent metadata reads and cheap checks. Automate
+  mechanical logging and queue inspection; keep conflict resolution, warning
+  classification, snapshot acceptance, and obsolescence decisions explicit.
+
+Two to three hours is a planning target for a routine update with usable caches,
+not a deadline that permits dropping validation. The v0.155.1 replay took about
+12 hours, with 124 `just test` invocations and over five hours of recorded test
+compilation. Reducing rebuilds matters more than reducing the number of fast test
+cases. Report actual timing and unresolved failures at the end.
+
+## Checkpoint policy
+
+Start a named checkpoint from a recorded replay tip. Accumulate up to eight
+consecutive code-bearing replays in the same area, or stop sooner at a subsystem
+boundary. Docs-only commits need only a diff check and do not force a Rust build.
+Keep the source order and one commit per replay. A mechanical adaptation to a
+known upstream rename or fixture shape may join the batch if its intent is clear.
+
+Close the pending checkpoint before a bug-test/fix pair, a keep/skip decision
+that requires an experiment, or a compatibility change whose behavior is
+uncertain. Validate meaningful changes to API contracts, lifecycle behavior, or
+security boundaries during conflict resolution immediately. A `!instruct` or
+`!exec` with an explicit validation requirement remains authoritative; do not
+batch away the observation that decides whether its change is needed.
+
+At each checkpoint:
+
+1. Inspect the combined diff and audit its source entries and validation obligations.
+2. Regenerate affected artifacts and run `just fmt` once if code changed. Keep
+   source and generated changes attributable to their owning replay commits.
+   Commit those corrections before testing so the recorded tip identifies the
+   tested tree. Split corrections by owner when several replays need fixups.
+3. Run the union of required focused tests in as few invocations as practical,
+   including existing behavior affected by the batch. Record the tested tip,
+   configuration, test counts, warnings, and complete logs.
+4. If a check fails, stop adding unrelated replays. Narrow the filter without
+   changing build configuration. Use the previous checkpoint and individual
+   commit boundaries to locate the cause, in a separate worktree if needed.
+5. Correct uncommitted changes in place. For an already committed fork change,
+   add a `fixup!` targeting its owning replay commit, including generated or
+   formatting corrections. Do not rebase or autosquash. Preserve adjacency of
+   bug-test/fix pairs; put later fixups after the pair.
+6. Rerun the affected checkpoint checks after behavioral fixes and record the
+   outcome. Do not rerun tests solely because `fix` or `fmt` changed formatting.
+   A classified failure remains a failure, not a passed checkpoint. Carry its
+   evidence and affected validation gap forward explicitly; no obligation may
+   disappear from the ledger.
+
+If the last checkpoint already covers the final targeted tree, reuse that
+evidence rather than repeating it. The final full suite and Cargo-then-Nix build
+sequence are still required.
+
+### Nix build checkpoints
+
+Group adjacent packaging prerequisites for validation while retaining their
+individual commits. Use evaluation, dependency fetches, version checks, or a
+specific derivation to answer narrow questions where sufficient. These checks
+do not establish that the package builds.
+
+Normally defer the complete package build to the final gate. Run an intermediate
+full build only when needed to resolve a concrete build question or an explicit
+source instruction. Do not repeat a successful full build after every packaging
+edit. Record packaging coverage as deferred until the relevant full build passes.
+When a probe fails before reaching the condition under investigation, resolve
+that prerequisite and rerun the deciding probe before keeping or skipping the
+dependent patch. A final Cargo workspace build must still precede the final root
+Nix build, even if an intermediate Nix build succeeded.
 
 ## Per-Commit Workflow
 
@@ -187,7 +326,8 @@ For any other normal source commit:
 git cherry-pick --no-commit <sha>
 ```
 
-If the cherry-pick applies cleanly, prefer to keep moving. Validate that replay. If the validation passes, commit it. That is the default fast path.
+If the cherry-pick applies cleanly, inspect and commit it, then add its checks to
+the current checkpoint. Use immediate validation at the boundaries defined above.
 
 If there are conflicts:
 
@@ -295,10 +435,9 @@ If the replayed commit changes generated outputs or vendored fixtures, regenerat
 
 - JSON or TypeScript schema output
 - OpenRPC fixtures
-- Bazel lockfiles after dependency changes
 - snapshot files whose rendered output legitimately changed
 
-### 5. Format after Rust edits
+### 5. Format at the checkpoint
 
 Run from the repo root through the flake dev shell:
 
@@ -306,7 +445,9 @@ Run from the repo root through the flake dev shell:
 nix develop -c just fmt
 ```
 
-Do this after you finish the compatibility edits for that replayed commit.
+Do this once after the checkpoint's edits, and at finalization. A clean,
+already-formatted cherry-pick does not need its own full formatter invocation.
+An immediate-validation replay can form a checkpoint by itself.
 
 The flake dev shell provides the formatter dependencies and sets `UV_CACHE_DIR`
 to a writable workspace-local cache. It also provides `dotslash`, which `just
@@ -322,8 +463,8 @@ the replayed commit specifically owns those files.
 
 ### 6. Validate the replayed commit
 
-Validate the replayed behavior before moving to the next source commit. Preserve
-the failing-probe-then-passing-fix sequence for `[bug test]` / `[bug fix]` pairs.
+Schedule validation using the checkpoint policy. Preserve the immediate
+failing-probe-then-passing-fix sequence for `[bug test]` / `[bug fix]` pairs.
 Use `just test`, not direct `cargo test`, for Rust tests so the repo's runner and
 defaults remain in effect.
 
@@ -335,7 +476,7 @@ verify that the test names and crate locations are still current and that the
 intended tests actually execute. A successful exit with zero relevant tests
 executed is not behavioral validation.
 
-Read the compiler output, not only the exit status. Pre-existing warnings from the upstream base can remain, but a replayed commit must not introduce any new warnings in touched crates. If a validation command emits a new warning, treat that command as failed and fix the warning before committing.
+Read the compiler output, not only the exit status. Pre-existing warnings from the upstream base can remain, but a replayed commit must not introduce any new warnings in touched crates. If a validation command emits a new warning, treat that command as failed and fix it in the owning replay or a targeted fixup before advancing the checkpoint.
 
 Examples:
 
@@ -383,7 +524,8 @@ cargo build
 nix build
 ```
 
-`nix build` takes a long time. Do not use it as the default smoke test for every replayed commit. Run it when the replayed commit actually changes the Nix packaging/build path, or when a `!instruct` commit explicitly tells you to decide whether a Nix-specific failure has been fixed upstream. In other cases, prefer the narrowest targeted `just test` or `cargo build`.
+Schedule packaging validation according to [Nix build checkpoints](#nix-build-checkpoints).
+The examples above select coverage, not a new full build after each commit.
 
 If the broader targeted test fails on one obvious snapshot or one focused test case, switch to the narrowest reproducer until you have fixed that problem, then rerun the broader target once at the end. Do not keep paying the cost of a full crate test loop while debugging a single snapshot body.
 
@@ -420,6 +562,12 @@ to establish the cause, not a full baseline suite before every commit. Use a
 separate worktree if another checkout is needed; preserve the active replay.
 Keep remaining validation gaps explicit. A classified failure is not a passing
 check, and an unrelated blocker is not evidence that a feature is obsolete.
+
+Build and verify the upstream helper binaries and resource layout before relying
+on a baseline comparison. Inspect successful-test output for capability probes
+or early returns. Match failure signatures, not just exit codes; missing helpers
+must not produce a false pass or an unrelated crash. After changing a launcher,
+prove it with the affected focused tests before starting another full suite.
 
 Do not run repo-level lint, Bazel, or lock-maintenance steps from `AGENTS.md`, such as
 `just argument-comment-lint`, `just bazel-lock-update`, `just bazel-lock-check`, `just bazel-test`, or ad hoc `bazel build` / `bazel test`, as part of this manual replay/update workflow. They are intentionally out of scope for replay validation unless the source commit itself is an explicit `!exec` replay of one of those commands.
@@ -492,9 +640,13 @@ The paired `[bug fix]` commit must include a `Validation:` line showing that
 the same command now passes. If the `[bug test]` passes before the fix, skip the
 `[bug fix]` and record that decision in the replay ledger.
 
-In both cases, commit only after the validation for that replayed commit passes.
-For `[bug test]` / `[bug fix]` pairs, this rule applies to the pair as a unit:
-do not leave a failing `[bug test]` without its passing `[bug fix]`.
+For a batched normal replay, record `Validation: deferred to checkpoint <name>`
+in its message or ledger; never claim a future command has passed. After the
+checkpoint, attach its actual evidence to all covered entries in the ledger.
+Do not rewrite commits merely to replace their deferred-validation note.
+
+For `[bug test]` / `[bug fix]` pairs, validate the pair immediately: do not advance
+to unrelated replay work with a failing `[bug test]` lacking its passing fix.
 
 ## What To Validate First
 
@@ -508,8 +660,9 @@ Use the changed area to choose the first test:
 - Nix-related changes outside the repo-root package build path: `cargo build`
 - changes to the Nix packaging/build path itself: `nix build` and expect it to take a while
 
-Follow `AGENTS.md` for required broader coverage during the replay. After the
-entire replay is complete and focused validation passes, run the complete Rust
+Accumulate the coverage required by `AGENTS.md` at checkpoints rather than after
+every commit. After the entire replay is complete and focused validation passes
+(or remaining failures have explicit classifications and evidence), run the complete Rust
 workspace suite with `just test`. An update performed under this guide includes
 authorization for that final full-suite run; do not ask for separate approval,
 even if `AGENTS.md` normally requires it. Use the default features unless broader
@@ -543,9 +696,10 @@ That was the right tradeoff because it caught integration drift early without re
 
 ### 4. Long cargo runs can look stuck when they are not
 
-Repeatedly restarting cargo while `rustc` is still compiling `codex-core` just wastes time.
+Repeatedly restarting Cargo while `rustc` is still compiling `codex-core` wastes time.
 
-Before killing a run, check whether it is doing real work:
+Do not kill Rust commands or start competing commands against the same target.
+Inspect activity while waiting:
 
 ```bash
 ps -ef | rg '[r]ustc --crate-name codex_core|[c]argo test|[c]argo build'
@@ -562,7 +716,8 @@ Protocol commits often updated:
 - TypeScript schema output
 - README examples
 
-If the source commit was changing API shape, keep those generated artifacts with the same replayed commit instead of splitting them out arbitrarily.
+If the source commit was changing API shape, keep those generated artifacts with
+the owning replay or its targeted fixup instead of an unrelated cleanup commit.
 
 ### 6. Keep compatibility fixes local to the replayed commit
 
@@ -574,7 +729,7 @@ If a replayed commit introduces a field, request type, or behavior that breaks i
 
 Do not infer “what is next” from memory or recent history once the replay is underway.
 
-Use the captured `git log --reverse --oneline <old-base>..main` output as the source
+Use the captured `git log --reverse --oneline <old-base>..<saved-source-tip>` output as the source
 of truth, and keep the durable ledger described in Setup. This saves time after
 interruptions and makes it obvious whether the replay is actually complete.
 
@@ -622,7 +777,7 @@ Prefer this order:
 
 This keeps the replay converging toward upstream instead of accumulating parallel ways to do the same thing.
 
-### 12. The fast path is "apply, validate, keep"
+### 12. The fast path is "apply, record, checkpoint"
 
 Do not turn every replay into a manual redesign exercise.
 
@@ -630,10 +785,11 @@ For a normal commit:
 
 1. inspect it just enough to know what kind of replay it is
 2. try the cherry-pick
-3. if it applies cleanly, run the right validation
-4. if validation passes, keep it and move on
+3. if it applies cleanly, commit it and record deferred validation
+4. validate the combined behavior at the next checkpoint
 
-That is good enough. Assume the commit is still needed and adequately coded unless the replay gives you evidence to the contrary.
+After the checkpoint passes, assume its commits are still needed and adequately
+coded unless the replay gives you evidence to the contrary.
 
 ### 13. Skip a commit only when its intent is truly obsolete
 
@@ -679,7 +835,7 @@ The replay itself may validate cleanly while the default `git commit` path still
 Apply the logging and ledger rules from Setup to formatter and validation
 commands below; redirection is omitted here for readability.
 
-For one commit:
+For a normal commit eligible for the current checkpoint:
 
 ```bash
 git show --stat --summary --format=medium <sha>
@@ -687,12 +843,12 @@ git cherry-pick --no-commit <sha>
 git status --short
 git diff --cached --stat
 git diff --cached -- <interesting paths>
-cd codex-rs
-just fmt
-just test -p <targeted-crate> <targeted-test>
-cd ..
-git commit -m "<intent subject>" -m "<optional replay note>"
+git commit -m "<intent subject>" -m "Validation: deferred to checkpoint <name>"
 ```
+
+At the checkpoint, run the formatter and combined targeted tests through the
+logging helper, inspect results, and record which entries they cover. Stop early
+for the immediate-validation boundaries; eight commits is a ceiling, not a quota.
 
 For a `!exec ` commit:
 
@@ -705,16 +861,18 @@ git add -A
 git commit -m '!exec <exact command>'
 ```
 
-Repeat until `git log --reverse --oneline <old-base>..main` has been fully replayed.
+Repeat until every entry in the captured queue is accounted for and every
+checkpoint has recorded results.
 
 ## Finish Criteria
 
 The replay is complete when:
 
-- every commit in the source range has been replayed
+- every commit in the fixed source range has been replayed or explicitly skipped with evidence
 - the ledger records replay decisions and validation evidence, including log paths
 - each replayed commit has the correct message shape for its type
-- replay-specific compatibility fixes were folded into the appropriate replayed commits
+- replay-specific compatibility fixes belong to the appropriate replayed commits or unsquashed owning fixups
+- no checkpoint or packaging validation obligation remains deferred or unaccounted for
 - every kept `[bug test]` commit either passes on the new base by itself or is immediately followed by the `[bug fix]` commit whose validation makes it pass
 - the branch is clean
 - the final targeted validation passes
@@ -722,8 +880,13 @@ The replay is complete when:
   this final run is authorized by the update workflow without separate approval
 - a final Rust workspace `cargo build` passes after the full replay, even if all
   focused tests passed earlier
-- repo-root `nix build` passes when the update instructions, repository
-  instructions, or changed files require it
+- repo-root `nix build` passes after the final Cargo workspace build
+
+Report replay completion separately from validation success. A known upstream
+failure still leaves the passing-suite criterion unmet. Include final SHAs,
+queue/checkpoint audit, focused and full-suite results, lint/format, Cargo/Nix
+builds, packaged version smoke check, and measured timing. Do not rerun the full
+suite solely for final lint/format; inspect those diffs as required by `AGENTS.md`.
 
 Confirm at the end:
 
