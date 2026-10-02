@@ -373,21 +373,21 @@ pub fn create_model_provider(
     if provider_info.is_amazon_bedrock() {
         return Arc::new(AmazonBedrockModelProvider::new(provider_info, auth_manager));
     }
-    let gateway_auth_manager = provider_info.gateway_oauth.as_ref().map(|config| {
-        provider_info.validate()?;
-        let manager = auth_manager
-            .as_ref()
-            .ok_or_else(|| "gateway_oauth requires auth runtime configuration".to_string())?;
-        crate::shared_state::process_shared_state()
-            .gateway_auth(config, &manager.runtime_config())
-            .map_err(|_| "failed to create provider OAuth HTTP client".to_string())
-    });
-    let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
-    Arc::new(ConfiguredModelProvider::new(
+    Arc::new(ConfiguredModelProvider::from_config(
         provider_info,
         auth_manager,
-        gateway_auth_manager,
     ))
+}
+
+/// Creates a configured provider with explicit runtime capability bounds.
+pub fn create_model_provider_with_capabilities(
+    provider_info: ModelProviderInfo,
+    auth_manager: Option<Arc<AuthManager>>,
+    capabilities: ProviderCapabilities,
+) -> SharedModelProvider {
+    let mut provider = ConfiguredModelProvider::from_config(provider_info, auth_manager);
+    provider.capabilities = Some(capabilities);
+    Arc::new(provider)
 }
 
 /// Runtime model provider that orchestrates primary and gateway credentials.
@@ -397,6 +397,7 @@ struct ConfiguredModelProvider {
     auth_manager: Option<Arc<AuthManager>>,
     // Construct eagerly; report setup failures when auth is requested because the factory is infallible.
     gateway_auth_manager: Option<Result<Arc<GatewayAuthManager>, String>>,
+    capabilities: Option<ProviderCapabilities>,
 }
 
 enum ModelsCacheConfig {
@@ -406,6 +407,23 @@ enum ModelsCacheConfig {
 }
 
 impl ConfiguredModelProvider {
+    fn from_config(
+        provider_info: ModelProviderInfo,
+        auth_manager: Option<Arc<AuthManager>>,
+    ) -> Self {
+        let gateway_auth_manager = provider_info.gateway_oauth.as_ref().map(|config| {
+            provider_info.validate()?;
+            let manager = auth_manager
+                .as_ref()
+                .ok_or_else(|| "gateway_oauth requires auth runtime configuration".to_string())?;
+            crate::shared_state::process_shared_state()
+                .gateway_auth(config, &manager.runtime_config())
+                .map_err(|_| "failed to create provider OAuth HTTP client".to_string())
+        });
+        let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
+        Self::new(provider_info, auth_manager, gateway_auth_manager)
+    }
+
     fn new(
         info: ModelProviderInfo,
         auth_manager: Option<Arc<AuthManager>>,
@@ -415,6 +433,7 @@ impl ConfiguredModelProvider {
             info,
             auth_manager,
             gateway_auth_manager,
+            capabilities: None,
         }
     }
 
@@ -459,6 +478,10 @@ impl ModelProvider for ConfiguredModelProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
+        if let Some(capabilities) = self.capabilities {
+            return capabilities;
+        }
+
         let remote_compaction = if self.info.is_openai()
             || is_azure_responses_provider(&self.info.name, self.info.base_url.as_deref())
         {
@@ -801,6 +824,24 @@ mod tests {
             let provider = create_model_provider(provider_info, /*auth_manager*/ None);
             assert_eq!(provider.capabilities().remote_compaction, expected);
         }
+    }
+
+    #[test]
+    fn configured_provider_uses_explicit_capabilities() {
+        let capabilities = ProviderCapabilities {
+            namespace_tools: true,
+            image_generation: false,
+            web_search: false,
+            external_web_access: false,
+            remote_compaction: RemoteCompactionSupport::Unsupported,
+        };
+        let provider = create_model_provider_with_capabilities(
+            ModelProviderInfo::default(),
+            /*auth_manager*/ None,
+            capabilities,
+        );
+
+        assert_eq!(provider.capabilities(), capabilities);
     }
 
     #[test]

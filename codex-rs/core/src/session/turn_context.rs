@@ -630,10 +630,12 @@ impl TurnContext {
             && self.config.orchestrator_mcp_enabled
     }
 
-    pub(crate) async fn with_model(
+    pub(super) async fn with_model_and_provider(
         &self,
         model: String,
         models_manager: &SharedModelsManager,
+        provider_id: String,
+        provider: SharedModelProvider,
     ) -> Self {
         let mut config = (*self.config).clone();
         config.model = Some(model.clone());
@@ -668,6 +670,8 @@ impl TurnContext {
                 config.http_client_factory(),
             )
             .await;
+        config.model_provider_id = provider_id;
+        config.model_provider = provider.info().clone();
         let model_info = Arc::new(model_info);
         let mut selected = self.initial_settings.selected().clone();
         selected.collaboration_mode = selected.collaboration_mode.with_updates(
@@ -697,7 +701,7 @@ impl TurnContext {
             active_host_plugin_identities: self.active_host_plugin_identities.clone(),
             next_step_settings: ArcSwap::from(step_settings),
             session_telemetry,
-            provider: self.provider.clone(),
+            provider,
             session_source: self.session_source.clone(),
             history_mode: self.history_mode,
             parent_thread_id: self.parent_thread_id,
@@ -1167,7 +1171,7 @@ impl Session {
             .as_ref()
             .and_then(|turn_environment| turn_environment.cwd().to_abs_path().ok())
             .unwrap_or_else(|| session_configuration.cwd().clone());
-        let per_turn_config = self.build_per_turn_config(
+        let mut per_turn_config = self.build_per_turn_config(
             &session_configuration,
             cwd.clone(),
             turn_environments.primary_workspace_roots(),
@@ -1183,6 +1187,11 @@ impl Session {
                 &session_configuration.model_info_overrides,
             )
             .await;
+        let provider = self.configure_turn_provider(
+            &model_info.slug,
+            &session_configuration,
+            &mut per_turn_config,
+        );
         let multi_agent_version = match build_mode {
             TurnContextBuildMode::Full => {
                 // Only execution and initial context creation publish model metadata.
@@ -1243,7 +1252,7 @@ impl Session {
             self.session_id(),
             Some(Arc::clone(&self.services.auth_manager)),
             &self.services.session_telemetry,
-            session_configuration.provider.clone(),
+            provider,
             &session_configuration,
             multi_agent_version,
             self.services.user_shell.as_ref(),

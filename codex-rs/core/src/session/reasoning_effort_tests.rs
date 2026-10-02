@@ -7,11 +7,62 @@ use codex_features::Feature;
 use codex_history::InitialHistory;
 use codex_history::ResumedHistory;
 use codex_login::CodexAuth;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use test_case::test_case;
+
+#[test_case("OpenAI", "Custom", ReasoningEffort::High; "switch_away_from_openai")]
+#[test_case("Custom", "OpenAI", ReasoningEffort::Low; "switch_to_openai")]
+#[tokio::test]
+async fn reasoning_effort_uses_the_current_turn_provider(
+    initial_provider: &str,
+    current_provider: &str,
+    expected_effort: ReasoningEffort,
+) {
+    let (session, turn_context, _events) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            config
+                .features
+                .enable(Feature::ReasoningEffortOverride)
+                .unwrap();
+            config.model_provider.name = initial_provider.to_string();
+            config.model_reasoning_effort = Some(ReasoningEffort::High);
+        },
+    )
+    .await;
+    let mut settings = (*turn_context.initial_settings).clone();
+    Arc::make_mut(&mut settings.model_info).supports_reasoning_effort_updates = true;
+    session
+        .state
+        .lock()
+        .await
+        .reasoning_effort_pin
+        .pin(&settings.model_info.slug, ReasoningEffort::Low);
+    let provider = ModelProviderInfo {
+        name: current_provider.to_string(),
+        ..ModelProviderInfo::default()
+    };
+    assert_eq!(
+        session
+            .reasoning_effort_for_request(&settings, &provider, RequestEffortUsage::Compaction)
+            .await,
+        Some(expected_effort)
+    );
+    assert_eq!(
+        session
+            .state
+            .lock()
+            .await
+            .reasoning_effort_pin
+            .get(&settings.model_info.slug),
+        Some(ReasoningEffort::Low)
+    );
+}
 
 #[test_case(InitialHistory::Forked(Vec::new()); "fork")]
 #[test_case(InitialHistory::Resumed(ResumedHistory {
@@ -44,7 +95,11 @@ async fn initial_replay_preserves_prewarmed_effort(history: InitialHistory) {
     // Force the ordering where prewarm pins its request before initial replay finishes.
     assert_eq!(
         session
-            .reasoning_effort_for_request(&prewarm_settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &prewarm_settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::Medium),
     );
@@ -58,7 +113,11 @@ async fn initial_replay_preserves_prewarmed_effort(history: InitialHistory) {
     );
     assert_eq!(
         session
-            .reasoning_effort_for_request(&turn_settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &turn_settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::Medium),
     );
@@ -92,7 +151,11 @@ async fn compaction_effort_lookup_preserves_pin_for_fallback_models() {
 
     assert_eq!(
         session
-            .reasoning_effort_for_request(&settings, RequestEffortUsage::Compaction)
+            .reasoning_effort_for_request(
+                &settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Compaction
+            )
             .await,
         Some(effort)
     );
@@ -132,7 +195,11 @@ async fn unsupported_model_compaction_uses_selected_effort_without_mutating_pin(
 
     assert_eq!(
         session
-            .reasoning_effort_for_request(&settings, RequestEffortUsage::Compaction)
+            .reasoning_effort_for_request(
+                &settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Compaction
+            )
             .await,
         Some(ReasoningEffort::High),
     );
@@ -148,14 +215,22 @@ async fn unsupported_model_compaction_uses_selected_effort_without_mutating_pin(
     // Sampling retires the old baseline, so a later supported request starts afresh.
     assert_eq!(
         session
-            .reasoning_effort_for_request(&settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::High),
     );
     Arc::make_mut(&mut settings.model_info).supports_reasoning_effort_updates = true;
     assert_eq!(
         session
-            .reasoning_effort_for_request(&settings, RequestEffortUsage::Sampling)
+            .reasoning_effort_for_request(
+                &settings,
+                turn_context.provider.info(),
+                RequestEffortUsage::Sampling
+            )
             .await,
         Some(ReasoningEffort::High),
     );

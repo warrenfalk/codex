@@ -23,6 +23,7 @@ async fn api_key_discovery_disabled_preserves_command_auth_discovery_and_merging
     );
     let mut merged = load_remote_models_from_file().unwrap();
     merged.extend(models.clone());
+    retain_trusted_inference_profile_models(&mut merged);
     assert_eq!(
         manager
             .raw_model_catalog(RefreshStrategy::Online, DEFAULT_HTTP_CLIENT_FACTORY)
@@ -37,6 +38,8 @@ async fn api_key_discovery_disabled_preserves_command_auth_discovery_and_merging
 async fn api_key_discovery_startup_flag_controls_fetches_and_cached_catalogs() {
     let home = tempdir().unwrap();
     let models = vec![remote_model("dynamic", "Dynamic", /*priority*/ 0)];
+    let mut expected_models = models.clone();
+    retain_trusted_inference_profile_models(&mut expected_models);
     let endpoint = TestModelsEndpoint::without_refresh(vec![models.clone()]);
     let auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test-key"));
     let manager =
@@ -66,7 +69,7 @@ async fn api_key_discovery_startup_flag_controls_fetches_and_cached_catalogs() {
             .raw_model_catalog(RefreshStrategy::Online, DEFAULT_HTTP_CLIENT_FACTORY)
             .await
             .models,
-        models
+        expected_models
     );
     assert_eq!(endpoint.fetch_count(), 1);
 
@@ -75,7 +78,7 @@ async fn api_key_discovery_startup_flag_controls_fetches_and_cached_catalogs() {
         let restarted =
             OpenAiModelsManager::new(home.path().into(), endpoint.clone(), Some(auth.clone()));
         restarted.set_api_key_model_discovery_enabled(enabled);
-        let expected = if enabled { &models } else { &bundled };
+        let expected = if enabled { &expected_models } else { &bundled };
         for strategy in [RefreshStrategy::Offline, RefreshStrategy::OnlineIfUncached] {
             assert_eq!(
                 &restarted

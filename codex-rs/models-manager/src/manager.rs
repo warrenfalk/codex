@@ -7,6 +7,7 @@ use crate::model_info;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_http_client::HttpClientFactory;
+use codex_inference_profiles::KIMI_K3_MODEL_ID;
 use codex_login::AuthManager;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
@@ -697,6 +698,9 @@ impl OpenAiModelsManager {
             }
             entry.models = models;
         }
+        if matches!(self.catalog_source, CatalogSource::Default) {
+            retain_trusted_inference_profile_models(&mut entry.models);
+        }
         *current = entry;
         true
     }
@@ -830,6 +834,11 @@ impl ModelsManager for StaticModelsManager {
 
 fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
     Ok(crate::bundled_models_response()?.models)
+}
+
+fn retain_trusted_inference_profile_models(models: &mut Vec<ModelInfo>) {
+    models.retain(|model| model.slug != KIMI_K3_MODEL_ID);
+    models.push(model_info::kimi_k3_model_info());
 }
 
 fn default_model_from_available(available: Vec<ModelPreset>) -> String {

@@ -207,7 +207,14 @@ impl SessionStartupPrewarmHandle {
 
 impl Session {
     pub(crate) async fn schedule_startup_prewarm(self: &Arc<Self>, input: PrewarmInput) {
-        let websocket_connect_timeout = self.provider().await.websocket_connect_timeout();
+        let provider = match self.provider().await {
+            Ok(provider) => provider,
+            Err(error) => {
+                warn!("startup prewarm could not resolve the active inference profile: {error}");
+                return;
+            }
+        };
+        let websocket_connect_timeout = provider.websocket_connect_timeout();
         let mut state = self.state.lock().await;
         if state.shutting_down {
             return;
@@ -307,7 +314,19 @@ async fn schedule_startup_prewarm_inner(
     input: PrewarmInput,
 ) -> CodexResult<ModelClientSession> {
     let prewarm_started_at = Instant::now();
-    let mut client_session = session.services.model_client.new_session();
+    let startup_turn_context = session
+        .new_startup_prewarm_turn_with_sub_id(INITIAL_SUBMIT_ID.to_owned())
+        .await;
+    startup_turn_context.session_telemetry.record_startup_phase(
+        "startup_prewarm_create_turn_context",
+        prewarm_started_at.elapsed(),
+        /*status*/ None,
+    );
+    let mut client_session = session
+        .services
+        .model_client
+        .for_provider(startup_turn_context.provider.clone())
+        .new_session();
     let websocket_ready = client_session.is_websocket_prewarmed().await;
     // Count the decision before preparation can fail; fresh clients also need prewarm.
     session.services.session_telemetry.counter(
@@ -329,14 +348,6 @@ async fn schedule_startup_prewarm_inner(
         return Ok(client_session);
     }
     let base_instructions = session.get_prompt_base_instructions().await.text;
-    let startup_turn_context = session
-        .new_startup_prewarm_turn_with_sub_id(INITIAL_SUBMIT_ID.to_owned())
-        .await;
-    startup_turn_context.session_telemetry.record_startup_phase(
-        "startup_prewarm_create_turn_context",
-        prewarm_started_at.elapsed(),
-        /*status*/ None,
-    );
     let startup_cancellation_token = CancellationToken::new();
     let preconnect_model_info = Arc::clone(startup_turn_context.model_info());
     // Spawned subagents inherit the root's selection, with the same feature and model filtering
@@ -436,7 +447,11 @@ async fn schedule_startup_prewarm_inner(
             &step_context.settings.model_info,
             &step_context.session_telemetry,
             session
-                .reasoning_effort_for_request(&step_context.settings, RequestEffortUsage::Sampling)
+                .reasoning_effort_for_request(
+                    &step_context.settings,
+                    startup_turn_context.provider.info(),
+                    RequestEffortUsage::Sampling,
+                )
                 .await,
             step_context.settings.reasoning_summary,
             step_context.settings.service_tier.clone(),

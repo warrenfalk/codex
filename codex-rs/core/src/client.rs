@@ -550,8 +550,16 @@ impl ModelClient {
     }
 
     pub(crate) fn reasoning_effort_override_enabled(&self, model_info: &ModelInfo) -> bool {
+        self.reasoning_effort_override_enabled_for_provider(model_info, self.state.provider.info())
+    }
+
+    pub(crate) fn reasoning_effort_override_enabled_for_provider(
+        &self,
+        model_info: &ModelInfo,
+        provider: &ModelProviderInfo,
+    ) -> bool {
         self.state.reasoning_effort_override_enabled
-            && self.state.provider.info().is_openai()
+            && provider.is_openai()
             && model_info.supports_reasoning_effort_updates
     }
 
@@ -570,6 +578,44 @@ impl ModelClient {
         self.event_sender = Some(event_sender);
         self.codex_responses_headers = codex_responses_headers;
         self
+    }
+
+    pub(crate) fn for_provider(&self, provider: SharedModelProvider) -> Self {
+        if provider.info() == self.state.provider.info() {
+            return self.clone();
+        }
+        let codex_api_key_env_enabled = provider
+            .auth_manager()
+            .as_ref()
+            .is_some_and(|manager| manager.codex_api_key_env_enabled());
+        let auth_env_telemetry =
+            collect_auth_env_telemetry(provider.info(), codex_api_key_env_enabled);
+        let include_attestation = provider.supports_attestation();
+        Self {
+            state: Arc::new(ModelClientState {
+                thread_id: self.state.thread_id,
+                provider,
+                workspace_routing: self.state.workspace_routing.clone(),
+                auth_env_telemetry,
+                session_source: self.state.session_source.clone(),
+                originator: self.state.originator.clone(),
+                model_verbosity: self.state.model_verbosity,
+                content_item_kinds_enabled: self.state.content_item_kinds_enabled,
+                reasoning_effort_override_enabled: self.state.reasoning_effort_override_enabled,
+                enable_request_compression: self.state.enable_request_compression,
+                include_timing_metrics: self.state.include_timing_metrics,
+                beta_features_header: self.state.beta_features_header.clone(),
+                concurrent_reasoning_summaries_enabled: self
+                    .state
+                    .concurrent_reasoning_summaries_enabled,
+                include_attestation,
+                attestation_provider: self.state.attestation_provider.clone(),
+                disable_websockets: AtomicBool::new(false),
+                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
+                cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+            }),
+            ..self.clone()
+        }
     }
 
     fn prompt_cache_key(&self, responses_metadata: &CodexResponsesMetadata) -> String {
@@ -1341,6 +1387,10 @@ impl Drop for ModelClientSession {
 }
 
 impl ModelClientSession {
+    pub(crate) fn uses_provider(&self, provider: &SharedModelProvider) -> bool {
+        self.client.state.provider.info() == provider.info()
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Builds shared Responses API transport options and request-body options.
     ///

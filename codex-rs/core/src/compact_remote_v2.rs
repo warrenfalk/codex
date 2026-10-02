@@ -405,6 +405,7 @@ async fn run_remote_compaction_request_v2(
                 &turn_context.session_telemetry,
                 sess.reasoning_effort_for_request(
                     &turn_context.initial_settings,
+                    turn_context.provider.info(),
                     RequestEffortUsage::Compaction,
                 )
                 .await,
