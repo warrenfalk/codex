@@ -92,6 +92,10 @@ impl HistoryCell for UpdateAvailableHistoryCell {
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.display_hyperlink_lines(width)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 pub(crate) fn new_warning_event(message: String) -> WarningHistoryCell {
     let style = crate::style::status_style(crate::style::StatusTone::Attention);
@@ -250,6 +254,10 @@ impl HistoryCell for SafetyAccessBlockCell {
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.display_hyperlink_lines(width)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -313,6 +321,10 @@ impl HistoryCell for DeprecationNoticeCell {
         }
         lines
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHistoryCell {
     let mut line = vec!["• ".dim(), message.into()];
@@ -321,7 +333,7 @@ pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHist
         line.push(hint.dark_gray());
     }
     let lines: Vec<Line<'static>> = vec![line.into()];
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {
@@ -329,7 +341,11 @@ pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {
     // before the text. VS16 is intentionally omitted to keep spacing tighter
     // in terminals like Ghostty.
     let lines: Vec<Line<'static>> = vec![vec![format!("■ {message}").red()].into()];
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
+}
+
+pub(crate) fn new_context_compaction_event(message: String) -> PlainHistoryCell {
+    PlainHistoryCell::new(vec![vec!["• ".dim(), message.into()].into()])
 }
 
 #[derive(Debug)]
@@ -375,6 +391,10 @@ impl HistoryCell for ThreadRecapLoadingCell {
         }
 
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 }
 

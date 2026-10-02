@@ -97,7 +97,7 @@ impl App {
             });
         }
         // Invisible diagnostics still update the badge without replacing the rendered tail.
-        if deferred || lines.is_empty() {
+        if deferred || lines.is_empty() || !self.cell_visible_in_current_scrollback(cell.as_ref()) {
             tui.frame_requester().schedule_frame();
             return;
         }
@@ -165,7 +165,9 @@ impl App {
         };
 
         // A queued card reads the latest usage when it is first emitted.
-        if self.native_history.contains(&status_cell) {
+        if self.native_history.contains(&status_cell)
+            || !self.cell_visible_in_current_scrollback(status_cell.as_ref())
+        {
             self.pending_thread_usage_history_refresh = false;
             return Ok(());
         }
@@ -398,6 +400,7 @@ impl App {
     }
 
     pub(super) fn reset_transcript_state_after_clear(&mut self) {
+        self.clean_scrollback_enabled = false;
         self.overlay = None;
         self.transcript_cells.clear();
         self.turn_tips.dismiss();

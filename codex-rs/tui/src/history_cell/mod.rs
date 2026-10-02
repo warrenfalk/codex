@@ -157,6 +157,12 @@ pub(crate) enum HistoryRenderMode {
     Raw,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HistoryVisibilityKind {
+    Normal,
+    Noise,
+}
+
 pub(crate) fn raw_lines_from_source(source: &str) -> Vec<Line<'static>> {
     if source.is_empty() {
         return Vec::new();
@@ -265,6 +271,19 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
         match mode {
             HistoryRenderMode::Rich => visible_lines(self.display_hyperlink_lines(width)),
             HistoryRenderMode::Raw => self.live_raw_lines(),
+        }
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Normal
+    }
+
+    /// Conversation content retained when committed tool and status output is hidden.
+    /// Activity groups override this to preserve the reasoning stored between calls.
+    fn clean_transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        match self.history_visibility_kind() {
+            HistoryVisibilityKind::Normal => self.transcript_hyperlink_lines(width),
+            HistoryVisibilityKind::Noise => Vec::new(),
         }
     }
 

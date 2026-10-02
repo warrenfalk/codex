@@ -49,6 +49,11 @@ impl TranscriptOverlay {
         self.view.is_detailed()
     }
 
+    pub(crate) fn set_clean_scrollback_enabled(&mut self, clean_scrollback_enabled: bool) {
+        self.view
+            .set_clean_scrollback_enabled(clean_scrollback_enabled);
+    }
+
     pub(crate) fn new(cells: Vec<Arc<dyn HistoryCell>>, keymap: PagerKeymap) -> Self {
         let mut view = TranscriptView::default();
         view.set_presentation(/*detailed*/ true, HistoryRenderMode::Rich);

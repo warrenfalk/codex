@@ -105,6 +105,10 @@ impl HistoryCell for UnifiedExecInteractionCell {
         out.extend(raw_lines_from_source(&self.stdin));
         out
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 pub(crate) fn new_unified_exec_interaction(
@@ -250,6 +254,10 @@ impl HistoryCell for UnifiedExecProcessesCell {
     fn desired_height(&self, width: u16) -> u16 {
         self.display_lines(width).len() as u16
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 pub(crate) fn new_unified_exec_processes_output(
@@ -257,5 +265,8 @@ pub(crate) fn new_unified_exec_processes_output(
 ) -> CompositeHistoryCell {
     let command = PlainHistoryCell::new(vec!["/ps".magenta().into()]);
     let summary = UnifiedExecProcessesCell::new(processes);
-    CompositeHistoryCell::new(vec![Box::new(command), Box::new(summary)])
+    CompositeHistoryCell::new_with_visibility_kind(
+        vec![Box::new(command), Box::new(summary)],
+        HistoryVisibilityKind::Noise,
+    )
 }

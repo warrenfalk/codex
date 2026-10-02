@@ -104,6 +104,7 @@ pub(crate) struct TranscriptView {
     held_reading: Option<ViewSnapshot>,
     search: Search,
     detailed: bool,
+    clean_scrollback_enabled: bool,
     mode: HistoryRenderMode,
     pub(crate) history: TranscriptHistoryState,
     highlight: Option<usize>,
@@ -137,6 +138,7 @@ impl Default for TranscriptView {
             held_reading: None,
             search: Search::default(),
             detailed: false,
+            clean_scrollback_enabled: false,
             mode: HistoryRenderMode::Rich,
             history: TranscriptHistoryState::Idle,
             highlight: None,
@@ -345,6 +347,21 @@ impl TranscriptView {
         self.restart_search();
         self.detailed = detailed;
         self.mode = mode;
+    }
+
+    /// Filter retained entries without renumbering anchors or changing stored history.
+    pub(crate) fn set_clean_scrollback_enabled(&mut self, clean_scrollback_enabled: bool) {
+        if self.clean_scrollback_enabled == clean_scrollback_enabled {
+            return;
+        }
+        self.cancel_search();
+        self.selection = None;
+        self.release_live_reading();
+        self.cache.clear();
+        self.visible.clear();
+        self.suppressed_prompt_header = None;
+        self.disclosure.focused = None;
+        self.clean_scrollback_enabled = clean_scrollback_enabled;
     }
 
     pub(crate) fn has_active_interaction(&self) -> bool {

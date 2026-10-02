@@ -159,6 +159,8 @@ impl App {
 
     /// Show detailed history in the owned viewport or the inline session's transcript overlay.
     pub(crate) fn open_transcript_overlay(&mut self, tui: &mut tui::Tui) {
+        self.transcript_view
+            .set_clean_scrollback_enabled(self.clean_scrollback_enabled);
         if tui.is_owned_screen() {
             self.transcript_view.set_presentation(
                 /*detailed*/ true,
@@ -174,6 +176,9 @@ impl App {
             self.local_settings
                 .copy_on_select(&codex_terminal_detection::terminal_info()),
         ));
+        if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
+            overlay.set_clean_scrollback_enabled(self.clean_scrollback_enabled);
+        }
         if self.scrollback_has_older_history
             && let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut()
         {
