@@ -133,11 +133,8 @@ impl FileSystemSandboxRunner {
         #[cfg(windows)]
         bind_windows_cwd_relative_deny_read_globs(&mut file_system_policy, &cwd.uri)?;
         let network_policy = native_permissions.network_sandbox_policy();
-        let permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
-            native_permissions.enforcement(),
-            &file_system_policy,
-            network_policy,
-        );
+        let permission_profile =
+            native_permissions.with_runtime_permissions(&file_system_policy, network_policy);
         self.sandbox_exec_request(&permission_profile, &cwd, workspace_roots, sandbox)
     }
 

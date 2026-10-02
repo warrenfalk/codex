@@ -29,6 +29,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::linux_run_main::synthetic_mount_registry_root;
+use codex_protocol::PidNamespace;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
 use codex_protocol::permissions::is_protected_metadata_name;
@@ -66,6 +67,8 @@ pub(crate) const WSLG_DISTRO_ROOT: &str = "/mnt/wslg/distro";
 /// Options that control how bubblewrap is invoked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BwrapOptions {
+    /// Whether to create a new PID namespace or share the executor's namespace.
+    pub pid_namespace: PidNamespace,
     /// Whether to mount a fresh `/proc`; disabled by `--no-proc` or mount fallback.
     pub mount_proc: bool,
     /// Explicitly reuse the caller's PID namespace instead of creating one.
@@ -87,6 +90,7 @@ pub(crate) struct BwrapOptions {
 impl Default for BwrapOptions {
     fn default() -> Self {
         Self {
+            pid_namespace: PidNamespace::Isolated,
             mount_proc: true,
             inherit_pid_namespace: false,
             network_mode: BwrapNetworkMode::FullAccess,
@@ -296,11 +300,11 @@ fn create_bwrap_flags_full_filesystem(command: Vec<String>, options: BwrapOption
         // Always enter a fresh user namespace so root inside a container does
         // not need ambient CAP_SYS_ADMIN to create the remaining namespaces.
         "--unshare-user".to_string(),
-        "--unshare-ipc".to_string(),
     ];
-    if !options.inherit_pid_namespace {
+    if !options.inherit_pid_namespace && options.pid_namespace.is_isolated() {
         args.push("--unshare-pid".to_string());
     }
+    args.push("--unshare-ipc".to_string());
     if options.network_mode.should_unshare_network() {
         args.push("--unshare-net".to_string());
     }
@@ -374,7 +378,7 @@ fn create_bwrap_flags(
     // This also blocks host procfs root/cwd/fd links through ptrace permission
     // checks, including when a container requires retaining the host procfs.
     args.push("--unshare-user".to_string());
-    if !options.inherit_pid_namespace {
+    if !options.inherit_pid_namespace && options.pid_namespace.is_isolated() {
         args.push("--unshare-pid".to_string());
     }
     args.push("--unshare-ipc".to_string());
@@ -1689,8 +1693,8 @@ mod tests {
                 "/dev/shm".to_string(),
                 "/dev/shm".to_string(),
                 "--unshare-user".to_string(),
-                "--unshare-ipc".to_string(),
                 "--unshare-pid".to_string(),
+                "--unshare-ipc".to_string(),
                 "--unshare-net".to_string(),
                 "--proc".to_string(),
                 "/proc".to_string(),

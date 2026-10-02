@@ -313,6 +313,7 @@ pub fn run_main() -> ! {
             (None, Vec::new())
         };
         let options = BwrapOptions {
+            pid_namespace: permission_profile.pid_namespace(),
             mount_proc: !no_proc && !inherit_pid_namespace,
             inherit_pid_namespace,
             network_mode: bwrap_network_mode(network_sandbox_policy, allow_network_for_proxy),
@@ -438,6 +439,7 @@ fn run_bwrap_with_proc_fallback(
     let command_cwd = command_cwd.unwrap_or(sandbox_policy_cwd);
 
     if options.mount_proc
+        && options.pid_namespace.is_isolated()
         && !preflight_proc_mount_support(options)
             .unwrap_or_else(|err| exit_with_bwrap_build_error(err))
     {

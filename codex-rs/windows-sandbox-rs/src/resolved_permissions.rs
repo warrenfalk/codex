@@ -238,6 +238,7 @@ mod tests {
 
     fn permission_profile_with_entries(entries: Vec<FileSystemSandboxEntry>) -> PermissionProfile {
         PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries,
                 glob_scan_max_depth: None,
@@ -286,6 +287,7 @@ mod tests {
         std::fs::create_dir_all(&command_cwd).expect("create command cwd");
 
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![FileSystemSandboxEntry {
                     path: FileSystemPath::Special {
@@ -326,6 +328,7 @@ mod tests {
         let second = AbsolutePathBuf::from_absolute_path(tmp.path().join("second"))
             .expect("absolute second root");
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
                     FileSystemSandboxEntry {
@@ -473,6 +476,7 @@ mod tests {
     #[test]
     fn permission_profile_rejects_unrestricted_managed_filesystem() {
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Unrestricted,
             network: NetworkSandboxPolicy::Restricted,
         };
@@ -583,6 +587,7 @@ mod tests {
         let cwd = tmp.path().join("workspace");
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![FileSystemSandboxEntry {
                     path: FileSystemPath::Special {

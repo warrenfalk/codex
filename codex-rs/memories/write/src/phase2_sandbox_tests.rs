@@ -43,6 +43,7 @@ async fn consolidation_uses_canonical_parent_enforcement() -> anyhow::Result<()>
         ),
         (
             PermissionProfile::Managed {
+                pid_namespace: Default::default(),
                 file_system: ManagedFileSystemPermissions::Unrestricted,
                 network: NetworkSandboxPolicy::Enabled,
             },

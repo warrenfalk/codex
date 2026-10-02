@@ -3109,6 +3109,7 @@ mod tests {
         let cwd = test_path_buf("/workspace/project").abs();
         let extra_root = test_path_buf("/workspace/extra").abs();
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
@@ -3291,6 +3292,7 @@ mod tests {
         let cwd = test_path_buf("/workspace/project").abs();
         let extra_root = test_path_buf("/workspace/cache").abs();
         let permission_profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
@@ -3325,6 +3327,7 @@ mod tests {
     fn sandbox_mode_projects_cwd_write_for_remote_sessions() {
         let cwd = test_path_buf("/workspace/project").abs();
         let permission_profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
@@ -3617,106 +3620,112 @@ mod tests {
 
     #[tokio::test]
     async fn persisted_resume_does_not_forward_implicit_service_tier() -> Result<()> {
-        let codex_home = tempfile::tempdir().expect("tempdir");
-        let mut config = build_config(&codex_home).await;
-        config.model = Some("gpt-5.5".to_string());
-        config.service_tier = None;
-        config
-            .features
-            .enable(Feature::FastMode)
-            .expect("enable fast mode");
-        let thread_id = ThreadId::from_string(
-            &create_fake_rollout(
-                codex_home.path(),
-                "2025-01-05T12-00-00",
-                "2025-01-05T12:00:00Z",
-                "Saved user message",
-                Some(config.model_provider_id.as_str()),
-                /*git_info*/ None,
-            )
-            .expect("create source rollout"),
-        )?;
-        let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
-        let mut preset = crate::test_support::TEST_MODEL_PRESETS
-            .iter()
-            .find(|preset| preset.model == "gpt-5.5")
-            .expect("gpt-5.5 test preset")
-            .clone();
-        preset.service_tiers = vec![ModelServiceTier {
-            id: ServiceTier::Fast.request_value().to_string(),
-            name: "fast".to_string(),
-            description: "Fast tier".to_string(),
-        }];
-        preset.default_service_tier = Some(ServiceTier::Fast.request_value().to_string());
-        app_server.available_models = vec![preset];
+        Box::pin(async {
+            let codex_home = tempfile::tempdir().expect("tempdir");
+            let mut config = build_config(&codex_home).await;
+            config.model = Some("gpt-5.5".to_string());
+            config.service_tier = None;
+            config
+                .features
+                .enable(Feature::FastMode)
+                .expect("enable fast mode");
+            let thread_id = ThreadId::from_string(
+                &create_fake_rollout(
+                    codex_home.path(),
+                    "2025-01-05T12-00-00",
+                    "2025-01-05T12:00:00Z",
+                    "Saved user message",
+                    Some(config.model_provider_id.as_str()),
+                    /*git_info*/ None,
+                )
+                .expect("create source rollout"),
+            )?;
+            let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+            let mut preset = crate::test_support::TEST_MODEL_PRESETS
+                .iter()
+                .find(|preset| preset.model == "gpt-5.5")
+                .expect("gpt-5.5 test preset")
+                .clone();
+            preset.service_tiers = vec![ModelServiceTier {
+                id: ServiceTier::Fast.request_value().to_string(),
+                name: "fast".to_string(),
+                description: "Fast tier".to_string(),
+            }];
+            preset.default_service_tier = Some(ServiceTier::Fast.request_value().to_string());
+            app_server.available_models = vec![preset];
 
-        let resumed = app_server
-            .resume_thread(
-                &LocalSettings::from(&config),
-                config,
-                thread_id,
-                ResumeModelSettings::RestoreFromThread,
-            )
-            .await?;
+            let resumed = app_server
+                .resume_thread(
+                    &LocalSettings::from(&config),
+                    config,
+                    thread_id,
+                    ResumeModelSettings::RestoreFromThread,
+                )
+                .await?;
 
-        assert_eq!(resumed.session.service_tier, None);
-        app_server.shutdown().await?;
-        Ok(())
+            assert_eq!(resumed.session.service_tier, None);
+            app_server.shutdown().await?;
+            Ok(())
+        })
+        .await
     }
 
     #[tokio::test]
     async fn side_fork_skips_parent_title_lookup_but_normal_ephemeral_fork_keeps_it() -> Result<()>
     {
-        let codex_home = tempfile::tempdir().expect("tempdir");
-        let config = build_config(&codex_home).await;
-        let source_thread_id = ThreadId::from_string(
-            &create_fake_rollout(
-                codex_home.path(),
-                "2025-01-05T12-00-00",
-                "2025-01-05T12:00:00Z",
-                "Saved user message",
-                Some(config.model_provider_id.as_str()),
-                /*git_info*/ None,
-            )
-            .expect("create source rollout"),
-        )?;
-        let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
-        app_server
-            .resume_thread(
-                &LocalSettings::from(&config),
-                config.clone(),
-                source_thread_id,
-                ResumeModelSettings::RestoreFromThread,
-            )
-            .await?;
-        app_server
-            .thread_set_name(source_thread_id, "Source thread".to_string())
-            .await?;
+        Box::pin(async {
+            let codex_home = tempfile::tempdir().expect("tempdir");
+            let config = build_config(&codex_home).await;
+            let source_thread_id = ThreadId::from_string(
+                &create_fake_rollout(
+                    codex_home.path(),
+                    "2025-01-05T12-00-00",
+                    "2025-01-05T12:00:00Z",
+                    "Saved user message",
+                    Some(config.model_provider_id.as_str()),
+                    /*git_info*/ None,
+                )
+                .expect("create source rollout"),
+            )?;
+            let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+            app_server
+                .resume_thread(
+                    &LocalSettings::from(&config),
+                    config.clone(),
+                    source_thread_id,
+                    ResumeModelSettings::RestoreFromThread,
+                )
+                .await?;
+            app_server
+                .thread_set_name(source_thread_id, "Source thread".to_string())
+                .await?;
 
-        let mut ephemeral_config = config;
-        ephemeral_config.ephemeral = true;
-        let normal_ephemeral_fork = app_server
-            .fork_thread(
-                &LocalSettings::from(&ephemeral_config),
-                ephemeral_config.clone(),
-                source_thread_id,
-            )
-            .await?;
-        let side_fork = app_server
-            .fork_side_thread(
-                &LocalSettings::from(&ephemeral_config),
-                ephemeral_config,
-                source_thread_id,
-            )
-            .await?;
+            let mut ephemeral_config = config;
+            ephemeral_config.ephemeral = true;
+            let normal_ephemeral_fork = app_server
+                .fork_thread(
+                    &LocalSettings::from(&ephemeral_config),
+                    ephemeral_config.clone(),
+                    source_thread_id,
+                )
+                .await?;
+            let side_fork = app_server
+                .fork_side_thread(
+                    &LocalSettings::from(&ephemeral_config),
+                    ephemeral_config,
+                    source_thread_id,
+                )
+                .await?;
 
-        assert_eq!(
-            normal_ephemeral_fork.session.fork_parent_title.as_deref(),
-            Some("Source thread")
-        );
-        assert_eq!(side_fork.session.fork_parent_title, None);
-        app_server.shutdown().await?;
-        Ok(())
+            assert_eq!(
+                normal_ephemeral_fork.session.fork_parent_title.as_deref(),
+                Some("Source thread")
+            );
+            assert_eq!(side_fork.session.fork_parent_title, None);
+            app_server.shutdown().await?;
+            Ok(())
+        })
+        .await
     }
 
     #[tokio::test]
@@ -3756,98 +3765,101 @@ mod tests {
 
     #[tokio::test]
     async fn side_fork_uses_one_request_for_long_paginated_history() -> Result<()> {
-        let codex_home = tempfile::tempdir().expect("tempdir");
-        let mut config = build_config(&codex_home).await;
-        config.terminal_resize_reflow.max_rows =
-            crate::legacy_core::config::TerminalResizeReflowMaxRows::Limit(100);
-        let filename_ts = "2025-01-05T12-00-00";
-        let source_id = create_fake_paginated_rollout(
-            codex_home.path(),
-            filename_ts,
-            "2025-01-05T12:00:00Z",
-            "Saved user message",
-            Some(config.model_provider_id.as_str()),
-            /*git_info*/ None,
-        )
-        .expect("create long paginated source rollout");
-        let source_path =
-            app_test_support::rollout_path(codex_home.path(), filename_ts, source_id.as_str());
-        let mut contents = std::fs::read_to_string(&source_path)?;
-        let rollout_line = |ordinal: usize, payload: serde_json::Value| {
-            serde_json::json!({
-                "timestamp": "2025-01-05T12:00:00Z",
-                "type": "event_msg",
-                "payload": payload,
-                "ordinal": ordinal,
-            })
-        };
-        let started = rollout_line(
-            /*ordinal*/ 3,
-            serde_json::json!({
-                "type": "task_started",
-                "turn_id": "long-history-turn",
-                "model_context_window": null,
-            }),
-        );
-        contents.push_str(&format!("{started}\n"));
-        for index in 0..256 {
-            let item = rollout_line(
-                index + 4,
+        Box::pin(async {
+            let codex_home = tempfile::tempdir().expect("tempdir");
+            let mut config = build_config(&codex_home).await;
+            config.terminal_resize_reflow.max_rows =
+                crate::legacy_core::config::TerminalResizeReflowMaxRows::Limit(100);
+            let filename_ts = "2025-01-05T12-00-00";
+            let source_id = create_fake_paginated_rollout(
+                codex_home.path(),
+                filename_ts,
+                "2025-01-05T12:00:00Z",
+                "Saved user message",
+                Some(config.model_provider_id.as_str()),
+                /*git_info*/ None,
+            )
+            .expect("create long paginated source rollout");
+            let source_path =
+                app_test_support::rollout_path(codex_home.path(), filename_ts, source_id.as_str());
+            let mut contents = std::fs::read_to_string(&source_path)?;
+            let rollout_line = |ordinal: usize, payload: serde_json::Value| {
                 serde_json::json!({
-                    "type": "item_completed",
-                    "thread_id": source_id,
+                    "timestamp": "2025-01-05T12:00:00Z",
+                    "type": "event_msg",
+                    "payload": payload,
+                    "ordinal": ordinal,
+                })
+            };
+            let started = rollout_line(
+                /*ordinal*/ 3,
+                serde_json::json!({
+                    "type": "task_started",
                     "turn_id": "long-history-turn",
-                    "item": {
-                        "type": "UserMessage",
-                        "id": format!("long-history-user-{index}"),
-                        "content": [{
-                            "type": "text",
-                            "text": format!("long history message {index}"),
-                        }],
-                    },
+                    "model_context_window": null,
                 }),
             );
-            contents.push_str(&format!("{item}\n"));
-        }
-        std::fs::write(source_path, contents)?;
+            contents.push_str(&format!("{started}\n"));
+            for index in 0..256 {
+                let item = rollout_line(
+                    index + 4,
+                    serde_json::json!({
+                        "type": "item_completed",
+                        "thread_id": source_id,
+                        "turn_id": "long-history-turn",
+                        "item": {
+                            "type": "UserMessage",
+                            "id": format!("long-history-user-{index}"),
+                            "content": [{
+                                "type": "text",
+                                "text": format!("long history message {index}"),
+                            }],
+                        },
+                    }),
+                );
+                contents.push_str(&format!("{item}\n"));
+            }
+            std::fs::write(source_path, contents)?;
 
-        let source_thread_id = ThreadId::from_string(source_id.as_str())?;
-        let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
-        let resumed = app_server
-            .resume_thread(
-                &LocalSettings::from(&config),
-                config.clone(),
-                source_thread_id,
-                ResumeModelSettings::RestoreFromThread,
-            )
-            .await?;
-        let loaded_items: usize = resumed.turns.iter().map(|turn| turn.items.len()).sum();
-        assert!(loaded_items <= HISTORY_ITEM_PAGE_LIMIT as usize);
-        assert!(app_server.has_older_history(source_thread_id));
+            let source_thread_id = ThreadId::from_string(source_id.as_str())?;
+            let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+            let resumed = app_server
+                .resume_thread(
+                    &LocalSettings::from(&config),
+                    config.clone(),
+                    source_thread_id,
+                    ResumeModelSettings::RestoreFromThread,
+                )
+                .await?;
+            let loaded_items: usize = resumed.turns.iter().map(|turn| turn.items.len()).sum();
+            assert!(loaded_items <= HISTORY_ITEM_PAGE_LIMIT as usize);
+            assert!(app_server.has_older_history(source_thread_id));
 
-        let mut side_config = config;
-        side_config.ephemeral = true;
-        let next_request_id = app_server.next_request_id;
-        let side = app_server
-            .fork_side_thread(
-                &LocalSettings::from(&side_config),
-                side_config,
-                source_thread_id,
-            )
-            .await?;
+            let mut side_config = config;
+            side_config.ephemeral = true;
+            let next_request_id = app_server.next_request_id;
+            let side = app_server
+                .fork_side_thread(
+                    &LocalSettings::from(&side_config),
+                    side_config,
+                    source_thread_id,
+                )
+                .await?;
 
-        assert_eq!(app_server.next_request_id, next_request_id + 1);
-        assert_eq!(side.session.forked_from_id, Some(source_thread_id));
-        assert_eq!(side.turns, Vec::<Turn>::new());
-        assert!(app_server.has_older_history(source_thread_id));
-        assert!(
-            !app_server
-                .history_pagination
-                .contains_key(&side.session.thread_id)
-        );
+            assert_eq!(app_server.next_request_id, next_request_id + 1);
+            assert_eq!(side.session.forked_from_id, Some(source_thread_id));
+            assert_eq!(side.turns, Vec::<Turn>::new());
+            assert!(app_server.has_older_history(source_thread_id));
+            assert!(
+                !app_server
+                    .history_pagination
+                    .contains_key(&side.session.thread_id)
+            );
 
-        app_server.shutdown().await?;
-        Ok(())
+            app_server.shutdown().await?;
+            Ok(())
+        })
+        .await
     }
 
     #[tokio::test]

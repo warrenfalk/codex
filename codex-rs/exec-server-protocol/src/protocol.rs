@@ -1586,6 +1586,7 @@ mod tests {
             glob_scan_max_depth: Some(2.try_into().expect("non-zero depth")),
         };
         let permissions = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system,
             network: NetworkSandboxPolicy::Restricted,
         };
@@ -1648,6 +1649,7 @@ mod tests {
         let cwd = PathUri::parse("file:///C:/a%20b").expect("drive cwd URI");
         let unc = PathUri::parse("file://host/s/a%20b").expect("UNC path URI");
         let permissions = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: [cwd.clone(), unc.clone()]
                     .into_iter()
@@ -1784,6 +1786,23 @@ mod tests {
                 .expect("deserialize capability"),
             capability
         );
+    }
+
+    #[test]
+    fn filesystem_protocol_preserves_host_pid_namespace() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let profile =
+            PermissionProfile::read_only().with_pid_namespace(codex_protocol::PidNamespace::Host);
+        let sandbox = FileSystemSandboxContext::from_permission_profile(
+            profile.clone(),
+            PathUri::parse("file:///workspace")?,
+        );
+        let wire = serde_json::to_value(&sandbox)?;
+        assert_eq!(wire["permissions"]["pid_namespace"], "host");
+        let restored: FileSystemSandboxContext = serde_json::from_value(wire)?;
+        assert_eq!(restored, sandbox);
+        assert_eq!(restored.permissions, profile);
+        Ok(())
     }
 
     #[test]

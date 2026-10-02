@@ -36,6 +36,7 @@ struct SystemBwrapCapabilities {
 }
 
 pub(crate) fn exec_bwrap(mut argv: Vec<String>, preserved_files: Vec<File>) -> ! {
+    // The filtered reaper can be PID 1 only when bubblewrap creates a namespace.
     if argv
         .iter()
         .take_while(|arg| arg.as_str() != "--")

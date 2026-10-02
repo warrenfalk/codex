@@ -402,26 +402,27 @@ fn activity_metadata_is_retained_without_including_outputs() -> color_eyre::Resu
 
 #[tokio::test]
 async fn task_management_tools_use_existing_app_server_operations() -> color_eyre::Result<()> {
-    let (codex_home, server, source, target) = test_server(json!({})).await?;
+    Box::pin(async {
+        let (codex_home, server, source, target) = test_server(json!({})).await?;
 
-    let listed = response_json(call_tool(&server, &source, "list_threads", json!({})).await);
-    assert!(
-        listed["threads"]
-            .as_array()
-            .is_some_and(|threads| { threads.iter().any(|thread| thread["id"] == target) })
-    );
+        let listed = response_json(call_tool(&server, &source, "list_threads", json!({})).await);
+        assert!(
+            listed["threads"]
+                .as_array()
+                .is_some_and(|threads| { threads.iter().any(|thread| thread["id"] == target) })
+        );
 
-    let legacy = create_fake_rollout(
-        codex_home.path(),
-        "2026-01-03T00-00-00",
-        "2026-01-03T00:00:00Z",
-        "Legacy test task",
-        Some("openai"),
-        /*git_info*/ None,
-    )
-    .map_err(|error| color_eyre::eyre::eyre!("failed to create legacy rollout: {error}"))?;
-    for thread_id in [&target, &legacy] {
-        let read = response_json(
+        let legacy = create_fake_rollout(
+            codex_home.path(),
+            "2026-01-03T00-00-00",
+            "2026-01-03T00:00:00Z",
+            "Legacy test task",
+            Some("openai"),
+            /*git_info*/ None,
+        )
+        .map_err(|error| color_eyre::eyre::eyre!("failed to create legacy rollout: {error}"))?;
+        for thread_id in [&target, &legacy] {
+            let read = response_json(
             call_tool(
                 &server,
                 &source,
@@ -430,151 +431,157 @@ async fn task_management_tools_use_existing_app_server_operations() -> color_eyr
             )
             .await,
         );
-        assert_eq!(read["schemaVersion"], 1);
-        assert_eq!(read["thread"]["id"], *thread_id);
-        assert_eq!(read["page"]["order"], "newest_first");
-        assert!(read["turns"].is_array());
-        if thread_id == &target {
-            let assistant = read["turns"][0]["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|item| item["type"] == "agentMessage")
-                .expect("assistant reply");
-            assert_eq!(
-                assistant,
-                &json!({
-                    "type": "agentMessage", "id": "persisted-message",
-                    "text": "Persisted assistant output".repeat(120), "phase": "final_answer"
-                })
-            );
+            assert_eq!(read["schemaVersion"], 1);
+            assert_eq!(read["thread"]["id"], *thread_id);
+            assert_eq!(read["page"]["order"], "newest_first");
+            assert!(read["turns"].is_array());
+            if thread_id == &target {
+                let assistant = read["turns"][0]["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["type"] == "agentMessage")
+                    .expect("assistant reply");
+                assert_eq!(
+                    assistant,
+                    &json!({
+                        "type": "agentMessage", "id": "persisted-message",
+                        "text": "Persisted assistant output".repeat(120), "phase": "final_answer"
+                    })
+                );
+            }
         }
-    }
 
-    let renamed = response_json(
-        call_tool(
-            &server,
-            &source,
-            "set_thread_title",
-            json!({"threadId": target, "title": "Renamed task"}),
-        )
-        .await,
-    );
-    assert_eq!(
-        renamed,
-        json!({"threadId": target, "title": "Renamed task"})
-    );
+        let renamed = response_json(
+            call_tool(
+                &server,
+                &source,
+                "set_thread_title",
+                json!({"threadId": target, "title": "Renamed task"}),
+            )
+            .await,
+        );
+        assert_eq!(
+            renamed,
+            json!({"threadId": target, "title": "Renamed task"})
+        );
 
-    let forked = response_json(
-        call_tool(&server, &source, "fork_thread", json!({"threadId": target})).await,
-    );
-    assert_ne!(forked["threadId"], target);
-    let self_forked = response_json(call_tool(&server, &target, "fork_thread", json!({})).await);
-    assert_ne!(self_forked["threadId"], target);
-    assert_eq!(self_forked["sourceThreadId"], target);
-    assert_eq!(
-        self_forked["environment"],
-        json!({"type": "same-directory"})
-    );
+        let forked = response_json(
+            call_tool(&server, &source, "fork_thread", json!({"threadId": target})).await,
+        );
+        assert_ne!(forked["threadId"], target);
+        let self_forked =
+            response_json(call_tool(&server, &target, "fork_thread", json!({})).await);
+        assert_ne!(self_forked["threadId"], target);
+        assert_eq!(self_forked["sourceThreadId"], target);
+        assert_eq!(
+            self_forked["environment"],
+            json!({"type": "same-directory"})
+        );
 
-    let self_archive = call_tool(
-        &server,
-        &source,
-        "set_thread_archived",
-        json!({"threadId": source.to_uppercase(), "archived": true}),
-    )
-    .await;
-    assert!(!self_archive.success);
-
-    let archived = response_json(
-        call_tool(
+        let self_archive = call_tool(
             &server,
             &source,
             "set_thread_archived",
-            json!({"threadId": target, "archived": true}),
-        )
-        .await,
-    );
-    assert_eq!(archived, json!({"threadId": target, "archived": true}));
-
-    let mut expected_archived = vec![target.clone()];
-    for day in 4..12 {
-        let archived_id = create_fake_paginated_rollout(
-            codex_home.path(),
-            &format!("2026-01-{day:02}T00-00-00"),
-            &format!("2026-01-{day:02}T00:00:00Z"),
-            "Archived task with a deliberately descriptive pagination title",
-            Some("openai"),
-            /*git_info*/ None,
-        )
-        .map_err(|error| color_eyre::eyre::eyre!("failed to create archived rollout: {error}"))?;
-        let archived = call_tool(
-            &server,
-            &source,
-            "set_thread_archived",
-            json!({"threadId": archived_id, "archived": true}),
+            json!({"threadId": source.to_uppercase(), "archived": true}),
         )
         .await;
-        assert!(archived.success, "{archived:?}");
-        expected_archived.push(archived_id);
-    }
-    let mut archived_threads = response_json(
-        call_tool(
-            &server,
-            &source,
-            "list_archived_threads",
-            json!({"limit": 2}),
-        )
-        .await,
-    );
-    assert!(
-        archived_threads["threads"]
-            .as_array()
-            .is_some_and(|threads| threads.len() < expected_archived.len())
-    );
-    let mut listed_archived = Vec::new();
-    loop {
-        listed_archived.extend(
-            archived_threads["threads"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|thread| thread["id"].as_str().map(ToString::to_string)),
+        assert!(!self_archive.success);
+
+        let archived = response_json(
+            call_tool(
+                &server,
+                &source,
+                "set_thread_archived",
+                json!({"threadId": target, "archived": true}),
+            )
+            .await,
         );
-        let Some(cursor) = archived_threads["nextCursor"].as_str() else {
-            break;
-        };
-        archived_threads = response_json(
+        assert_eq!(archived, json!({"threadId": target, "archived": true}));
+
+        let mut expected_archived = vec![target.clone()];
+        for day in 4..12 {
+            let archived_id = create_fake_paginated_rollout(
+                codex_home.path(),
+                &format!("2026-01-{day:02}T00-00-00"),
+                &format!("2026-01-{day:02}T00:00:00Z"),
+                "Archived task with a deliberately descriptive pagination title",
+                Some("openai"),
+                /*git_info*/ None,
+            )
+            .map_err(|error| {
+                color_eyre::eyre::eyre!("failed to create archived rollout: {error}")
+            })?;
+            let archived = call_tool(
+                &server,
+                &source,
+                "set_thread_archived",
+                json!({"threadId": archived_id, "archived": true}),
+            )
+            .await;
+            assert!(archived.success, "{archived:?}");
+            expected_archived.push(archived_id);
+        }
+        let mut archived_threads = response_json(
             call_tool(
                 &server,
                 &source,
                 "list_archived_threads",
-                json!({"cursor": cursor}),
+                json!({"limit": 2}),
             )
             .await,
         );
-    }
-    expected_archived.sort();
-    listed_archived.sort();
-    assert_eq!(listed_archived, expected_archived);
+        assert!(
+            archived_threads["threads"]
+                .as_array()
+                .is_some_and(|threads| threads.len() < expected_archived.len())
+        );
+        let mut listed_archived = Vec::new();
+        loop {
+            listed_archived.extend(
+                archived_threads["threads"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|thread| thread["id"].as_str().map(ToString::to_string)),
+            );
+            let Some(cursor) = archived_threads["nextCursor"].as_str() else {
+                break;
+            };
+            archived_threads = response_json(
+                call_tool(
+                    &server,
+                    &source,
+                    "list_archived_threads",
+                    json!({"cursor": cursor}),
+                )
+                .await,
+            );
+        }
+        expected_archived.sort();
+        listed_archived.sort();
+        assert_eq!(listed_archived, expected_archived);
 
-    let restored = response_json(
-        call_tool(
-            &server,
-            &source,
-            "set_thread_archived",
-            json!({"threadId": target, "archived": false}),
-        )
-        .await,
-    );
-    assert_eq!(restored, json!({"threadId": target, "archived": false}));
+        let restored = response_json(
+            call_tool(
+                &server,
+                &source,
+                "set_thread_archived",
+                json!({"threadId": target, "archived": false}),
+            )
+            .await,
+        );
+        assert_eq!(restored, json!({"threadId": target, "archived": false}));
 
-    server.shutdown().await?;
-    Ok(())
+        server.shutdown().await?;
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
 async fn wait_threads_preserves_snapshots_and_rejects_self_wait() -> color_eyre::Result<()> {
+    Box::pin(async {
     let (_codex_home, server, source, target) = test_server(json!({})).await?;
 
     let snapshot = response_json(
@@ -663,10 +670,12 @@ async fn wait_threads_preserves_snapshots_and_rejects_self_wait() -> color_eyre:
 
     server.shutdown().await?;
     Ok(())
+    }).await
 }
 
 #[tokio::test]
 async fn task_creation_and_followup_start_background_turns() -> color_eyre::Result<()> {
+    Box::pin(async {
     let (_codex_home, server, source, target) = test_server(json!({})).await?;
 
     for (tool, arguments) in [
@@ -749,4 +758,5 @@ async fn task_creation_and_followup_start_background_turns() -> color_eyre::Resu
 
     server.shutdown().await?;
     Ok(())
+    }).await
 }

@@ -281,6 +281,7 @@ pub(crate) fn has_yolo_permissions(
                 | PermissionProfile::Managed {
                     file_system: ManagedFileSystemPermissions::Unrestricted,
                     network: NetworkSandboxPolicy::Enabled,
+                    ..
                 }
         )
 }

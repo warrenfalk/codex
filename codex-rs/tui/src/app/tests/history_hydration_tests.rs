@@ -112,131 +112,134 @@ async fn history_fixture(
 #[tokio::test]
 async fn history_hydration_metadata_tracks_missing_turns_and_stale_completions_keep_new_request()
 -> Result<()> {
-    let (mut app, _codex_home, target) =
-        history_fixture(&[1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]).await?;
-    app.local_settings.transcript_mode = TranscriptMode::Terminal;
-    app.local_settings.tui.terminal_resize_reflow_max_rows = Some(1);
-    let (mut server, requests, proxy) = start_recording_app_server(
-        &app.config,
-        /*blocked_thread_list*/ None,
-        /*failed_thread_name*/ None,
-    )
-    .await?;
-    // Resume materializes the hand-written rollout into the server's item projection.
-    // Exclude turns so the explicit hydration below remains the only history load.
-    let _: ThreadResumeResponse = server
-        .request_handle()
-        .request_typed(ClientRequest::ThreadResume {
-            request_id: server.next_request_id(),
-            params: ThreadResumeParams {
-                thread_id: target.thread_id.to_string(),
-                exclude_turns: true,
-                ..ThreadResumeParams::default()
-            },
-        })
-        .await?;
-    let mut thread = server
-        .thread_read(target.thread_id, /*include_turns*/ false)
-        .await?;
-    server
-        .hydrate_initial_thread_history(
-            &mut thread,
-            /*turn_cursor*/ None,
-            /*item_cursor*/ None,
-            Some(&app.config),
-            Some(&app.local_settings),
-            HistoryHydrationScope::Initial,
+    Box::pin(async {
+        let (mut app, _codex_home, target) =
+            history_fixture(&[1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]).await?;
+        app.local_settings.transcript_mode = TranscriptMode::Terminal;
+        app.local_settings.tui.terminal_resize_reflow_max_rows = Some(1);
+        let (mut server, requests, proxy) = start_recording_app_server(
+            &app.config,
+            /*blocked_thread_list*/ None,
+            /*failed_thread_name*/ None,
         )
         .await?;
-    assert_eq!(
-        thread
-            .turns
-            .iter()
-            .flat_map(|turn| &turn.items)
-            .map(ThreadItem::id)
-            .collect::<Vec<_>>(),
-        vec!["item-12-0"]
-    );
-    let old_cursor = server
-        .begin_older_history_page(target.thread_id)
-        .expect("older page");
-    let page = server
-        .thread_items_page(
-            target.thread_id,
-            /*turn_id*/ None,
-            Some(old_cursor.clone()),
-            /*limit*/ 2,
-        )
-        .await?;
-    let items = server
-        .apply_older_history_page(target.thread_id, &old_cursor, page, &mut thread.turns)
-        .await?;
-    assert_eq!(
-        items.iter().map(ThreadItem::id).collect::<Vec<_>>(),
-        vec!["item-3-0", "item-5-0"]
-    );
-    assert_eq!(
-        thread
-            .turns
-            .iter()
-            .flat_map(|turn| &turn.items)
-            .map(ThreadItem::id)
-            .collect::<Vec<_>>(),
-        vec!["item-3-0", "item-5-0", "item-12-0"]
-    );
-    let metadata = recorded_params(&requests, "thread/turns/list");
-    assert_eq!(
-        metadata
-            .iter()
-            .map(|params| params["limit"].as_u64().unwrap())
-            .collect::<Vec<_>>(),
-        vec![5, 2, 2, 1]
-    );
-    assert_eq!(
-        recorded_params(&requests, "thread/read")
-            .into_iter()
-            .map(serde_json::from_value::<ThreadReadParams>)
-            .collect::<Result<Vec<_>, _>>()?,
-        vec![ThreadReadParams {
-            thread_id: target.thread_id.to_string(),
-            include_turns: false,
-        }]
-    );
-
-    let cursor = server
-        .begin_older_history_page(target.thread_id)
-        .expect("next page");
-    assert_ne!(old_cursor, cursor);
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-    // The response is stale even when its thread is no longer displayed. Ignore its error first.
-    app.transcript_view.history = TranscriptHistoryState::LoadingOlder;
-    for result in [
-        Err("obsolete transport failure".to_string()),
-        Ok(ThreadItemsListResponse {
-            data: Vec::new(),
-            next_cursor: None,
-            backwards_cursor: None,
-        }),
-    ] {
-        app.handle_event(
-            &mut tui,
-            &mut server,
-            AppEvent::OlderThreadHistoryLoaded {
-                thread_id: target.thread_id,
-                cursor: old_cursor.clone(),
-                result,
-            },
-        )
-        .await?;
-        assert!(server.is_older_history_page_pending(target.thread_id, &cursor));
+        // Resume materializes the hand-written rollout into the server's item projection.
+        // Exclude turns so the explicit hydration below remains the only history load.
+        let _: ThreadResumeResponse = server
+            .request_handle()
+            .request_typed(ClientRequest::ThreadResume {
+                request_id: server.next_request_id(),
+                params: ThreadResumeParams {
+                    thread_id: target.thread_id.to_string(),
+                    exclude_turns: true,
+                    ..ThreadResumeParams::default()
+                },
+            })
+            .await?;
+        let mut thread = server
+            .thread_read(target.thread_id, /*include_turns*/ false)
+            .await?;
+        server
+            .hydrate_initial_thread_history(
+                &mut thread,
+                /*turn_cursor*/ None,
+                /*item_cursor*/ None,
+                Some(&app.config),
+                Some(&app.local_settings),
+                HistoryHydrationScope::Initial,
+            )
+            .await?;
         assert_eq!(
-            app.transcript_view.history,
-            TranscriptHistoryState::LoadingOlder
+            thread
+                .turns
+                .iter()
+                .flat_map(|turn| &turn.items)
+                .map(ThreadItem::id)
+                .collect::<Vec<_>>(),
+            vec!["item-12-0"]
         );
-    }
-    server.shutdown().await?;
-    proxy.await??;
-    Ok(())
+        let old_cursor = server
+            .begin_older_history_page(target.thread_id)
+            .expect("older page");
+        let page = server
+            .thread_items_page(
+                target.thread_id,
+                /*turn_id*/ None,
+                Some(old_cursor.clone()),
+                /*limit*/ 2,
+            )
+            .await?;
+        let items = server
+            .apply_older_history_page(target.thread_id, &old_cursor, page, &mut thread.turns)
+            .await?;
+        assert_eq!(
+            items.iter().map(ThreadItem::id).collect::<Vec<_>>(),
+            vec!["item-3-0", "item-5-0"]
+        );
+        assert_eq!(
+            thread
+                .turns
+                .iter()
+                .flat_map(|turn| &turn.items)
+                .map(ThreadItem::id)
+                .collect::<Vec<_>>(),
+            vec!["item-3-0", "item-5-0", "item-12-0"]
+        );
+        let metadata = recorded_params(&requests, "thread/turns/list");
+        assert_eq!(
+            metadata
+                .iter()
+                .map(|params| params["limit"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![5, 2, 2, 1]
+        );
+        assert_eq!(
+            recorded_params(&requests, "thread/read")
+                .into_iter()
+                .map(serde_json::from_value::<ThreadReadParams>)
+                .collect::<Result<Vec<_>, _>>()?,
+            vec![ThreadReadParams {
+                thread_id: target.thread_id.to_string(),
+                include_turns: false,
+            }]
+        );
+
+        let cursor = server
+            .begin_older_history_page(target.thread_id)
+            .expect("next page");
+        assert_ne!(old_cursor, cursor);
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+        // The response is stale even when its thread is no longer displayed. Ignore its error first.
+        app.transcript_view.history = TranscriptHistoryState::LoadingOlder;
+        for result in [
+            Err("obsolete transport failure".to_string()),
+            Ok(ThreadItemsListResponse {
+                data: Vec::new(),
+                next_cursor: None,
+                backwards_cursor: None,
+            }),
+        ] {
+            app.handle_event(
+                &mut tui,
+                &mut server,
+                AppEvent::OlderThreadHistoryLoaded {
+                    thread_id: target.thread_id,
+                    cursor: old_cursor.clone(),
+                    result,
+                },
+            )
+            .await?;
+            assert!(server.is_older_history_page_pending(target.thread_id, &cursor));
+            assert_eq!(
+                app.transcript_view.history,
+                TranscriptHistoryState::LoadingOlder
+            );
+        }
+        server.shutdown().await?;
+        proxy.await??;
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

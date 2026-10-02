@@ -1803,6 +1803,7 @@ mod tests {
             .expect("create glob parent");
         fs::write(&denied_glob_match, "secret").expect("write denied glob match");
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
                     FileSystemSandboxEntry::new(
@@ -1907,6 +1908,7 @@ mod tests {
         let workspace_root = tmp.path().join("workspace");
         fs::create_dir_all(&workspace_root).expect("create workspace");
         let permission_profile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![FileSystemSandboxEntry::new(
                     FileSystemPath::GlobPattern {
