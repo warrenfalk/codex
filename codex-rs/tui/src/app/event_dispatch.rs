@@ -3450,9 +3450,6 @@ impl App {
         }
         .await;
         Ok(match result {
-            Ok(()) if matches!(self.app_server_target, AppServerTarget::Embedded) => {
-                AppRunControl::Exit(ExitReason::Archived(thread_id))
-            }
             Ok(()) => {
                 self.track_agents_overview_notification(&ServerNotification::ThreadArchived(
                     codex_app_server_protocol::ThreadArchivedNotification {
@@ -3462,20 +3459,14 @@ impl App {
                 self.discard_thread_local_state(thread_id).await;
                 self.agents_overview.input_states.remove(&thread_id);
                 self.agents_overview.dispatched_requests.remove(&thread_id);
-                self.reset_for_thread_switch(tui)?;
-                self.pending_thread_switch_resets += 1;
-                self.app_event_tx
-                    .send(AppEvent::ResetTranscriptForThreadSwitch);
-                self.detach_current_thread_for_navigation(app_server, /*destination*/ None)
-                    .await;
-                self.reset_thread_event_state().await;
-                let init = self.chatwidget_init_for_forked_or_resumed_thread(
-                    tui,
-                    self.config.clone(),
-                    /*initial_user_message*/ None,
-                );
-                self.replace_chat_widget(ChatWidget::new_with_app_event(init));
-                self.open_agents_overview(app_server);
+                self.start_fresh_session(
+                    tui, app_server, /*session_start_source*/ None,
+                    /*initial_user_message*/ None, /*new_thread_name*/ None,
+                )
+                .await;
+                self.chat_widget
+                    .add_info_message("Archived previous chat.".to_string(), /*hint*/ None);
+                tui.frame_requester().schedule_frame();
                 AppRunControl::Continue
             }
             Err(err) => {

@@ -240,19 +240,18 @@ enum ToolbarControl {
 }
 
 impl ToolbarControl {
-    fn previous(self, action: SessionPickerAction) -> Self {
+    fn previous(self) -> Self {
         match self {
             Self::Filter => Self::Sort,
             Self::Status => Self::Filter,
-            Self::Sort if matches!(action, SessionPickerAction::Resume) => Self::Status,
-            Self::Sort => Self::Filter,
+            Self::Sort => Self::Status,
         }
     }
 
-    fn next(self, action: SessionPickerAction) -> Self {
+    fn next(self) -> Self {
         match self {
-            Self::Filter if matches!(action, SessionPickerAction::Resume) => Self::Status,
-            Self::Filter | Self::Status => Self::Sort,
+            Self::Filter => Self::Status,
+            Self::Status => Self::Sort,
             Self::Sort => Self::Filter,
         }
     }
@@ -1314,7 +1313,9 @@ impl PickerState {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
                     let path = row.path.clone();
                     if let Some(thread_id) = row.thread_id {
-                        if self.status == SessionStatus::Archived {
+                        if self.status == SessionStatus::Archived
+                            && matches!(self.action, SessionPickerAction::Resume)
+                        {
                             self.request_unarchive(thread_id);
                             return Ok(None);
                         }
@@ -1902,11 +1903,11 @@ impl PickerState {
     }
 
     fn focus_previous_toolbar_control(&mut self) {
-        self.toolbar_focus = self.toolbar_focus.previous(self.action);
+        self.toolbar_focus = self.toolbar_focus.previous();
     }
 
     fn focus_next_toolbar_control(&mut self) {
-        self.toolbar_focus = self.toolbar_focus.next(self.action);
+        self.toolbar_focus = self.toolbar_focus.next();
     }
 
     fn change_focused_toolbar_value(&mut self) {
@@ -2180,40 +2181,34 @@ fn toolbar_for_width(state: &PickerState, width: u16) -> Line<'static> {
 
 fn toolbar_line(state: &PickerState, compact: bool) -> Line<'static> {
     let mut spans = Vec::new();
-    let separator = if compact && matches!(state.action, SessionPickerAction::Resume) {
-        " "
-    } else {
-        "   "
-    };
+    let separator = if compact { " " } else { "   " };
     spans.extend(filter_control_spans(state, compact));
     spans.push(separator.set_style(secondary_text_style()));
-    if matches!(state.action, SessionPickerAction::Resume) {
-        let status_focused = state.toolbar_focus == ToolbarControl::Status;
-        if compact {
-            let active_status = match state.status {
-                SessionStatus::Active => "Active",
-                SessionStatus::Archived => "Archived",
-            };
-            spans.push(toolbar_value(
-                active_status,
-                /*active*/ true,
-                status_focused,
-            ));
-        } else {
-            spans.push("Status: ".set_style(secondary_text_style()));
-            spans.push(toolbar_value(
-                "Active",
-                state.status == SessionStatus::Active,
-                status_focused,
-            ));
-            spans.push(toolbar_value(
-                "Archived",
-                state.status == SessionStatus::Archived,
-                status_focused,
-            ));
-        }
-        spans.push(separator.set_style(secondary_text_style()));
+    let status_focused = state.toolbar_focus == ToolbarControl::Status;
+    if compact {
+        let active_status = match state.status {
+            SessionStatus::Active => "Active",
+            SessionStatus::Archived => "Archived",
+        };
+        spans.push(toolbar_value(
+            active_status,
+            /*active*/ true,
+            status_focused,
+        ));
+    } else {
+        spans.push("Status: ".set_style(secondary_text_style()));
+        spans.push(toolbar_value(
+            "Active",
+            state.status == SessionStatus::Active,
+            status_focused,
+        ));
+        spans.push(toolbar_value(
+            "Archived",
+            state.status == SessionStatus::Archived,
+            status_focused,
+        ));
     }
+    spans.push(separator.set_style(secondary_text_style()));
     spans.extend(sort_control_spans(state, compact));
     spans.into()
 }
@@ -2440,7 +2435,9 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         return vec![line, Line::default()];
     }
 
-    let action_label = if state.status == SessionStatus::Archived {
+    let action_label = if state.status == SessionStatus::Archived
+        && matches!(state.action, SessionPickerAction::Resume)
+    {
         "restore"
     } else {
         state.action.action_label()
@@ -2499,7 +2496,7 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         },
         PickerFooterHint {
             key: "tab".to_string(),
-            wide_label: String::from("focus sort/filter"),
+            wide_label: String::from("focus controls"),
             compact_label: String::from("focus"),
             priority: 7,
         },

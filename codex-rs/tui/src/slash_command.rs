@@ -97,7 +97,7 @@ impl SlashCommand {
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
-            SlashCommand::Archive => "archive this session",
+            SlashCommand::Archive => "archive the current chat and start a new one",
             SlashCommand::Delete => "permanently delete this session",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
@@ -177,6 +177,7 @@ impl SlashCommand {
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
+                | SlashCommand::Archive
                 | SlashCommand::Export
                 | SlashCommand::Raw
                 | SlashCommand::Cd
