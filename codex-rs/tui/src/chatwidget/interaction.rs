@@ -229,6 +229,23 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
+        if matches!(key_event.code, KeyCode::Esc)
+            && key_event.kind == KeyEventKind::Press
+            && self.visible_prompt_command_warning().is_some()
+        {
+            self.dismiss_prompt_command_warning();
+            return KeyEventAction::None;
+        }
+
+        if matches!(key_event.code, KeyCode::Enter)
+            && key_event.kind == KeyEventKind::Press
+            && key_event.modifiers.is_empty()
+            && self.visible_prompt_command_warning().is_some()
+        {
+            self.accept_prompt_command_warning();
+            return KeyEventAction::None;
+        }
+
         if self.handle_plugins_popup_key_event(key_event) {
             return KeyEventAction::None;
         }
