@@ -25,7 +25,19 @@ use codex_app_server_protocol::WindowsSandboxSetupMode;
 pub(super) const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
-    pub(crate) async fn handle_event(
+    // Construct and box the large dispatcher future outside the event loop's poll frame.
+    // Boxing at the await site still reserves stack space for the unboxed temporary.
+    #[inline(never)]
+    pub(crate) fn handle_event<'a>(
+        &'a mut self,
+        tui: &'a mut tui::Tui,
+        app_server: &'a mut AppServerSession,
+        event: AppEvent,
+    ) -> std::pin::Pin<Box<impl std::future::Future<Output = Result<AppRunControl>> + 'a>> {
+        Box::pin(self.handle_event_inner(tui, app_server, event))
+    }
+
+    async fn handle_event_inner(
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
@@ -2786,6 +2798,10 @@ impl App {
                 return self
                     .handle_start_side(tui, app_server, parent_thread_id, user_message)
                     .await;
+            }
+            AppEvent::SideConversationCloseSelected(choice) => {
+                self.handle_side_conversation_close_choice(tui, app_server, choice)
+                    .await?;
             }
             AppEvent::OpenSkillsList => {
                 self.chat_widget.open_skills_list();
