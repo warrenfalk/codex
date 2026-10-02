@@ -548,7 +548,9 @@ impl App {
                     self.transcript_view.follow_pending_copy();
                 }
             }
-            ViewAction::OpenLink(url) => self.open_url_in_browser(url),
+            ViewAction::OpenLink(url) => {
+                super::desktop_links::open(url, self.app_event_tx.clone());
+            }
         }
         self.request_owned_history(tui, app_server);
         tui.frame_requester().schedule_frame();
