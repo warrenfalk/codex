@@ -225,6 +225,7 @@ use ratatui::buffer::Buffer;
 use ratatui::prelude::Line;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
@@ -239,6 +240,10 @@ macro_rules! assert_app_snapshot {
         });
     };
 }
+
+const SIDE_START_SMALL_STACK_CHILD_TEST: &str = "side_start_config_refresh_small_stack_child";
+// Match codex_async_utils::THREAD_STACK_SIZE_BYTES, used by codex_arg0.
+const SIDE_START_SMALL_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 fn test_absolute_path(path: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
@@ -4952,6 +4957,82 @@ async fn side_start_block_message_allows_replacing_open_side_conversation() {
 
     app.side_threads.remove(&side_thread_id);
     assert_eq!(app.side_start_block_message(), None);
+}
+
+#[test]
+fn side_start_config_refresh_completes_on_tui_sized_stack() {
+    let output = Command::new(std::env::current_exe().expect("current test binary"))
+        .arg(SIDE_START_SMALL_STACK_CHILD_TEST)
+        .arg("--ignored")
+        .arg("--nocapture")
+        .output()
+        .expect("run side start small-stack child test");
+
+    assert!(
+        output.status.success(),
+        "side startup failed on the TUI runtime stack\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+#[ignore = "subprocess child for side_start_config_refresh_completes_on_tui_sized_stack"]
+fn side_start_config_refresh_small_stack_child() {
+    std::thread::Builder::new()
+        .name("side-start-small-stack".to_string())
+        .stack_size(SIDE_START_SMALL_STACK_BYTES)
+        .spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime");
+            runtime.block_on(async {
+                let mut app = Box::pin(make_test_app()).await;
+                let codex_home = tempdir().expect("temporary Codex home");
+                app.config.codex_home = codex_home.path().to_path_buf().abs();
+                app.config.sqlite =
+                    codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
+                let (mut app_server, requests, proxy) =
+                    session_lifecycle_requests::start_recording_app_server(
+                        &app.config,
+                        /*blocked_thread_list*/ None,
+                        /*failed_thread_name*/ None,
+                    )
+                    .await
+                    .expect("start app server");
+                let mut tui = crate::tui::test_support::make_test_tui().expect("test TUI");
+                let parent_thread_id = ThreadId::new();
+                app.primary_thread_id = Some(parent_thread_id);
+
+                app.handle_start_side(
+                    &mut tui,
+                    &mut app_server,
+                    parent_thread_id,
+                    /*user_message*/ None,
+                )
+                .await
+                .expect("side startup handles a missing parent");
+
+                assert!(
+                    requests
+                        .lock()
+                        .expect("recorded requests")
+                        .iter()
+                        .any(|request| request.method == "thread/fork"),
+                    "side startup must reach the app-server fork request"
+                );
+                app_server.shutdown().await.expect("stop app server");
+                proxy
+                    .await
+                    .expect("join request recorder")
+                    .expect("request recorder");
+            });
+        })
+        .expect("spawn side start small-stack thread")
+        .join()
+        .expect("side startup should not panic");
 }
 
 #[tokio::test]
