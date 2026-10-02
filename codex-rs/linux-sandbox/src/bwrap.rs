@@ -34,6 +34,7 @@ use codex_protocol::error::Result;
 use codex_protocol::permissions::is_protected_metadata_name;
 use codex_protocol::protocol::FileSystemAccessMode;
 use codex_protocol::protocol::FileSystemPath;
+use codex_protocol::protocol::FileSystemSandboxEntry;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
 use codex_protocol::protocol::FileSystemSpecialPath;
 use codex_protocol::protocol::WritableRoot;
@@ -415,9 +416,9 @@ fn create_bwrap_flags(
 ///    (including `/dev/urandom`) even under a read-only root.
 /// 3. Unreadable ancestors of writable roots are masked before their child
 ///    mounts are rebound so nested writable carveouts can be reopened safely.
-/// 4. `--bind <root> <root>` re-enables writes for allowed roots, including
-///    writable subpaths under `/dev` (for example, `/dev/shm`). Binding `/`
-///    recreates the minimal `/dev` before applying any carveouts below it.
+/// 4. Writable binds re-enable writes for allowed roots. Binding `/` recreates
+///    the minimal `/dev`; explicit roots under `/dev` use `--dev-bind` so
+///    granted device nodes remain usable.
 /// 5. `--ro-bind <subpath> <subpath>` re-applies read-only protections under
 ///    those writable roots so protected subpaths win.
 /// 6. Nested unreadable carveouts under a writable root are masked after that
@@ -652,7 +653,12 @@ fn create_filesystem_args(
         let redundant_root_alias =
             binds_file_system_root && root != Path::new("/") && mount_root == Path::new("/");
         if !redundant_root_alias {
-            bwrap_args.args.push("--bind".to_string());
+            let bind_option = if mount_root.starts_with("/dev") {
+                "--dev-bind"
+            } else {
+                "--bind"
+            };
+            bwrap_args.args.push(bind_option.to_string());
             bwrap_args.args.push(path_to_string(mount_root));
             bwrap_args.args.push(path_to_string(mount_root));
             if mount_root == Path::new("/") {
@@ -669,10 +675,29 @@ fn create_filesystem_args(
             append_daemon_socket_masks(&mut bwrap_args.args, mount_root, &daemon_directories)?;
         }
 
-        let mut read_only_subpaths: Vec<PathBuf> = writable_root
-            .read_only_subpaths
-            .iter()
-            .map(|path| path.as_path().to_path_buf())
+        let mut read_only_subpaths = writable_root.read_only_subpaths.clone();
+        if let Some(target) = symlink_target
+            .as_ref()
+            .filter(|path| path.starts_with("/dev"))
+        {
+            // A device alias grants its bound target. Include explicit restrictions
+            // beneath that target as well as restrictions beneath the alias.
+            let mut target_policy = file_system_sandbox_policy.clone();
+            target_policy.entries.push(FileSystemSandboxEntry::new(
+                AbsolutePathBuf::from_absolute_path(target)?.into(),
+                FileSystemAccessMode::Write,
+            ));
+            if let Some(target_root) = target_policy
+                .get_writable_roots_with_cwd(cwd)
+                .into_iter()
+                .find(|root| root.root.as_path() == target)
+            {
+                read_only_subpaths.extend(target_root.read_only_subpaths);
+            }
+        }
+        let mut read_only_subpaths: Vec<PathBuf> = read_only_subpaths
+            .into_iter()
+            .map(AbsolutePathBuf::into_path_buf)
             .filter(|path| !unreadable_paths.contains(path))
             .filter(|path| !missing_auto_metadata_read_only_project_root_subpaths.contains(path))
             .collect();
@@ -773,7 +798,7 @@ fn create_filesystem_args(
         }
         let mut nested_unreadable_roots: Vec<PathBuf> = unreadable_roots
             .iter()
-            .filter(|path| path.starts_with(root))
+            .filter(|path| path.starts_with(root) || path.starts_with(mount_root))
             .cloned()
             .collect();
         if let Some(target) = &symlink_target {
@@ -2450,7 +2475,7 @@ mod tests {
     #[test]
     fn mounts_dev_before_writable_dev_binds() {
         let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
-            &[AbsolutePathBuf::try_from(Path::new("/dev")).expect("/dev path")],
+            &[AbsolutePathBuf::try_from(Path::new("/dev/null")).expect("device path")],
             /*exclude_tmpdir_env_var*/ true,
             /*exclude_slash_tmp*/ true,
         );
@@ -2465,10 +2490,6 @@ mod tests {
                 PathBuf::from("/.git"),
                 PathBuf::from("/.agents"),
                 PathBuf::from("/.codex"),
-                PathBuf::from("/dev/.git"),
-                PathBuf::from("/dev/.agents"),
-                PathBuf::from("/dev/.codex"),
-                PathBuf::from("/dev/.aws"),
             ]
         );
         let dev_mounts = args
@@ -2488,8 +2509,8 @@ mod tests {
         let dev_bind = args
             .args
             .windows(3)
-            .position(|args| args == ["--bind", "/dev", "/dev"])
-            .expect("/dev bind");
+            .position(|args| args == ["--dev-bind", "/dev/null", "/dev/null"])
+            .expect("device bind");
         assert!(*initial_dev_mount < root_bind && root_bind < *restored_dev_mount);
         assert!(*restored_dev_mount < dev_bind);
     }
