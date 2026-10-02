@@ -683,6 +683,11 @@ pub(crate) enum AppEvent {
     },
 
     OpenNotes,
+    SetTtsMode(codex_config::types::TtsMode),
+    TtsFailed {
+        generation: uuid::Uuid,
+        message: String,
+    },
     LoadNotes {
         thread_id: ThreadId,
         generation: uuid::Uuid,

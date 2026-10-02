@@ -328,6 +328,7 @@ mod model_popups;
 mod notes;
 mod notifications;
 mod session_model_selection;
+mod tts;
 pub(crate) use self::notifications::Notification;
 pub(crate) use self::session_model_selection::AstraModelPickerAction;
 mod permission_discovery;
@@ -534,6 +535,7 @@ pub(crate) struct ChatWidget {
     bottom_pane: BottomPane,
     transcript: TranscriptState,
     pub(crate) notes: crate::notes::NotesState,
+    pub(crate) speech: crate::tts::Speech,
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
     raw_output_mode: bool,

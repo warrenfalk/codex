@@ -506,6 +506,7 @@ impl ChatWidget {
             }
             TurnStatus::Interrupted => {
                 if replay_kind.is_none() {
+                    self.speech.stop();
                     question_drafts = self.take_question_drafts();
                 }
                 self.last_non_retry_error = None;

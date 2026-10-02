@@ -41,6 +41,7 @@ pub enum SlashCommand {
     Recap,
     Plan,
     Voice,
+    Speak,
     Goal,
     Nts,
     Agents,
@@ -139,6 +140,7 @@ impl SlashCommand {
             }
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
+            SlashCommand::Speak => "choose speech mode: off, final, or progress and final",
             SlashCommand::Goal => "set or view the goal for a long-running task",
             SlashCommand::Nts => "browse notes to self, or add one with /nts <note>",
             SlashCommand::Agents => "open the agent command center",
@@ -180,6 +182,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::Goal
                 | SlashCommand::Voice
+                | SlashCommand::Speak
                 | SlashCommand::Nts
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
@@ -202,6 +205,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Copy
+                | SlashCommand::Speak
                 | SlashCommand::Agents
                 | SlashCommand::Export
                 | SlashCommand::Raw
@@ -291,6 +295,7 @@ impl SlashCommand {
             | SlashCommand::App
             | SlashCommand::Goal
             | SlashCommand::Voice
+            | SlashCommand::Speak
             | SlashCommand::Nts
             | SlashCommand::Mcp
             | SlashCommand::Apps

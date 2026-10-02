@@ -57,6 +57,8 @@ impl App {
                 | AppEvent::RunDaemonUpdate(_)
                 | AppEvent::InsertHistoryCell(_)
                 | AppEvent::CommitRealtimeTranscriptHistory
+                | AppEvent::SetTtsMode(_)
+                | AppEvent::TtsFailed { .. }
                 | AppEvent::ResetTranscriptForThreadSwitch
                 | AppEvent::ResetTranscriptForThreadSwitchPreservingScreen
                 | AppEvent::FinishPromptRevert { .. }
@@ -140,6 +142,10 @@ impl App {
             AppEvent::RunDaemonUpdate(source) => {
                 self.pending_update_action = Some(UpdateAction::Daemon(source));
                 return Ok(self.handle_exit_mode(app_server, ExitMode::Immediate).await);
+            }
+            AppEvent::SetTtsMode(mode) => self.chat_widget.set_tts_mode(mode),
+            AppEvent::TtsFailed { generation, message } => {
+                self.chat_widget.on_tts_failure(generation, message);
             }
             AppEvent::UserVerificationApproved { thread_id, server_name, request_id } => {
                 Box::pin(self.start_user_verification(app_server, thread_id, server_name, request_id)).await?;
@@ -3242,6 +3248,7 @@ impl App {
         app_server: &mut AppServerSession,
         mode: ExitMode,
     ) -> AppRunControl {
+        self.chat_widget.speech.stop();
         for (request_id, (_, task)) in self.dynamic_tool_tasks.drain() {
             task.abort();
             let response = crate::dynamic_tools::failure_response(

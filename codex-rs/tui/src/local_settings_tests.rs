@@ -117,6 +117,9 @@ mermaid = false
 math = false
 tables = false
 lists = false
+[tui.tts]
+defaultMode = "progress-and-final"
+command = ["custom-say", "--voice", "Charles"]
 [history]
 persistence = "none"
 max_bytes = 4096
@@ -164,6 +167,10 @@ fast_default_opt_out = true
             expected.auto_recap = false;
             expected.fullscreen_transcript = true;
             expected.copy_on_select = CopyOnSelect::Never;
+            expected.tts = codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::ProgressAndFinal,
+                command: vec!["custom-say".into(), "--voice".into(), "Charles".into()],
+            };
             expected.vim_mode_default = true;
             expected.terminal_resize_reflow_max_rows = Some(0);
             expected.session_picker_view = Some(SessionPickerViewMode::Comfortable);
@@ -367,6 +374,45 @@ async fn screen_reader_default_yields_to_preferences_on_reload() -> anyhow::Resu
             MotionMode::Reduced,
         );
         assert_eq!(local.tui.animations, expected);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn tts_command_line_overrides_preserve_other_local_speech_settings() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[tui.tts]\ndefaultMode = 'final'\ncommand = ['saved-say']\n",
+    )?;
+    for (key, value, expected) in [
+        (
+            "tui.tts.command".into(),
+            vec!["override-say", "argument with spaces"].into(),
+            codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::Final,
+                command: vec!["override-say".into(), "argument with spaces".into()],
+            },
+        ),
+        (
+            "tui.tts.defaultMode".into(),
+            "progress-and-final".into(),
+            codex_config::types::TtsConfig {
+                default_mode: codex_config::types::TtsMode::ProgressAndFinal,
+                command: vec!["saved-say".into()],
+            },
+        ),
+    ] {
+        let config = ConfigBuilder::default()
+            .codex_home(home.path().to_path_buf())
+            .loader_overrides(LoaderOverrides {
+                ignore_project_config: true,
+                ..LoaderOverrides::without_managed_config_for_tests()
+            })
+            .cli_overrides(vec![(key, value)])
+            .build()
+            .await?;
+        assert_eq!(LocalSettings::from(&config).tui.tts, expected);
     }
     Ok(())
 }

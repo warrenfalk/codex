@@ -104,6 +104,8 @@ mod thread_usage;
 mod transcript_composer;
 #[path = "tests/transcript_selection.rs"]
 mod transcript_selection;
+#[path = "tests/tts_tests.rs"]
+mod tts;
 #[path = "tests/turn_submission.rs"]
 mod turn_submission;
 #[path = "tests/user_verification_routes_tests.rs"]

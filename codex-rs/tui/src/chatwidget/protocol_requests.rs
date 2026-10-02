@@ -46,6 +46,9 @@ impl ChatWidget {
                 }
             }
             ServerRequest::ToolRequestUserInput { params, .. } => {
+                if replay_kind.is_none() {
+                    self.speak_input_questions(&params);
+                }
                 self.on_request_user_input(params);
             }
             ServerRequest::DynamicToolCall { .. }

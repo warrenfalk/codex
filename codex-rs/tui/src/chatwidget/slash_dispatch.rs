@@ -344,6 +344,7 @@ impl ChatWidget {
                     control: crate::app_event::VoiceControl::Toggle,
                 });
             }
+            SlashCommand::Speak => self.handle_speak_command(""),
             SlashCommand::Nts => {
                 self.app_event_tx.send(AppEvent::OpenNotes);
             }
@@ -754,6 +755,7 @@ impl ChatWidget {
         let trimmed = args.trim();
         match cmd {
             SlashCommand::Export if trimmed.is_empty() => self.show_transcript_export_popup(),
+            SlashCommand::Speak => self.handle_speak_command(trimmed),
             SlashCommand::Export => {
                 self.set_queue_autosend_suppressed(/*suppressed*/ true);
                 self.app_event_tx.send(AppEvent::ExportTranscript {
@@ -1234,6 +1236,7 @@ impl ChatWidget {
             | SlashCommand::App
             | SlashCommand::Rename
             | SlashCommand::Voice
+            | SlashCommand::Speak
             | SlashCommand::Recap
             | SlashCommand::Nts
             | SlashCommand::TestApproval => QueueDrain::Continue,

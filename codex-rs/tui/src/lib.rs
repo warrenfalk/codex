@@ -246,6 +246,7 @@ mod tooltips;
 mod transcript_mode;
 mod transcript_reflow;
 mod transcript_view;
+mod tts;
 mod tui;
 mod turn_tip;
 mod ui_consts;
