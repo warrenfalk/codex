@@ -24,7 +24,6 @@ use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::default_exec_approval_requirement;
 use crate::tools::sandboxing::sandbox_override_for_first_attempt;
-use crate::tools::sandboxing::unsandboxed_execution_allowed;
 use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
@@ -222,16 +221,8 @@ impl ToolOrchestrator {
         }
 
         // 2) First attempt under the selected sandbox.
-        let unsandboxed_allowed = unsandboxed_execution_allowed(&file_system_sandbox_policy);
-        let sandbox_override = if unsandboxed_allowed {
-            sandbox_override_for_first_attempt(
-                tool.sandbox_permissions(req),
-                &requirement,
-                &file_system_sandbox_policy,
-            )
-        } else {
-            SandboxOverride::NoOverride
-        };
+        let sandbox_override =
+            sandbox_override_for_first_attempt(tool.sandbox_permissions(req), &requirement);
         let network_approval_spec = tool.network_approval_spec(req, tool_ctx);
         // An explicit owner proxy requirement permits filtered egress, like an enabled
         // controller proxy. Traffic-only owner policies stay offline unless command
@@ -394,16 +385,6 @@ impl ToolOrchestrator {
                         return Err(ToolError::Codex(err));
                     }
                 }
-                if !unsandboxed_allowed && network_approval_context.is_none() {
-                    otel.sandbox_outcome(
-                        &otel_tn,
-                        otel_ci,
-                        "denied",
-                        initial_duration,
-                        /*escalated_duration*/ None,
-                    );
-                    return Err(ToolError::Codex(err));
-                }
                 let retry_reason =
                     if let Some(network_approval_context) = network_approval_context.as_ref() {
                         format!(
@@ -448,7 +429,9 @@ impl ToolOrchestrator {
                         .await?;
                 }
 
-                let retry_sandbox_requested = !unsandboxed_allowed
+                // A host-specific network approval does not authorize bypassing
+                // the filesystem sandbox.
+                let retry_sandbox_requested = network_approval_context.is_some()
                     && sandbox_manager.should_sandbox(
                         &permissions,
                         sandbox_preference,
@@ -465,10 +448,10 @@ impl ToolOrchestrator {
                 } else {
                     SandboxType::None
                 };
-                let retry_sandbox_exe = if unsandboxed_allowed {
-                    None
-                } else {
+                let retry_sandbox_exe = if retry_sandbox_requested {
                     codex_sandbox_exe
+                } else {
+                    None
                 };
                 let retry_attempt = SandboxAttempt {
                     sandbox: retry_sandbox,

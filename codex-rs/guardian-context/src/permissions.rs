@@ -59,7 +59,7 @@ impl ContextualUserFragment for PermissionContext {
             format!("{scope} has no explicit denied-read paths/globs.\n")
         } else {
             format!(
-                "{scope} denies reading these paths/globs. These are policy restrictions; do not approve escalation whose purpose is to read them.\n{}\n",
+                "{scope} blocks reading these paths/globs inside the sandbox. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted. Apply the normal authorization and risk checks when reviewing escalation.\n{}\n",
                 entries.join("\n")
             )
         }

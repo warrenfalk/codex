@@ -73,6 +73,8 @@ mod current_time_reminder;
 mod cyber_access_program;
 mod cyber_exec_policy;
 mod daybreak_access;
+#[path = "denied_read_escalation_tests.rs"]
+mod denied_read_escalation;
 mod deprecation_notice;
 mod direct_tool_metadata;
 mod exec;

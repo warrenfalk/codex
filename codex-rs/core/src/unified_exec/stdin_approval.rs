@@ -19,7 +19,6 @@ use codex_network_proxy::EnvironmentNetworkPolicy;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxPermissions;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::policy_transforms::effective_permission_profile;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
 
@@ -72,15 +71,6 @@ impl TerminalPolicy {
             controller_proxy: turn.network.is_some(),
         }
     }
-
-    fn file_system_context(&self) -> FileSystemSandboxContext {
-        let mut context = self.sandbox.clone();
-        // Network changes require review, not rejection for denied-read drift.
-        if let PermissionProfile::Managed { network, .. } = &mut context.permissions {
-            *network = NetworkSandboxPolicy::Restricted;
-        }
-        context
-    }
 }
 
 impl TerminalPermissions {
@@ -116,19 +106,8 @@ impl TerminalPermissions {
         baseline: &PermissionProfile,
     ) -> Result<SandboxPermissions, &'static str> {
         let bypassed = self.launch_permissions.requires_escalated_permissions();
-        // Approval cannot retrofit denied reads onto a running process. Unless
-        // its sandbox still matches, start a new terminal under the current policy.
-        if baseline
-            .file_system_sandbox_policy()
-            .has_denied_read_restrictions()
-            && (bypassed || self.policy.file_system_context() != current.file_system_context())
-        {
-            return Err(
-                "this terminal cannot enforce the current denied-read restrictions; start a new terminal",
-            );
-        }
-        // Runtime-internal grants are part of an ordinary launch, so only permissions
-        // beyond the baseline plus those grants need a fresh stdin approval.
+        // Runtime-internal grants are part of an ordinary launch; beyond those,
+        // retained settings that differ from the current policy need approval.
         Ok(if bypassed || &self.policy != current {
             SandboxPermissions::RequireEscalated
         } else if self.policy.sandbox.permissions

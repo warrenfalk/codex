@@ -292,7 +292,7 @@ fn reused_registry_preserves_section_identity_and_source_roles() {
         }
         expected.push(ContextSection::PermissionContext { items: vec![
                 "\n>>> PARENT TURN PERMISSION CONTEXT START\n".into(),
-                "The parent turn's active permission profile denies reading these paths/globs. These are policy restrictions; do not approve escalation whose purpose is to read them.\n- path `/private`\n- glob `**/*.key`\n".into(),
+                "The parent turn's active permission profile blocks reading these paths/globs inside the sandbox. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted. Apply the normal authorization and risk checks when reviewing escalation.\n- path `/private`\n- glob `**/*.key`\n".into(),
                 ">>> PARENT TURN PERMISSION CONTEXT END\n".into(),
             ] });
         if target == ContextTarget::Async {

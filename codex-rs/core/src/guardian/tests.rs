@@ -558,7 +558,7 @@ async fn build_guardian_prompt_includes_parent_turn_denied_reads() -> anyhow::Re
 
     let text = guardian_prompt_text(&prompt.context.into_user_inputs()?);
     assert!(text.contains("PARENT TURN PERMISSION CONTEXT START"));
-    assert!(text.contains("do not approve escalation whose purpose is to read them"));
+    assert!(text.contains("Approved unsandboxed commands bypass these restrictions"));
     assert!(text.contains(denied_root.to_string_lossy().as_ref()));
     assert!(text.contains(second_denied_root.to_string_lossy().as_ref()));
     assert!(text.contains(&format!("glob `{denied_glob}`")));
