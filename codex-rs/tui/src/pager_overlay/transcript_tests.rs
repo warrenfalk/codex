@@ -667,6 +667,32 @@ fn transcript_overlay_history_rebuild_preserves_only_the_live_tail() {
 }
 
 #[test]
+fn transcript_overlay_highlight_above_view_scrolls_into_view() {
+    let mut overlay = transcript_overlay(
+        (0..30)
+            .map(|i| {
+                Arc::new(TestCell {
+                    lines: vec![Line::from(format!("line-{i:02}"))],
+                }) as Arc<dyn HistoryCell>
+            })
+            .collect(),
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 15,
+    );
+    overlay.render(area, &mut Buffer::empty(area));
+    overlay.view.jump_to_entry(&overlay.cells, /*index*/ 28);
+    let mut before = Buffer::empty(area);
+    overlay.render(area, &mut before);
+    assert!(!buffer_to_text(&before, area).contains("line-12"));
+
+    overlay.set_highlight_cell(Some(12));
+    let mut after = Buffer::empty(area);
+    overlay.render(area, &mut after);
+    assert!(buffer_to_text(&after, area).contains("line-12"));
+}
+
+#[test]
 fn transcript_overlay_consolidation_remaps_highlight_inside_range() {
     let mut overlay = transcript_overlay(
         (0..6)

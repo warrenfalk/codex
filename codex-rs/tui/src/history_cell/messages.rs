@@ -573,6 +573,10 @@ impl AgentMarkdownCell {
         cell.spoken_artifacts = true;
         cell
     }
+
+    pub(crate) fn markdown_source(&self) -> &str {
+        &self.markdown_source
+    }
 }
 
 fn normalize_whitespace_only_hyperlink_lines(mut lines: Vec<HyperlinkLine>) -> Vec<HyperlinkLine> {

@@ -167,7 +167,7 @@ async fn browsing_footer_adapts_to_width() -> Result<()> {
     app.handle_backtrack_esc_key(&mut tui);
     app.handle_backtrack_esc_key(&mut tui);
     let mut snapshots = Vec::new();
-    for width in [80, 32] {
+    for width in [140, 80, 32] {
         let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 8);
         let footer = app
             .prompt_navigation_footer(width.saturating_sub(/*rhs*/ 2))

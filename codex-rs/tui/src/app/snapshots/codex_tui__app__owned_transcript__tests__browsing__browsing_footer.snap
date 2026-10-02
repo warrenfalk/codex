@@ -3,6 +3,16 @@ source: tui/src/app/owned_transcript_browsing_tests.rs
 assertion_line: 169
 expression: "snapshots.join(\"\\n\\n\")"
 ---
+140 columns
+/ T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
+› first prompt
+
+
+
+› second prompt
+
+Browsing transcript · ↑↓/jk scroll · ←→/hl prompts · ctrl+t details · ↵ rewind · esc back · ctrl+o copy response
+
 80 columns
 / T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
 › first prompt
