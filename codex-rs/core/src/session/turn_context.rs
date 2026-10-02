@@ -6,6 +6,7 @@ use crate::config::TokenBudgetConfig;
 use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::exec_policy::AllowPrefixRules;
+use crate::git_metadata_permissions::apply_git_metadata_permissions_to_environments;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::shell_snapshot::ShellSnapshotFile;
 use crate::shell_snapshot::ShellSnapshotSandbox;
@@ -1159,7 +1160,7 @@ impl Session {
         &self,
         sub_id: String,
         session_configuration: SessionConfiguration,
-        turn_environments: TurnEnvironmentSnapshot,
+        mut turn_environments: TurnEnvironmentSnapshot,
         options: NewTurnContextOptions,
         build_mode: TurnContextBuildMode,
         git_enrichment_policy: GitEnrichmentPolicy,
@@ -1180,6 +1181,18 @@ impl Session {
             .map(TurnEnvironment::permission_profile)
             .cloned()
             .unwrap_or_else(|| session_configuration.permission_profile());
+        if let Some(permission_profile) = apply_git_metadata_permissions_to_environments(
+            &mut turn_environments,
+            &per_turn_config.permissions,
+        )
+        .await
+            && permission_profile != per_turn_config.permissions.effective_permission_profile()
+            && let Err(err) = per_turn_config
+                .permissions
+                .replace_permission_profile_with_internal_overlay(permission_profile)
+        {
+            tracing::warn!(error = %err, "failed to install Git metadata permission overlay");
+        }
         let model_info = session_configuration
             .step_settings
             .resolve_model_info(
@@ -1235,7 +1248,8 @@ impl Session {
             let skills_input =
                 skills_load_input_from_config(&per_turn_config, effective_skill_roots)
                     .with_plugin_skill_snapshots(plugin_skill_snapshots);
-            let fs = primary_turn_environment
+            let fs = turn_environments
+                .primary()
                 .map(|turn_environment| turn_environment.environment.get_filesystem());
             self.services
                 .skills_service
