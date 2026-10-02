@@ -30,7 +30,8 @@ fn followup_labels_render_like_ordinary_markdown_snapshot() {
         Text::from(visible_lines(render_markdown_agent_with_links_and_cwd(
             plain,
             Some(32),
-            /*cwd*/ None
+            /*cwd*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         )))
     );
     assert_eq!(streamed.last_top_level_block_start, source.find("Or "));
@@ -71,16 +72,25 @@ fn followups_do_not_consume_neighbors_or_nested_directives() {
         ":codex-followup[*Second*]{prompt=\"Then continue\"} &copy;\n",
     );
     assert_eq!(
-        render_markdown_agent_with_links_and_cwd(source, /*width*/ None, /*cwd*/ None),
+        render_markdown_agent_with_links_and_cwd(
+            source,
+            /*width*/ None,
+            /*cwd*/ None,
+            codex_config::types::UriBasedFileOpener::None
+        ),
         render_markdown_agent_with_links_and_cwd(
             "&amp; **First** *Second* &copy;\n",
             /*width*/ None,
-            /*cwd*/ None
+            /*cwd*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         ),
     );
     let source = format!("{source}\n:codex-file-citation{{path=\"/tmp/report.pdf\"}}\n");
     let rendered = crate::markdown::render_markdown_agent_with_links_and_cwd(
-        &source, /*width*/ None, /*cwd*/ None,
+        &source,
+        /*width*/ None,
+        /*cwd*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     );
     assert_eq!(
         Text::from(visible_lines(rendered)).to_string(),
@@ -108,10 +118,16 @@ fn followup_labels_cannot_introduce_blocks() {
         let plain = format!("Before {label} after.");
         assert_eq!(
             render_markdown_agent_with_links_and_cwd(
-                &source, /*width*/ None, /*cwd*/ None
+                &source,
+                /*width*/ None,
+                /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             ),
             render_markdown_agent_with_links_and_cwd(
-                &plain, /*width*/ None, /*cwd*/ None
+                &plain,
+                /*width*/ None,
+                /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             ),
         );
     }
@@ -122,7 +138,7 @@ fn unmatched_label_backticks_render_and_copy_as_literal_text() {
     let source = ":codex-followup[Type a ` character]{prompt=action}\n";
     insta::assert_snapshot!(
         Text::from(visible_lines(render_markdown_agent_with_links_and_cwd(
-            source, /*width*/ None, /*cwd*/ None
+            source, /*width*/ None, /*cwd*/ None, codex_config::types::UriBasedFileOpener::None,
         ))).to_string(),
         @"Type a ` character"
     );
@@ -137,10 +153,16 @@ fn malformed_directives_leave_budget_for_followups() {
         assert_eq!(super::followup_labels(&source), expected);
         assert_eq!(
             render_markdown_agent_with_links_and_cwd(
-                &source, /*width*/ None, /*cwd*/ None
+                &source,
+                /*width*/ None,
+                /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             ),
             render_markdown_agent_with_links_and_cwd(
-                &expected, /*width*/ None, /*cwd*/ None
+                &expected,
+                /*width*/ None,
+                /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             ),
         );
     }

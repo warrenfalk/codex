@@ -41,6 +41,7 @@ async fn browsing_loads_before_the_oldest_prompt_after_a_partial_answer() -> Res
                 started.turns.iter().flat_map(|turn| turn.items.clone()),
                 crate::thread_transcript::RawReasoningVisibility::Hidden,
                 Some(&app.config),
+                app.config.file_opener,
             ));
         app.enqueue_primary_thread_session(started.session, started.turns)
             .await?;

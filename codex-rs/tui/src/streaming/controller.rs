@@ -50,6 +50,7 @@ use crate::markdown_render::ListSpacing;
 use crate::style::proposed_plan_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
+use codex_config::types::UriBasedFileOpener;
 use ratatui::prelude::Stylize;
 use ratatui::text::Line;
 use std::path::Path;
@@ -61,6 +62,7 @@ use super::StreamState;
 use super::prose_preview::PreviewMode;
 use super::prose_preview::ProsePreview;
 use super::render::StreamingRender;
+use super::render::StreamingRenderContext;
 #[cfg(test)]
 use super::render::render_source;
 use super::render::render_source_with_list_spacing;
@@ -98,6 +100,7 @@ struct StreamCore {
     cwd: PathBuf,
     inline_visualization_context: Option<InlineVisualizationContext>,
     render_mode: HistoryRenderMode,
+    file_opener: UriBasedFileOpener,
     /// Cached rendered line count for prefix-before-table keyed by source start and width.
     stable_prefix_len_cache: Option<StablePrefixLenCache>,
     /// Incremental holdback scanner state for append-only source updates.
@@ -121,10 +124,11 @@ impl StreamCore {
         width: Option<usize>,
         cwd: &Path,
         render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<InlineVisualizationContext>,
     ) -> Self {
         Self {
-            state: StreamState::new(width, cwd),
+            state: StreamState::new(width, cwd, file_opener),
             width,
             render: StreamingRender::new(),
             preview: ProsePreview::default(),
@@ -133,6 +137,7 @@ impl StreamCore {
             cwd: cwd.to_path_buf(),
             inline_visualization_context,
             render_mode,
+            file_opener,
             stable_prefix_len_cache: None,
             holdback_scanner: TableHoldbackScanner::new(),
         }
@@ -165,10 +170,13 @@ impl StreamCore {
             self.render.append(
                 source,
                 committed_source,
-                self.width,
-                self.cwd.as_path(),
-                self.render_mode,
-                self.inline_visualization_context.as_ref(),
+                StreamingRenderContext {
+                    width: self.width,
+                    cwd: self.cwd.as_path(),
+                    render_mode: self.render_mode,
+                    file_opener: self.file_opener,
+                    inline_visualization_context: self.inline_visualization_context.as_ref(),
+                },
             );
             enqueued = self.sync_stable_queue();
         }
@@ -192,6 +200,7 @@ impl StreamCore {
                 } else {
                     PreviewMode::Prose(self.render_mode)
                 },
+                self.file_opener,
                 self.inline_visualization_context.as_ref(),
             )
         } else {
@@ -214,6 +223,7 @@ impl StreamCore {
             self.width,
             self.cwd.as_path(),
             self.render_mode,
+            self.file_opener,
             self.inline_visualization_context.as_ref(),
             self.render.list_spacing,
         );
@@ -383,6 +393,7 @@ impl StreamCore {
             self.width,
             self.cwd.as_path(),
             self.render_mode,
+            self.file_opener,
             self.inline_visualization_context.as_ref(),
         );
         if let Some(start) = previous_tail_start.or(self.active_tail_source_start(self.render_mode))
@@ -393,6 +404,7 @@ impl StreamCore {
                     width,
                     self.cwd.as_path(),
                     mode,
+                    self.file_opener,
                     self.inline_visualization_context.as_ref(),
                     self.render.list_spacing,
                 )
@@ -560,6 +572,7 @@ impl StreamCore {
             &source[..source_start.min(source.len())],
             self.width,
             Some(self.cwd.as_path()),
+            self.file_opener,
             self.inline_visualization_context.as_ref(),
             self.render.list_spacing,
         );
@@ -601,11 +614,17 @@ impl StreamController {
     /// terminal width. Passing a stale width after resize will keep queued live output wrapped for
     /// the old viewport until app-level reflow repairs the finalized transcript.
     #[cfg(test)]
-    pub(crate) fn new(width: Option<usize>, cwd: &Path, render_mode: HistoryRenderMode) -> Self {
+    pub(crate) fn new(
+        width: Option<usize>,
+        cwd: &Path,
+        render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
+    ) -> Self {
         Self::new_with_inline_visualizations(
             width,
             cwd,
             render_mode,
+            file_opener,
             /*inline_visualization_context*/ None,
         )
     }
@@ -614,10 +633,17 @@ impl StreamController {
         width: Option<usize>,
         cwd: &Path,
         render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<InlineVisualizationContext>,
     ) -> Self {
         Self {
-            core: StreamCore::new(width, cwd, render_mode, inline_visualization_context),
+            core: StreamCore::new(
+                width,
+                cwd,
+                render_mode,
+                file_opener,
+                inline_visualization_context,
+            ),
             header_emitted: false,
         }
     }
@@ -732,12 +758,18 @@ impl PlanStreamController {
     ///
     /// The width has the same meaning as in `StreamController`: it is the markdown body width, and
     /// callers must update it when the terminal width changes.
-    pub(crate) fn new(width: Option<usize>, cwd: &Path, render_mode: HistoryRenderMode) -> Self {
+    pub(crate) fn new(
+        width: Option<usize>,
+        cwd: &Path,
+        render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
+    ) -> Self {
         Self {
             core: StreamCore::new(
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 /*inline_visualization_context*/ None,
             ),
             header_emitted: false,
@@ -901,11 +933,21 @@ mod tests {
     }
 
     fn stream_controller(width: Option<usize>) -> StreamController {
-        StreamController::new(width, &test_cwd(), HistoryRenderMode::Rich)
+        StreamController::new(
+            width,
+            &test_cwd(),
+            HistoryRenderMode::Rich,
+            UriBasedFileOpener::None,
+        )
     }
 
     fn plan_stream_controller(width: Option<usize>) -> PlanStreamController {
-        PlanStreamController::new(width, &test_cwd(), HistoryRenderMode::Rich)
+        PlanStreamController::new(
+            width,
+            &test_cwd(),
+            HistoryRenderMode::Rich,
+            UriBasedFileOpener::None,
+        )
     }
 
     fn lines_to_plain_strings(lines: &[ratatui::text::Line<'_>]) -> Vec<String> {
@@ -1869,6 +1911,7 @@ mod tests {
             /*width*/ Some(32),
             &test_cwd(),
             HistoryRenderMode::Rich,
+            UriBasedFileOpener::None,
         );
         ctrl.push(&source);
 

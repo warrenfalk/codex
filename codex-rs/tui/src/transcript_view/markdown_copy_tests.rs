@@ -498,6 +498,7 @@ fn selected_hard_breaks_survive_surrounding_blocks() {
         Some(78),
         Path::new("/"),
         crate::history_cell::HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     let mut cells: Vec<Arc<dyn HistoryCell>> = Vec::new();
     for chunk in source.split_inclusive('\n') {
@@ -533,6 +534,7 @@ fn selected_open_code_fence_keeps_streamed_rows_in_one_block() {
         /*width*/ Some(78),
         Path::new("/"),
         crate::history_cell::HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     let mut cells: Vec<Arc<dyn HistoryCell>> = Vec::new();
     for chunk in ["Prose\n\n```rust\nlet a = 1;\n", "let b = 2;\n"] {

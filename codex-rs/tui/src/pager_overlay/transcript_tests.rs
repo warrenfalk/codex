@@ -764,6 +764,7 @@ fn completing_agent_and_plan_streams_preserves_reading_in_later_fragments() {
                 Some(usize::from(area.width - 4)),
                 cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
             );
             controller.push(&source);
             while let (Some(cell), _) = controller.on_commit_tick_batch(/*max_lines*/ 1) {
@@ -779,6 +780,7 @@ fn completing_agent_and_plan_streams_preserves_reading_in_later_fragments() {
                 Some(usize::from(area.width - 2)),
                 cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
             );
             controller.push(&source);
             while let (Some(cell), _) = controller.on_commit_tick_batch(/*max_lines*/ 1) {

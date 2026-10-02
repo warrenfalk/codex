@@ -5,7 +5,12 @@ use pretty_assertions::assert_eq;
 #[test]
 fn followup_preview_hides_prompts_until_complete() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("Before ");
     let prefix = controller.current_tail_lines();
     controller.push(":codex-followup[");
@@ -26,10 +31,16 @@ fn followup_preview_hides_prompts_until_complete() {
             Some(40),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None
         ),
     );
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("Before ");
     let prefix = controller.current_tail_lines();
     controller.push(&format!(
@@ -54,7 +65,12 @@ fn followup_preview_hides_prompts_until_complete() {
 #[test]
 fn followup_preview_resumes_after_the_directive_leaves_the_window() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push(":codex-followup[First]{prompt=secret}");
     let prose = "ordinary prose ".repeat(700);
     controller.push(&prose);
@@ -79,7 +95,12 @@ fn followup_preview_only_opens_quotes_at_value_boundaries() {
         "prompt=don't other = \"quote } here\"",
         "prompt = 'quote } here'other=don't",
     ] {
-        let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(40),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         controller.push("Before ");
         let prefix = controller.current_tail_lines();
         controller.push(":codex-followup[");
@@ -99,7 +120,12 @@ fn followup_preview_only_opens_quotes_at_value_boundaries() {
 #[test]
 fn followup_preview_handles_surrounding_unfinished_markdown() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("[unfinished ");
     let prefix = controller.current_tail_lines();
     controller.push(":codex-followup[Inspect]{prompt=\"secret\"");
@@ -114,7 +140,12 @@ fn followup_preview_handles_surrounding_unfinished_markdown() {
         ":codex-followup[not a directive] continuing text",
         ":codex-followup[not a directive] `code`",
     ] {
-        let mut controller = StreamController::new(Some(80), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(80),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         for character in source.chars() {
             controller.push(&character.to_string());
         }
@@ -125,6 +156,7 @@ fn followup_preview_handles_surrounding_unfinished_markdown() {
                 Some(80),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None
             )
         );
@@ -134,7 +166,12 @@ fn followup_preview_handles_surrounding_unfinished_markdown() {
 #[test]
 fn unmatched_code_openers_do_not_expose_followup_prompts() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(80), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(80),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("Type ` then ");
     let prefix = controller.current_tail_lines();
     controller.push(":codex-followup[");
@@ -156,12 +193,18 @@ fn unmatched_code_openers_do_not_expose_followup_prompts() {
             Some(80),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
     );
 
     // Extending a tentative closing run must restore the old, safely cropped preview.
-    let mut controller = StreamController::new(Some(80), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(80),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push(&format!(
         ":codex-followup[Long]{{prompt={}}} ` then ",
         "x".repeat(9000)
@@ -188,7 +231,12 @@ fn unfinished_link_destinations_do_not_expand_the_preview() {
         "https://example.com/guide \"a title with ) parentheses\"",
         "https://example.com/guide (x < y)",
     ] {
-        let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(24),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         controller.push("See [documentation]");
         let label = controller.current_tail_lines();
         // Split at every character, including the opening delimiter and escapes.
@@ -204,12 +252,18 @@ fn unfinished_link_destinations_do_not_expand_the_preview() {
                 Some(24),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             ),
         );
     }
     // The preview's byte limit must not drop the opener and expose a long URL tail.
-    let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(24),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("See [documentation]");
     let label = controller.current_tail_lines();
     controller.push(&format!("(https://example.com/{}", "界".repeat(3000)));
@@ -228,7 +282,12 @@ fn unfinished_links_flush_on_newline_or_completion() {
         ("See :codex-followup[Inspect]{prompt=\"unfinished", "See"),
     ] {
         for ending in ["", "\n"] {
-            let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Rich);
+            let mut controller = StreamController::new(
+                Some(24),
+                &cwd,
+                HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
+            );
             controller.push(source);
             assert_eq!(
                 visible_lines(controller.current_tail_lines()),
@@ -253,6 +312,7 @@ fn unfinished_links_flush_on_newline_or_completion() {
                     Some(32),
                     &cwd,
                     HistoryRenderMode::Rich,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                 ),
                 /*is_first_line*/ true,
@@ -275,7 +335,12 @@ fn link_preview_respects_code_escapes_and_raw_mode() {
         r"See \:codex-followup[label]{prompt=unfinished",
         "See `:codex-followup[label]{prompt=unfinished`",
     ] {
-        let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(24),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         for character in source.chars() {
             controller.push(&character.to_string());
         }
@@ -286,12 +351,18 @@ fn link_preview_respects_code_escapes_and_raw_mode() {
                 Some(24),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             ),
             "{source}",
         );
     }
-    let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(24),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("See `[code](literal` then [label](https://example.com/unfinished");
     assert_eq!(
         controller.current_tail_lines(),
@@ -300,12 +371,18 @@ fn link_preview_respects_code_escapes_and_raw_mode() {
             Some(24),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
     );
 
     let source = "See [label](https://example.com/unfinished";
-    let mut controller = StreamController::new(Some(24), &cwd, HistoryRenderMode::Raw);
+    let mut controller = StreamController::new(
+        Some(24),
+        &cwd,
+        HistoryRenderMode::Raw,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push(source);
     assert_eq!(
         controller.current_tail_lines(),
@@ -314,6 +391,7 @@ fn link_preview_respects_code_escapes_and_raw_mode() {
             Some(24),
             &cwd,
             HistoryRenderMode::Raw,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
     );
@@ -323,7 +401,12 @@ fn link_preview_respects_code_escapes_and_raw_mode() {
 fn link_holdback_stays_rich_only_when_a_pipe_freezes_the_preview() {
     let cwd = std::env::temp_dir();
     let source = "See [label](https://example.com";
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push(source);
     let label = controller.current_tail_lines();
     controller.push("|suffix)");
@@ -336,6 +419,7 @@ fn link_holdback_stays_rich_only_when_a_pipe_freezes_the_preview() {
             Some(40),
             &cwd,
             HistoryRenderMode::Raw,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
     );
@@ -344,9 +428,33 @@ fn link_holdback_stays_rich_only_when_a_pipe_freezes_the_preview() {
 }
 
 #[test]
+fn live_prose_preview_preserves_configured_file_opener() {
+    let directory = tempfile::tempdir().expect("temporary workspace");
+    let cwd = directory.path();
+    std::fs::write(cwd.join("preview.rs"), "fn preview() {}\n").expect("source fixture");
+    let opener = codex_config::types::UriBasedFileOpener::VsCode;
+    let mut controller = StreamController::new(Some(80), cwd, HistoryRenderMode::Rich, opener);
+    controller.push("See `preview.rs:7`");
+
+    let destinations = controller
+        .current_tail_lines()
+        .into_iter()
+        .flat_map(|line| line.hyperlinks.into_iter().map(|link| link.destination))
+        .collect::<Vec<_>>();
+    let expected = crate::file_links::resolve_file_reference_uri("preview.rs:7", cwd, opener)
+        .expect("file URI");
+    assert_eq!(destinations, vec![expected]);
+}
+
+#[test]
 fn source_only_changes_refresh_the_preview_and_active_tail() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(5), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(5),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("hello");
     let before = controller.current_tail_lines();
 
@@ -361,6 +469,7 @@ fn source_only_changes_refresh_the_preview_and_active_tail() {
             Some(5),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         )[0]
         .source,
@@ -379,7 +488,12 @@ fn source_only_changes_refresh_the_preview_and_active_tail() {
 fn unterminated_prose_reflows_and_finishes_without_duplication() {
     let cwd = std::env::temp_dir();
     for ending in ["", "\n"] {
-        let mut controller = StreamController::new(Some(32), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(32),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         let mut source = String::from("`numbers` ");
         controller.push(&source);
         for number in 100..200 {
@@ -394,6 +508,7 @@ fn unterminated_prose_reflows_and_finishes_without_duplication() {
                     Some(32),
                     &cwd,
                     HistoryRenderMode::Rich,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None
                 ),
             );
@@ -409,6 +524,7 @@ fn unterminated_prose_reflows_and_finishes_without_duplication() {
                 Some(48),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None
             ),
         );
@@ -427,6 +543,7 @@ fn unterminated_prose_reflows_and_finishes_without_duplication() {
                 Some(48),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             ),
             /*is_first_line*/ true,
@@ -451,7 +568,12 @@ fn partial_markdown_structures_remain_newline_gated() {
         ("```markdown\n", "partial markdown fence"),
         ("| A | B |\n| --- | --- |\n", "partial row"),
     ] {
-        let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+        let mut controller = StreamController::new(
+            Some(40),
+            &cwd,
+            HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
+        );
         controller.push(committed);
         let tail = controller.current_tail_lines();
         let queued = controller.queued_lines();
@@ -464,7 +586,12 @@ fn partial_markdown_structures_remain_newline_gated() {
 #[test]
 fn long_unicode_preview_keeps_recent_text_and_finalizes_full_source() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push(&"🦀 ".repeat(3000));
     controller.push("latest text");
     let preview = visible_lines(controller.current_tail_lines());
@@ -483,7 +610,12 @@ fn long_unicode_preview_keeps_recent_text_and_finalizes_full_source() {
 #[test]
 fn prose_preview_resumes_after_fenced_code() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("```rust\nlet x = 1;\n```\n");
     controller.on_commit_tick_batch(usize::MAX);
     controller.push("prose after code");
@@ -496,7 +628,12 @@ fn prose_preview_resumes_after_fenced_code() {
 #[test]
 fn prose_after_a_table_is_previewed_until_another_table_starts() {
     let cwd = std::env::temp_dir();
-    let mut controller = StreamController::new(Some(40), &cwd, HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(40),
+        &cwd,
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     controller.push("| A | B |\n| --- | --- |\n| a | b |\n\n");
     controller.push("prose after the table");
     let tail = visible_lines(controller.current_tail_lines());

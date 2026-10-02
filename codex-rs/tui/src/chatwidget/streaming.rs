@@ -220,6 +220,7 @@ impl ChatWidget {
                     self.current_stream_width(/*reserved_cols*/ 4),
                     &self.config.cwd,
                     self.history_render_mode(),
+                    self.config.file_opener,
                 )
                 .with_list_spacing(
                     if self.local_settings.transcript_mode.is_owned() {
@@ -435,9 +436,10 @@ impl ChatWidget {
                 )
             });
             self.add_to_history(
-                history_cell::AgentMarkdownCell::new_with_inline_visualizations(
+                history_cell::AgentMarkdownCell::new_with_file_opener_and_inline_visualizations(
                     parsed.visible_markdown.clone(),
-                    self.config.cwd.as_path(),
+                    &self.active_transcript_cwd(),
+                    self.config.file_opener,
                     context,
                 ),
             );
@@ -587,6 +589,7 @@ impl ChatWidget {
                     self.current_stream_width(/*reserved_cols*/ 2),
                     &self.config.cwd,
                     self.history_render_mode(),
+                    self.config.file_opener,
                     inline_visualization_context,
                 )
                 .with_list_spacing(

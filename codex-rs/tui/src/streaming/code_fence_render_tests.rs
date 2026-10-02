@@ -6,6 +6,7 @@ use super::lines_to_plain_strings;
 use super::test_cwd;
 use crate::history_cell::HistoryRenderMode;
 use crate::render::highlight::MAX_HIGHLIGHT_LINE_BYTES;
+use codex_config::types::UriBasedFileOpener;
 use insta::assert_debug_snapshot;
 use pretty_assertions::assert_eq;
 
@@ -131,6 +132,7 @@ fn recomputing_after_resize_or_mode_change_drops_fence_state() {
         Some(20),
         &cwd,
         HistoryRenderMode::Rich,
+        UriBasedFileOpener::None,
         /*inline_visualization_context*/ None,
     );
     assert!(render.open_code_fence.is_none());

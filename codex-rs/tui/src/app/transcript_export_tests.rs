@@ -226,6 +226,7 @@ fn persisted_web_and_image_activity_preserves_full_details() {
         items,
         crate::thread_transcript::RawReasoningVisibility::Hidden,
         /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     );
     insta::assert_snapshot!(render_markdown_transcript(&cells).expect("exported transcript"));
 }

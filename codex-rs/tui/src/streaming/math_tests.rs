@@ -14,6 +14,7 @@ fn unicode_math_aligned_stream_matches_complete_render() {
                 Some(width),
                 &cwd,
                 mode,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             );
             let mut emitted = Vec::new();
@@ -31,6 +32,7 @@ fn unicode_math_aligned_stream_matches_complete_render() {
                     Some(width),
                     &cwd,
                     mode,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None
                 )
             );
@@ -47,6 +49,7 @@ fn unicode_math_stream_holds_display_until_closed_and_preserves_source() {
                 Some(60),
                 &cwd,
                 mode,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             );
             let mut emitted = Vec::new();
@@ -72,6 +75,7 @@ fn unicode_math_stream_holds_display_until_closed_and_preserves_source() {
                             Some(60),
                             &cwd,
                             mode,
+                            codex_config::types::UriBasedFileOpener::None,
                             /*inline_visualization_context*/ None
                         )
                     );
@@ -87,6 +91,7 @@ fn unicode_math_stream_holds_display_until_closed_and_preserves_source() {
                     Some(60),
                     &cwd,
                     mode,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None
                 )
             );
@@ -102,6 +107,7 @@ fn unicode_math_raw_preview_preserves_line_on_newline() {
             Some(12),
             &cwd,
             HistoryRenderMode::Raw,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         let source = format!("{open}\\frac{{abcdefghijk}}{{lmnop}}");
@@ -127,6 +133,7 @@ fn unicode_math_unfinished_display_is_visible_and_reflows() {
             Some(80),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         for (chunk, expected) in [(&open[..1], &open[..1]), (&open[1..], open)] {
@@ -163,6 +170,7 @@ fn unicode_math_unfinished_display_is_visible_and_reflows() {
                 Some(80),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None
             )
         );
@@ -193,15 +201,19 @@ fn unicode_math_rejected_display_keeps_its_closer_and_following_text() {
                 render.append(
                     &source,
                     &chunk,
-                    Some(40),
-                    &cwd,
-                    HistoryRenderMode::Rich,
-                    /*inline_visualization_context*/ None,
+                    crate::streaming::render::StreamingRenderContext {
+                        width: Some(40),
+                        cwd: &cwd,
+                        render_mode: HistoryRenderMode::Rich,
+                        file_opener: codex_config::types::UriBasedFileOpener::None,
+                        inline_visualization_context: None,
+                    },
                 );
                 let expected = render_streaming_markdown_agent_with_links_and_cwd(
                     &source,
                     Some(40),
                     Some(&cwd),
+                    codex_config::types::UriBasedFileOpener::None,
                     crate::markdown_render::ListSpacing::AfterMultiline,
                 );
                 assert_eq!(

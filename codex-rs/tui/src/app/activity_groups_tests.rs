@@ -61,6 +61,7 @@ fn project(app: &App, items: &[ThreadItem]) -> Vec<Arc<dyn HistoryCell>> {
         items.iter().cloned(),
         RawReasoningVisibility::Hidden,
         Some(&app.config),
+        app.config.file_opener,
     )
 }
 

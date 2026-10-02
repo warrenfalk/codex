@@ -20,6 +20,7 @@ fn list_spacing_is_uniform_per_list_and_preserves_item_paragraphs() {
                 source,
                 Some(24),
                 /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
                 spacing,
             );
@@ -44,6 +45,7 @@ fn list_spacing_preserves_links_and_source_when_removing_separators() {
             source,
             Some(100),
             /*cwd*/ None,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
             spacing,
         )

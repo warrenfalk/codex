@@ -9,6 +9,7 @@ use crate::history_cell::HistoryRenderMode;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::lines_with_sources_eq;
+use codex_config::types::UriBasedFileOpener;
 use ratatui::text::Line;
 use std::collections::VecDeque;
 use std::ops::Range;
@@ -39,6 +40,7 @@ impl ProsePreview {
         width: Option<usize>,
         cwd: &Path,
         mode: PreviewMode,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<&InlineVisualizationContext>,
     ) -> bool {
         // Only scan newly arrived bytes, including on very long single-line responses.
@@ -107,6 +109,7 @@ impl ProsePreview {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             ),
             PreviewMode::Math => textwrap::wrap(&source[start..], width.unwrap_or(usize::MAX))

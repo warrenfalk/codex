@@ -70,6 +70,7 @@ fn completed_tools_keep_compact_and_detailed_presentations() {
         items,
         RawReasoningVisibility::Hidden,
         /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     );
     assert_eq!(cells.len(), 2);
     let rendered = ["Command", "MCP"]
@@ -127,6 +128,7 @@ fn incomplete_tool_payloads_preserve_last_known_status_and_output() {
         [command, mcp, missing_result],
         RawReasoningVisibility::Hidden,
         /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     )
     .into_iter()
     .flat_map(|cell| cell.display_lines(/*width*/ 80))
@@ -227,6 +229,7 @@ fn historical_command_fallbacks_preserve_status_output_and_group_boundaries() {
             [exploration("before"), item, exploration("after")],
             RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         );
         assert_eq!(cells.len(), 3);
         for cell in [&cells[0], &cells[2]] {
@@ -322,6 +325,7 @@ fn agent_tool_fallbacks_preserve_status_without_duplicating_v2_activity() {
             [item],
             RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         );
         assert_eq!(cells.len(), usize::from(visible));
         for cell in cells {
