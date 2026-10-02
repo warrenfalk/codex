@@ -38,6 +38,7 @@ use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ThreadMemoryMode;
+use codex_protocol::protocol::ThreadNameUpdatedEvent;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -253,9 +254,10 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
     sess.spawn_task(turn_context, Vec::new(), CompactTask).await;
 }
 
-pub(crate) async fn apply_thread_name_update_if_unnamed(
+pub(crate) async fn apply_auto_thread_title_update(
     sess: &Arc<Session>,
     name: String,
+    mode: super::AutoThreadTitleApplyMode,
 ) -> anyhow::Result<bool> {
     let _update_guard = sess
         .thread_name_update_lock
@@ -263,11 +265,23 @@ pub(crate) async fn apply_thread_name_update_if_unnamed(
         .await
         .context("thread name update semaphore was closed")?;
 
-    let has_thread_name = {
+    let generated_title = sess.auto_thread_title_generated_title().await;
+    let has_blocking_session_title = {
         let state = sess.state.lock().await;
-        state.session_configuration.thread_name.is_some()
+        if state.auto_thread_title_is_disabled() {
+            return Ok(false);
+        }
+        match state.session_configuration.thread_name.as_deref() {
+            Some(thread_name) => match mode {
+                super::AutoThreadTitleApplyMode::Initial => true,
+                super::AutoThreadTitleApplyMode::Revision => {
+                    generated_title.as_deref() != Some(thread_name)
+                }
+            },
+            None => false,
+        }
     };
-    if has_thread_name {
+    if has_blocking_session_title {
         return Ok(false);
     }
 
@@ -278,9 +292,24 @@ pub(crate) async fn apply_thread_name_update_if_unnamed(
     )
     .await
     {
-        let mut state = sess.state.lock().await;
-        state.session_configuration.thread_name = Some(existing_name);
-        return Ok(false);
+        let can_replace_existing = match mode {
+            super::AutoThreadTitleApplyMode::Initial => false,
+            super::AutoThreadTitleApplyMode::Revision => {
+                generated_title.as_deref() == Some(existing_name.as_str())
+            }
+        };
+        if can_replace_existing && existing_name == name {
+            let mut state = sess.state.lock().await;
+            state.session_configuration.thread_name = Some(name.clone());
+            state.record_auto_thread_title(name);
+            return Ok(false);
+        }
+        if !can_replace_existing {
+            let mut state = sess.state.lock().await;
+            state.session_configuration.thread_name = Some(existing_name);
+            state.disable_auto_thread_title();
+            return Ok(false);
+        }
     }
 
     let live_thread = sess.live_thread_for_persistence("update thread name")?;
@@ -294,8 +323,19 @@ pub(crate) async fn apply_thread_name_update_if_unnamed(
         )
         .await?;
 
-    let mut state = sess.state.lock().await;
-    state.session_configuration.thread_name = Some(name);
+    {
+        let mut state = sess.state.lock().await;
+        state.session_configuration.thread_name = Some(name.clone());
+        state.record_auto_thread_title(name.clone());
+    }
+    sess.deliver_event_raw(Event {
+        id: format!("auto-thread-title-{}", uuid::Uuid::new_v4()),
+        msg: EventMsg::ThreadNameUpdated(ThreadNameUpdatedEvent {
+            thread_id: sess.thread_id(),
+            thread_name: Some(name),
+        }),
+    })
+    .await;
     Ok(true)
 }
 pub(super) async fn persist_thread_memory_mode_update(
