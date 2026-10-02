@@ -17,6 +17,8 @@ impl TestCodexExecBuilder {
         cmd.current_dir(self.cwd.path())
             .env("CODEX_HOME", self.home.path())
             .env("CODEX_SQLITE_HOME", self.home.path())
+            // Keep mocked response sequences scoped to the requested exec turn.
+            .env("CODEX_DISABLE_AUTO_THREAD_TITLE_FOR_TESTS", "1")
             .env(CODEX_API_KEY_ENV_VAR, "dummy");
         cmd
     }

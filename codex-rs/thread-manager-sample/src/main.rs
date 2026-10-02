@@ -279,6 +279,7 @@ async fn new_config(
         orchestrator_mcp_enabled: false,
         include_environment_context: false,
         compact_prompt: None,
+        auto_thread_title: true,
         notify: None,
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,

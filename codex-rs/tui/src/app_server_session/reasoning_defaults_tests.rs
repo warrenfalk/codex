@@ -79,6 +79,7 @@ stream_max_retries = 0
             .codex_home(home.path().to_path_buf())
             .build()
             .await?;
+        config.auto_thread_title = false;
         let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
         app_server.thread_params_mode = mode;
         if mode == ThreadParamsMode::Remote {
@@ -140,7 +141,9 @@ stream_max_retries = 0
                     {
                         assert_eq!(
                             completed.turn.status,
-                            codex_app_server_protocol::TurnStatus::Completed
+                            codex_app_server_protocol::TurnStatus::Completed,
+                            "turn error: {:?}",
+                            completed.turn.error
                         );
                         return;
                     }

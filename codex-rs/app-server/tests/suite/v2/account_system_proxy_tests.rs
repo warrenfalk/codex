@@ -173,12 +173,13 @@ async fn browser_login_bootstraps_through_system_proxy() -> Result<()> {
     .await;
 
     let loader_overrides = LoaderOverrides::without_managed_config_for_tests();
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .fallback_cwd(Some(codex_home.path().to_path_buf()))
         .loader_overrides(loader_overrides.clone())
         .build()
         .await?;
+    config.auto_thread_title = false;
     assert!(!config.respect_system_proxy);
     let mut client = in_process::start(InProcessStartArgs {
         arg0_paths: Arg0DispatchPaths::default(),
@@ -285,7 +286,12 @@ async fn browser_login_bootstraps_through_system_proxy() -> Result<()> {
                 && let ServerNotification::TurnCompleted(completed) = notification.as_ref()
                 && completed.thread_id == started.thread.id
             {
-                assert_eq!(completed.turn.status, TurnStatus::Completed);
+                assert_eq!(
+                    completed.turn.status,
+                    TurnStatus::Completed,
+                    "{:?}",
+                    completed.turn.error
+                );
                 return anyhow::Ok(());
             }
         }

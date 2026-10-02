@@ -184,10 +184,11 @@ stream_max_retries = 0
 "#
         ),
     )?;
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(home.path().to_path_buf())
         .build()
         .await?;
+    config.auto_thread_title = false;
     let mut model_server = crate::start_embedded_app_server_for_picker(&config).await?;
     let started: codex_app_server_protocol::ThreadStartResponse =
         request(&model_server.request_handle(), |request_id| {
