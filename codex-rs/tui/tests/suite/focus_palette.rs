@@ -561,11 +561,15 @@ fn no_daemon_skips_startup_and_discovery() -> Result<()> {
         write_test_config(home.path(), workspace.path())?;
         let config = home.path().join("config.toml");
         let contents = std::fs::read_to_string(&config)?;
+        let socket_path = codex_app_server_client::app_server_control_socket_path(home.path())?;
         std::fs::write(
             config,
-            contents.replace("features.daemon_auto_start = false\n", ""),
+            format!(
+                "tui.local_app_server_url = {}\n{}",
+                toml::Value::String(socket_path.as_path().display().to_string()),
+                contents.replace("features.daemon_auto_start = false\n", ""),
+            ),
         )?;
-        let socket_path = codex_app_server_client::app_server_control_socket_path(home.path())?;
         std::fs::create_dir_all(socket_path.as_path().parent().unwrap())?;
         let listener = if running {
             let listener = std::os::unix::net::UnixListener::bind(socket_path.as_path())?;

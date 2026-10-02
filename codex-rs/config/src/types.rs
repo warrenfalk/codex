@@ -873,6 +873,14 @@ pub struct Tui {
     #[serde(default)]
     pub right_click_paste: RightClickPaste,
 
+    /// Default local shared app-server endpoint for interactive TUI sessions.
+    ///
+    /// When set, Codex first tries to connect to this shared local backend. If
+    /// that startup connection fails, Codex falls back to a standalone private
+    /// embedded app-server session instead.
+    #[serde(default)]
+    pub local_app_server_url: Option<String>,
+
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
     /// - `auto` (default): Use alternate screen.

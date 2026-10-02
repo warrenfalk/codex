@@ -26,6 +26,7 @@ pub use app::AppExitInfo;
 pub use app::DisconnectInfo;
 pub use app::ExitReason;
 pub use app::ResumableThread;
+use app_server_mode::ResolvedAppServerMode;
 use app_server_session::AppServerSession;
 use app_server_session::ThreadParamsMode;
 use codex_app_server_client::AppServerClient;
@@ -110,6 +111,7 @@ mod app_event_sender;
 mod app_info;
 mod app_server_approval_conversions;
 mod app_server_connection;
+mod app_server_mode;
 mod app_server_session;
 mod approval_events;
 mod async_question_reply;
@@ -623,21 +625,25 @@ pub(crate) async fn start_app_server_for_picker(
     let mut state_db = state_db;
     let embedded_network_policy =
         codex_app_server_client::EmbeddedNetworkPolicy::load(&loader_overrides).await;
-    let app_server = start_app_server(
-        &mut target,
-        Arg0DispatchPaths::default(),
-        config.clone(),
-        cli_kv_overrides,
-        loader_overrides,
-        /*strict_config*/ false,
-        CloudConfigBundleLoader::default(),
-        codex_feedback::CodexFeedback::new(),
-        /*log_db*/ None,
-        &mut state_db,
-        environment_manager,
-        embedded_network_policy,
-    )
-    .await?;
+    let app_server = if matches!(target, AppServerTarget::Embedded) {
+        start_app_server(
+            &mut target,
+            Arg0DispatchPaths::default(),
+            config.clone(),
+            cli_kv_overrides,
+            loader_overrides,
+            /*strict_config*/ false,
+            CloudConfigBundleLoader::default(),
+            codex_feedback::CodexFeedback::new(),
+            /*log_db*/ None,
+            &mut state_db,
+            environment_manager,
+            embedded_network_policy,
+        )
+        .await?
+    } else {
+        crate::app_server_connection::connect(&target).await?
+    };
     Ok(
         AppServerSession::new(app_server, target.thread_params_mode())
             .with_local_codex_home(&config.codex_home),
@@ -1089,6 +1095,7 @@ pub async fn run_main(
     cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     system_motion::initialize().await;
@@ -1099,6 +1106,7 @@ pub async fn run_main(
             cli,
             arg0_paths,
             loader_overrides,
+            local_endpoint,
             explicit_remote_endpoint,
         ))
         .await
@@ -1131,7 +1139,7 @@ async fn run_ratatui_app(
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    mut app_server_target: AppServerTarget,
+    app_server_mode: ResolvedAppServerMode,
     remote_cwd_override: Option<PathBuf>,
     initial_config: Config,
     manually_selected_oss_provider: Option<String>,
@@ -1148,6 +1156,9 @@ async fn run_ratatui_app(
     launch_telemetry: daemon_telemetry::Launch<impl FnOnce(&AppServerTarget, bool)>,
     startup_draft: startup_draft::StartupDraft,
 ) -> color_eyre::Result<AppExitInfo> {
+    let mut app_server_target = app_server_mode.target().clone();
+    let mut initial_app_server_footer_state = app_server_mode.footer_state();
+    let initial_app_server = app_server_mode.into_initial_app_server();
     let uses_remote_workspace = app_server_target.uses_remote_workspace();
     let workload_identity_selected = is_workload_identity_selected();
     color_eyre::install()?;
@@ -1193,25 +1204,30 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
-    let startup_app_server = startup_draft
-        .run_until(
-            &mut tui,
-            start_app_server(
-                &mut app_server_target,
-                arg0_paths.clone(),
-                initial_config.clone(),
-                cli_kv_overrides.clone(),
-                loader_overrides.clone(),
-                strict_config,
-                cloud_config_bundle.clone(),
-                feedback.clone(),
-                log_db.clone(),
-                &mut state_db,
-                environment_manager.clone(),
-                embedded_network_policy.clone(),
-            ),
-        )
-        .await;
+    let startup_app_server = match initial_app_server {
+        Some(app_server) => Ok(Ok(app_server)),
+        None => {
+            startup_draft
+                .run_until(
+                    &mut tui,
+                    start_app_server(
+                        &mut app_server_target,
+                        arg0_paths.clone(),
+                        initial_config.clone(),
+                        cli_kv_overrides.clone(),
+                        loader_overrides.clone(),
+                        strict_config,
+                        cloud_config_bundle.clone(),
+                        feedback.clone(),
+                        log_db.clone(),
+                        &mut state_db,
+                        environment_manager.clone(),
+                        embedded_network_policy.clone(),
+                    ),
+                )
+                .await
+        }
+    };
     launch_telemetry.record(&app_server_target, matches!(&startup_app_server, Ok(Ok(_))));
     let mut app_server_session = match startup_app_server {
         Ok(Ok(app_server)) => {
@@ -1230,6 +1246,11 @@ async fn run_ratatui_app(
         }
     }
     .with_remote_cwd_override(remote_cwd_override.clone());
+    if matches!(app_server_target, AppServerTarget::Embedded)
+        && initial_app_server_footer_state == Some(chatwidget::ConnectedModeFooterState::Connected)
+    {
+        initial_app_server_footer_state = Some(chatwidget::ConnectedModeFooterState::LocalFallback);
+    }
     if let Some(provider) = manually_selected_oss_provider.as_deref() {
         match startup_draft
             .run_until(
@@ -2049,6 +2070,7 @@ async fn run_ratatui_app(
         is_first_run,
         should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
+        initial_app_server_footer_state,
         state_db,
         environment_manager,
         startup_elapsed_before_app,
@@ -2353,6 +2375,7 @@ pub(crate) mod tests {
             Cli::parse_from(["codex"]),
             Arg0DispatchPaths::default(),
             LoaderOverrides::default(),
+            /*local_endpoint*/ None,
             /*explicit_remote_endpoint*/ None,
         );
         let size = std::mem::size_of_val(&future);

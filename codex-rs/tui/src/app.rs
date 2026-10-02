@@ -38,6 +38,7 @@ use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
+use crate::chatwidget::ConnectedModeFooterState;
 use crate::chatwidget::ExternalEditorState;
 use crate::chatwidget::ReplayKind;
 use crate::chatwidget::ThreadInputState;
@@ -592,6 +593,7 @@ pub(crate) struct App {
     reconnect: reconnect::ReconnectState,
     pending_right_click_paste: Option<right_click_paste::PendingPaste>,
     right_click_paste_environment: right_click_paste::PasteEnvironment,
+    app_server_footer_state: Option<ConnectedModeFooterState>,
     /// Set when the user confirms an update; propagated on exit.
     daemon_cli_executable: Option<AbsolutePathBuf>,
     pub(crate) pending_update_action: Option<UpdateAction>,
