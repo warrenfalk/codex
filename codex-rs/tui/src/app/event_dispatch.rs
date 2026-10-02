@@ -394,6 +394,9 @@ impl App {
                 let result = tui.clipboard.copy(text, format, tui.frame_requester());
                 self.chat_widget.show_copy_result(&label, result);
             }
+            AppEvent::PromptRewriteCompleted(completion) => {
+                self.finish_prompt_rewrite(completion);
+            }
             AppEvent::ClearUi { name } => {
                 if self.reject_pending_permission_root_switch() {
                     return Ok(AppRunControl::Continue);

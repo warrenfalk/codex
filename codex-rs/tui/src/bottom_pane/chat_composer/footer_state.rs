@@ -12,6 +12,7 @@
 //! Shortcut help occupies the space above the composer and keeps its close hint on the final row.
 //! Passive transcript hints retain the shortcuts entry when it fits beside the complete hint.
 
+use std::time::Duration;
 use std::time::Instant;
 
 use super::super::footer::footer_height;
@@ -32,7 +33,6 @@ use crate::key_hint::KeyBinding;
 use crate::key_hint::ShortcutHint;
 use crate::slash_command::SlashCommand;
 use crate::style::secondary_text_style;
-use std::time::Duration;
 
 /// Resolved rectangles shared by painting and cursor placement, without retained layout state.
 pub(super) struct ComposerLayout {

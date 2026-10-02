@@ -66,6 +66,14 @@ use codex_protocol::models::ActivePermissionProfile;
 use codex_realtime_webrtc::StartedRealtimeWebrtcSession;
 
 use crate::history_cell::HistoryCell;
+use crate::prompt_rewrite::PromptRewriteRequest;
+
+#[derive(Debug)]
+pub(crate) struct PromptRewriteCompletion {
+    pub(crate) child_thread_id: ThreadId,
+    pub(crate) request: PromptRewriteRequest,
+    pub(crate) result: Result<String, String>,
+}
 
 /// Global voice controls always apply to the one call's owner.
 #[derive(Clone, Copy, Debug)]
@@ -390,6 +398,9 @@ pub(crate) enum AppEvent {
 
     /// Handle the selected close action for an idle side conversation.
     SideConversationCloseSelected(SideConversationCloseChoice),
+
+    /// Apply or report the completed hidden prompt-rewrite turn.
+    PromptRewriteCompleted(PromptRewriteCompletion),
 
     /// Submit an op to the specified thread, regardless of current focus.
     SubmitThreadOp {

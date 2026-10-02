@@ -47,6 +47,8 @@
 //! Successful dispatch and history recall establish fresh baselines; search previews preserve
 //! undo history until a match is accepted. Vim edits use the same full-draft semantics with
 //! Vim-style grouping.
+//! Prompt rewrites capture the flushed draft and apply only while its content is unchanged;
+//! cursor movement is allowed. A successful rewrite is one complete-draft undo unit.
 //!
 //! # Completion and Popup Dismissal
 //!
@@ -397,6 +399,7 @@ mod inline_input;
 mod mouse;
 mod paste_input;
 mod popup_state;
+mod prompt_rewrite;
 mod reconnect;
 pub(crate) use reconnect::RestrictedInputMode;
 mod slash_input;
@@ -700,6 +703,17 @@ pub(crate) struct ComposerDraftSnapshot {
     pub(crate) startup_local_history: Vec<HistoryEntry>,
     pub(crate) last_composer_activity_at: Option<Instant>,
     pub(crate) sparkle_draft: sparkle::SparkleDraft,
+}
+
+impl ComposerDraftSnapshot {
+    fn has_same_content(&self, other: &Self) -> bool {
+        self.text == other.text
+            && self.text_elements == other.text_elements
+            && self.local_images == other.local_images
+            && self.remote_image_urls == other.remote_image_urls
+            && self.mention_bindings == other.mention_bindings
+            && self.pending_pastes == other.pending_pastes
+    }
 }
 
 /// Builds the one-line warning for bare drafts that look like omitted slash commands.

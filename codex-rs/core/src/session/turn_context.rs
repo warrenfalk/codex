@@ -298,6 +298,7 @@ impl std::fmt::Debug for TurnEnvironment {
 pub(crate) struct NewTurnContextOptions {
     pub(crate) final_output_json_schema: Option<Value>,
     pub(crate) cyber_access_program: Option<CyberAccessProgram>,
+    pub(crate) model_only: bool,
 }
 
 /// The context needed for a single turn of the thread.
@@ -360,6 +361,8 @@ pub struct TurnContext {
     pub(crate) model_verification_emitted: AtomicBool,
     /// Effective cyber treatment for this turn, including any child-agent inheritance.
     pub(crate) cyber_access_program: Option<CyberAccessProgram>,
+    /// Restricts this turn to model sampling with no host-side capabilities.
+    pub(crate) model_only: bool,
 }
 
 /// Selects which preparation is needed when building a turn context.
@@ -724,6 +727,7 @@ impl TurnContext {
                 self.model_verification_emitted.load(Ordering::Relaxed),
             ),
             cyber_access_program: self.cyber_access_program,
+            model_only: self.model_only,
         }
     }
 
@@ -1039,6 +1043,7 @@ impl Session {
             server_model_warning_emitted: AtomicBool::new(false),
             model_verification_emitted: AtomicBool::new(false),
             cyber_access_program: None,
+            model_only: false,
         }
     }
 
@@ -1281,6 +1286,7 @@ impl Session {
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             turn_context.cyber_access_program = options.cyber_access_program;
         }
+        turn_context.model_only = options.model_only;
         let turn_context = Arc::new(turn_context);
         if git_enrichment_policy == GitEnrichmentPolicy::Fresh
             && turn_context
