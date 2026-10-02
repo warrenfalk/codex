@@ -514,6 +514,9 @@ async fn apply_metadata_update(
             if let Some(daybreak_enabled) = patch.daybreak_enabled {
                 metadata.daybreak_enabled = Some(daybreak_enabled);
             }
+            if let Some(existing) = existing.as_ref() {
+                metadata.prefer_existing_explicit_title(existing);
+            }
             let upsert_result = state_db.upsert_thread(&metadata).await;
             if existing.is_none()
                 && metadata.project_id.is_some()
