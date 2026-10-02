@@ -337,7 +337,8 @@ endpoints with other schemes fail before client registration or URL return.
 
 `thread/rollback` has been removed from the API, including its request and response
 types. Requests use the generic unknown-method rejection path. Use `thread/revert`
-for paginated threads instead.
+instead. This fork also supports legacy threads through `thread/revert`, retaining
+the same conversation ID and persisting the discarded suffix as a rollback marker.
 
 Existing rollouts may contain historical `ThreadRolledBack` events. Their replay
 and migration remain supported so resuming, reading, and forking those threads

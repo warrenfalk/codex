@@ -4,14 +4,14 @@
 //! mediates a key rendering boundary for the transcript overlay.
 //!
 //! Overall goal: keep the main chat view and the transcript overlay in sync while allowing users
-//! to edit an earlier prompt in place. Confirming a selection reverts before
-//! the selected turn and restores its prompt in the composer.
+//! to edit an earlier prompt in the same conversation or on a source-preserving branch.
+//! Confirming a selection opens the choice before changing conversation history.
 //!
 //! Backtrack operates as a small state machine:
 //! - The first `Esc` in the main view "primes" the feature and captures a base thread id.
 //! - A subsequent `Esc` starts compact transcript browsing and highlights the latest user prompt.
 //! - Left/Right choose prompts, Ctrl+T toggles details, and Esc restores the browsing origin.
-//! - `Enter` requests a revert before the selected prompt and reopens it for editing.
+//! - `Enter` offers to replace this conversation from the prompt onward or edit a new branch.
 //!
 //! Owned sessions use the shared transcript viewport for `Ctrl+T`; inline sessions retain the
 //! overlay. Both render committed cells and a live tail from the current `ChatWidget.active_cell`.
@@ -29,7 +29,6 @@ use std::any::TypeId;
 use std::sync::Arc;
 
 use crate::app::App;
-use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::chatwidget::ChatWidget;
@@ -122,7 +121,7 @@ impl App {
         }
     }
 
-    /// Revert the current thread before the selected prompt.
+    /// Offer to edit the selected prompt in this conversation or on a new branch.
     pub(crate) fn apply_backtrack_selection(&mut self, selection: BacktrackSelection) {
         if self.chat_widget.side_conversation_active() {
             self.reset_backtrack_state();
@@ -135,16 +134,7 @@ impl App {
             return;
         }
 
-        let Some(index) = nth_user_position(&self.transcript_cells, selection.nth_user_message)
-        else {
-            return;
-        };
-        self.app_event_tx
-            .send(AppEvent::RevertSessionForPromptEdit {
-                thread_id: selection.thread_id,
-                selected_cell: Arc::clone(&self.transcript_cells[index]),
-                prompt: selection.prompt,
-            });
+        self.show_prompt_edit_menu(selection);
     }
 
     pub(crate) fn restore_backtrack_prompt_after_revert_error(

@@ -210,7 +210,7 @@ pub struct PrepareForkParams {
     pub boundary: ForkBoundary,
 }
 
-/// Parameters for reverting a paginated thread's durable history.
+/// Parameters for reverting a thread's durable history.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RevertThreadParams {
     /// Stable logical thread to revert.

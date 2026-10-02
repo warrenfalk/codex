@@ -634,6 +634,13 @@ pub(crate) enum AppEvent {
         nth_user_message: usize,
     },
 
+    /// Fork before the selected prompt, retaining its identity across queued history pages.
+    ForkSessionForPromptEdit {
+        thread_id: ThreadId,
+        selected_cell: Arc<dyn HistoryCell>,
+        prompt: UserMessage,
+    },
+
     /// Queue the desktop notification requested by the Unix focus signal.
     FocusNotificationRequested,
 

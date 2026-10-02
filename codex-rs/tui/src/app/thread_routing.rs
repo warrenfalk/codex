@@ -1602,6 +1602,9 @@ impl App {
             | ThreadAttachPresentation::SessionLineage => {
                 self.chat_widget.handle_thread_session(session);
             }
+            ThreadAttachPresentation::PromptEdit => {
+                self.chat_widget.handle_thread_session_quiet(session);
+            }
         }
         let should_buffer_initial_replay = !turns.is_empty();
         let replayed_final_items = realtime_delivery::completed_agent_items_from_turns(&turns);
@@ -1619,6 +1622,12 @@ impl App {
 
         self.chat_widget
             .replay_thread_turns(turns, ReplayKind::ResumeInitialMessages);
+        if matches!(presentation, ThreadAttachPresentation::PromptEdit) {
+            self.chat_widget.add_info_message(
+                "You’re continuing from this point in a new conversation".to_string(),
+                /*hint*/ None,
+            );
+        }
         if should_buffer_initial_replay {
             self.app_event_tx
                 .send(AppEvent::EndInitialHistoryReplayBuffer);

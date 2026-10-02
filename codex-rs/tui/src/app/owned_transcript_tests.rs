@@ -658,6 +658,8 @@ async fn owned_backtrack_keys_edit_the_selected_prompt_and_restore_compact_view(
         &mut tui,
         &TuiEvent::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
     )?);
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let selection = std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event {
         AppEvent::RevertSessionForPromptEdit {
             thread_id,

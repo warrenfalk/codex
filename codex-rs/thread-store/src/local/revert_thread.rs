@@ -12,10 +12,11 @@ use crate::RevertThreadParams;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
-/// Revert an unloaded paginated thread by creating a new immutable rollout file.
+/// Revert an unloaded thread while retaining its logical identity.
 ///
-/// Old rollouts stay intact. The new file references the retained prefix, and the only mutable
-/// cutover is the existing SQLite rollout-path pointer for the thread.
+/// Paginated rollouts stay intact. A new file references the retained prefix, and the only
+/// mutable cutover is the existing SQLite rollout-path pointer for the thread.
+/// Legacy histories append a rollback marker under the same exclusive writer lock.
 pub(super) async fn revert(
     store: &LocalThreadStore,
     params: RevertThreadParams,
@@ -63,10 +64,51 @@ pub(super) async fn revert(
             message: format!("current rollout for {thread_id} belongs to another thread"),
         });
     }
-    if source_meta.history_mode != ThreadHistoryMode::Paginated {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: format!("thread {thread_id} does not use paginated history"),
-        });
+    if source_meta.history_mode == ThreadHistoryMode::Legacy {
+        let (items, _, _) = RolloutRecorder::load_rollout_items(source_path.as_path())
+            .await
+            .map_err(thread_store_io_error)?;
+        let mut builder = codex_app_server_protocol::ThreadHistoryBuilder::new();
+        for item in &items {
+            if codex_rollout::is_persisted_rollout_item(item, ThreadHistoryMode::Legacy) {
+                builder.handle_rollout_item(item);
+            }
+        }
+        let turns = builder.finish();
+        let selected = turns
+            .iter()
+            .position(|turn| turn.id == before_turn_id)
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: "the selected turn is no longer in the conversation".to_string(),
+            })?;
+        let num_turns = turns[selected..]
+            .iter()
+            .flat_map(|turn| &turn.items)
+            .filter(|item| {
+                matches!(
+                    item,
+                    codex_app_server_protocol::ThreadItem::UserMessage { .. }
+                )
+            })
+            .count();
+        let num_turns = u32::try_from(num_turns).map_err(|_| ThreadStoreError::InvalidRequest {
+            message: "too many user messages to revert".to_string(),
+        })?;
+        if num_turns == 0 {
+            return Err(ThreadStoreError::InvalidRequest {
+                message: "the selected history contains no user messages".to_string(),
+            });
+        }
+        return codex_rollout::append_rollout_item_to_path(
+            source_path.as_path(),
+            &codex_rollout::RolloutItem::EventMsg(
+                codex_protocol::protocol::EventMsg::ThreadRolledBack(
+                    codex_protocol::protocol::ThreadRolledBackEvent { num_turns },
+                ),
+            ),
+        )
+        .await
+        .map_err(thread_store_io_error);
     }
 
     // Older binaries can omit creator fields when replacing a rollout during revert.

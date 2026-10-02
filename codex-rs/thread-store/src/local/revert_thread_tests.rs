@@ -26,6 +26,135 @@ use crate::ThreadPersistenceMetadata;
 use crate::ThreadStore;
 
 #[tokio::test]
+async fn legacy_revert_counts_steers_and_preserves_retained_history_after_reopening() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("initialize state database");
+    let store = LocalThreadStore::new(config.clone(), Some(state_db.clone()));
+    let thread_id = ThreadId::new();
+    create_thread_with_history_mode(&store, thread_id, ThreadHistoryMode::Legacy).await;
+    let mut items = Vec::new();
+    for (id, messages) in [
+        ("first", vec!["keep"]),
+        ("second", vec!["replace", "steer"]),
+    ] {
+        items.push(turn_started(id));
+        for message in messages {
+            items.push(RolloutItem::EventMsg(EventMsg::UserMessage(
+                codex_protocol::protocol::UserMessageEvent {
+                    message: message.to_string(),
+                    ..Default::default()
+                },
+            )));
+        }
+        items.push(turn_completed(id));
+    }
+    store
+        .append_items(AppendThreadItemsParams { thread_id, items })
+        .await
+        .expect("append turns");
+    let path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("rollout path");
+    // Reverts must not race an active recorder, even for legacy storage.
+    assert!(
+        store
+            .revert_thread(RevertThreadParams {
+                thread_id,
+                before_turn_id: "second".to_string(),
+                multi_agent_version: None,
+            })
+            .await
+            .is_err()
+    );
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("close writer");
+    codex_rollout::state_db::reconcile_rollout(
+        Some(state_db.as_ref()),
+        path.as_path(),
+        "test-provider",
+        /*builder*/ None,
+        &[],
+        /*archived_only*/ Some(false),
+        /*new_thread_memory_mode*/ None,
+    )
+    .await;
+    let original = std::fs::read(&path).expect("original rollout");
+    assert!(
+        store
+            .revert_thread(RevertThreadParams {
+                thread_id,
+                before_turn_id: "missing".to_string(),
+                multi_agent_version: None,
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(std::fs::read(&path).expect("unchanged rollout"), original);
+    compress_rollout(path.as_path());
+    store
+        .revert_thread(RevertThreadParams {
+            thread_id,
+            before_turn_id: "second".to_string(),
+            multi_agent_version: None,
+        })
+        .await
+        .expect("revert legacy suffix");
+    assert!(
+        std::fs::read(&path)
+            .expect("materialized rollout")
+            .starts_with(&original)
+    );
+    drop(store);
+    let store = LocalThreadStore::new(config, Some(state_db));
+    let history = store
+        .load_history(crate::LoadThreadHistoryParams {
+            thread_id,
+            include_archived: false,
+        })
+        .await
+        .expect("reload legacy history");
+    let retained = codex_app_server_protocol::build_turns_from_rollout_items(&history.items);
+    assert_eq!(
+        retained
+            .iter()
+            .map(|turn| turn.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first"]
+    );
+    assert!(history.items.iter().any(|item| matches!(item,
+        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(event)) if event.num_turns == 2
+    )));
+    store
+        .revert_thread(RevertThreadParams {
+            thread_id,
+            before_turn_id: "first".to_string(),
+            multi_agent_version: None,
+        })
+        .await
+        .expect("revert first prompt after reopening");
+    let history = store
+        .load_history(crate::LoadThreadHistoryParams {
+            thread_id,
+            include_archived: false,
+        })
+        .await
+        .expect("reload empty history");
+    assert_eq!(
+        codex_app_server_protocol::build_turns_from_rollout_items(&history.items),
+        Vec::new()
+    );
+}
+
+#[tokio::test]
 async fn revert_keeps_thread_id_and_hides_suffix_across_repeated_reverts() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
@@ -270,6 +399,14 @@ async fn rollout_paths_for_thread(
 }
 
 async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) {
+    create_thread_with_history_mode(store, thread_id, ThreadHistoryMode::Paginated).await;
+}
+
+async fn create_thread_with_history_mode(
+    store: &LocalThreadStore,
+    thread_id: ThreadId,
+    history_mode: ThreadHistoryMode,
+) {
     store
         .create_thread(CreateThreadParams {
             creator_user_id: Some("creator-user".to_string()),
@@ -286,7 +423,7 @@ async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) 
             dynamic_tools: Vec::new(),
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
-            history_mode: ThreadHistoryMode::Paginated,
+            history_mode,
             history_base: None,
             subagent_history_start_ordinal: None,
             initial_window_id: "window-1".to_string(),
@@ -298,7 +435,7 @@ async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) 
             },
         })
         .await
-        .expect("create paginated thread");
+        .expect("create thread");
 }
 
 async fn turn_ids(store: &LocalThreadStore, thread_id: ThreadId) -> Vec<String> {

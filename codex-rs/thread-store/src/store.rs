@@ -217,13 +217,13 @@ pub trait ThreadStore: Any + Send + Sync {
         })
     }
 
-    /// Reverts a paginated thread's durable history so it ends immediately before
+    /// Reverts a thread's durable history so it ends immediately before
     /// `before_turn_id`.
     ///
     /// Callers must close the thread's live writer first. The logical thread id and semantic
     /// metadata stay unchanged.
     ///
-    /// Stores without paginated revert support can retain this default implementation.
+    /// Stores without revert support can retain this default implementation.
     fn revert_thread(&self, _params: RevertThreadParams) -> ThreadStoreFuture<'_, ()> {
         Box::pin(async {
             Err(ThreadStoreError::Unsupported {
