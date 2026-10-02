@@ -42,6 +42,7 @@ pub enum SlashCommand {
     Plan,
     Voice,
     Goal,
+    Nts,
     Agents,
     Side,
     Btw,
@@ -139,6 +140,7 @@ impl SlashCommand {
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Voice => "start or stop voice; use /voice settings to choose a voice",
             SlashCommand::Goal => "set or view the goal for a long-running task",
+            SlashCommand::Nts => "record a note in the current thread",
             SlashCommand::Agents => "open the agent command center",
             SlashCommand::MultiAgents => "switch between this session's subagents",
             SlashCommand::Side | SlashCommand::Btw => {
@@ -178,6 +180,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::Goal
                 | SlashCommand::Voice
+                | SlashCommand::Nts
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
@@ -288,6 +291,7 @@ impl SlashCommand {
             | SlashCommand::App
             | SlashCommand::Goal
             | SlashCommand::Voice
+            | SlashCommand::Nts
             | SlashCommand::Mcp
             | SlashCommand::Apps
             | SlashCommand::Plugins
@@ -352,6 +356,8 @@ mod tests {
     #[test]
     fn certain_commands_are_available_during_task() {
         assert!(SlashCommand::Goal.available_during_task());
+        assert!(SlashCommand::Nts.available_during_task());
+        assert!(SlashCommand::Nts.supports_inline_args());
         assert!(SlashCommand::Ide.available_during_task());
         assert!(SlashCommand::Title.available_during_task());
         assert!(SlashCommand::Statusline.available_during_task());

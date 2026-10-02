@@ -331,7 +331,8 @@ fn searchable_text(item: &ThreadItem) -> Option<Cow<'_, str>> {
             let text = markdown_to_search_text(text);
             (!text.is_empty()).then_some(Cow::Owned(text))
         }
-        ThreadItem::HookPrompt { .. }
+        ThreadItem::NoteToSelf { .. }
+        | ThreadItem::HookPrompt { .. }
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }

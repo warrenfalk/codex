@@ -523,6 +523,7 @@ WHERE thread_id = ?
                 phase: Some(MessagePhase::Commentary) | None,
                 ..
             }
+            | ThreadItem::NoteToSelf { .. }
             | ThreadItem::HookPrompt { .. }
             | ThreadItem::FunctionCallOutput { .. }
             | ThreadItem::Plan { .. }

@@ -640,6 +640,12 @@ pub(crate) enum AppEvent {
     /// A blocking image-preparation worker has finished; payload stays with its widget.
     ImagesPrepared(Uuid),
 
+    /// Create a user-visible note in the thread without submitting agent input.
+    CreateNoteToSelf {
+        thread_id: ThreadId,
+        note: String,
+    },
+
     /// Approve one retry of a recent auto-review denial selected in the TUI.
     ApproveRecentAutoReviewDenial {
         thread_id: ThreadId,
