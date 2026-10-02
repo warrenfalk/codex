@@ -5,7 +5,7 @@ expression: "frames.join(\"\\n---\\n\").replace(crate::version::CODEX_CLI_VERSIO
 ---
 terminal_app_over_ssh=false, owned=true
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
   Pull up a prompt.
@@ -23,7 +23,7 @@ terminal_app_over_ssh=false, owned=true
 ---
 terminal_app_over_ssh=true, owned=false
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
   Pull up a prompt.

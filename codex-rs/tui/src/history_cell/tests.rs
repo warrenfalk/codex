@@ -1899,6 +1899,23 @@ fn session_header_truncates_halfwidth_directory() {
 }
 
 #[test]
+fn session_header_title_marks_custom_builds() {
+    let cell = SessionHeaderHistoryCell::new(
+        "gpt-5".to_string(),
+        /*reasoning_effort*/ None,
+        test_path_buf("/tmp/project").abs().to_path_buf(),
+        "test",
+    );
+
+    let title_line = render_lines(&cell.display_lines(/*width*/ 80))
+        .into_iter()
+        .find(|line| line.contains("OpenAI Codex"))
+        .expect("title line");
+
+    assert_eq!(title_line, "  >_ OpenAI Codex (vtest (warrenfalk custom))");
+}
+
+#[test]
 fn yolo_mode_includes_managed_full_access_profiles() {
     let permission_profile: PermissionProfile = PermissionProfile::Managed {
         network: NetworkSandboxPolicy::Enabled,

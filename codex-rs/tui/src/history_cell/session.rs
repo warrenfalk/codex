@@ -355,7 +355,8 @@ impl HistoryCell for SessionHeaderHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let width = usize::from(width);
         let mut title = vec!["  ".into()];
-        title.extend(codex_title(self.version));
+        let version = self.version;
+        title.extend(codex_title(&format!("{version} (warrenfalk custom)")));
         let mut lines = vec![
             Line::default(),
             Line::from(title),
