@@ -13,7 +13,7 @@ def derivations(root: Path, system: str, revision: str = "isolation-a") -> dict:
       let
         flake = builtins.getFlake {json.dumps(f"path:{root}")};
         outputs = (import {root}/flake.nix).outputs (flake.inputs // {{
-          self = flake // {{ shortRev = {json.dumps(revision)}; }};
+          self = flake // {{ rev = {json.dumps(revision)}; shortRev = {json.dumps(revision)}; }};
         }});
         packages = outputs.packages.{system};
       in {{
@@ -66,6 +66,12 @@ def main() -> None:
             shutil.copy2(source, destination, follow_symlinks=False)
 
         baseline = derivations(root, system)
+        changed_revision = derivations(root, system, revision="isolation-b")
+        if changed_revision["server"] != baseline["server"]:
+            raise AssertionError("Repository revision invalidated the server")
+        if changed_revision["frontend"] == baseline["frontend"]:
+            raise AssertionError("Frontend did not include the source revision")
+        print("PASS source revision stamps only the frontend", flush=True)
         cases = [
             ("codex-rs/tui/src/lib.rs", "\n// Isolation probe.\n", False),
             ("codex-rs/tui/Cargo.toml", "\n# Isolation probe.\n", False),

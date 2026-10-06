@@ -44,15 +44,21 @@
           popplerUtils = pkgs."poppler-utils";
           pythonExecutable = "${pkgs.python3}/bin/${pkgs.python3.meta.mainProgram or "python3"}";
           rustToolchain = pkgs.rust-bin.stable.latest.minimal;
-          codex-rs-unwrapped = pkgs.callPackage ./codex-rs {
+          codex-rs-base = pkgs.callPackage ./codex-rs {
             inherit version;
             rustPlatform = pkgs.makeRustPlatform {
               cargo = rustToolchain;
               rustc = rustToolchain;
             };
           };
+          codex-rs-unwrapped = codex-rs-base.overrideAttrs (old: {
+            env = old.env // {
+              STABLE_GIT_COMMIT = self.rev or self.dirtyRev or "unknown";
+            };
+          });
           codex-app-server-unwrapped = pkgs.callPackage ./nix/app-server.nix {
-            inherit codex-rs-unwrapped;
+            # Whole-repository provenance must not invalidate the independent server.
+            codex-rs-unwrapped = codex-rs-base;
           };
           # Keep a deliberately small, manifest-driven toolbelt in the package
           # closure so the packaged CLI has a predictable baseline PATH.
