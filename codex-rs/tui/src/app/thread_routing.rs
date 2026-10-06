@@ -1151,6 +1151,18 @@ impl App {
         if self.abandoned_side_threads.contains(&thread_id) {
             return Ok(());
         }
+        if self.current_displayed_thread_id() != Some(thread_id)
+            && let ServerNotification::ModelCapacityWarning(warning) = &notification
+        {
+            self.chat_widget
+                .notify(crate::chatwidget::Notification::ModelCapacityWarning);
+            self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                crate::history_cell::new_usage_warning_event(format!(
+                    "Agent {thread_id}: {}",
+                    warning.message
+                )),
+            )));
+        }
         if self.current_displayed_thread_id() == Some(thread_id)
             && let ServerNotification::TurnCompleted(notification) = &notification
         {

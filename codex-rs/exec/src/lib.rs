@@ -1607,6 +1607,9 @@ fn should_process_notification(
         ServerNotification::Error(notification) => {
             notification.thread_id == thread_id && notification.turn_id == turn_id
         }
+        ServerNotification::ModelCapacityWarning(notification) => {
+            notification.thread_id == thread_id && notification.turn_id == turn_id
+        }
         ServerNotification::HookCompleted(notification) => {
             notification.thread_id == thread_id
                 && notification

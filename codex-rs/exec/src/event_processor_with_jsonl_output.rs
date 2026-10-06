@@ -444,6 +444,11 @@ impl EventProcessorWithJsonOutput {
                 events.extend(warning.events);
                 warning.status
             }
+            ServerNotification::ModelCapacityWarning(notification) => {
+                let warning = self.collect_warning(notification.message);
+                events.extend(warning.events);
+                warning.status
+            }
             ServerNotification::Error(notification) => {
                 let message = match notification.error.additional_details {
                     Some(details) if !details.is_empty() => {

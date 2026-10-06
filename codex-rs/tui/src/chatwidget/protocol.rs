@@ -38,7 +38,7 @@ impl ChatWidget {
             ServerNotification::Error(ErrorNotification {
                 will_retry: true,
                 ..
-            })
+            }) | ServerNotification::ModelCapacityWarning(_)
         );
         if !is_resume_initial_replay && !is_retry_error {
             self.restore_retry_status_header_if_present();
@@ -261,6 +261,13 @@ impl ChatWidget {
                             .to_string(),
                     ),
                 )));
+                self.request_redraw();
+            }
+            ServerNotification::ModelCapacityWarning(notification) => {
+                if !from_replay {
+                    self.notify(Notification::ModelCapacityWarning);
+                }
+                self.add_to_history(history_cell::new_usage_warning_event(notification.message));
                 self.request_redraw();
             }
             ServerNotification::DeprecationNotice(notification) => {

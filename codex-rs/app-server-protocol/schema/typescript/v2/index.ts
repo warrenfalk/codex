@@ -318,6 +318,7 @@ export type { MisalignmentSteer } from "./MisalignmentSteer";
 export type { Model } from "./Model";
 export type { ModelAccessPrograms } from "./ModelAccessPrograms";
 export type { ModelAvailabilityNux } from "./ModelAvailabilityNux";
+export type { ModelCapacityWarningNotification } from "./ModelCapacityWarningNotification";
 export type { ModelListParams } from "./ModelListParams";
 export type { ModelListResponse } from "./ModelListResponse";
 export type { ModelProviderCapabilitiesReadParams } from "./ModelProviderCapabilitiesReadParams";

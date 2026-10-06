@@ -1399,6 +1399,9 @@ pub enum EventMsg {
     /// indicates the turn continued but the user should still be notified.
     Warning(WarningEvent),
 
+    /// Capacity retries have persisted for five minutes; the turn is still running.
+    ModelCapacityWarning(WarningEvent),
+
     /// Provider-owned authentication recovery has started for the current turn.
     AuthRecoveryStarted(AuthRecoveryEvent),
 

@@ -90,6 +90,32 @@ fn runtime_warning_emits_a_non_fatal_error_item() {
 }
 
 #[test]
+fn capacity_warning_keeps_exec_running() {
+    let mut processor = EventProcessorWithJsonOutput::new(/*last_message_path*/ None);
+    let collected = processor.collect_thread_events(ServerNotification::ModelCapacityWarning(
+        codex_app_server_protocol::ModelCapacityWarningNotification {
+            thread_id: "thread-1".into(),
+            turn_id: "turn-1".into(),
+            message: "Still retrying the same model.".into(),
+        },
+    ));
+    assert_eq!(
+        collected,
+        CollectedThreadEvents {
+            events: vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
+                item: ExecThreadItem {
+                    id: "item_0".into(),
+                    details: ThreadItemDetails::Error(ErrorItem {
+                        message: "Still retrying the same model.".into()
+                    }),
+                },
+            })],
+            status: CodexStatus::Running,
+        }
+    );
+}
+
+#[test]
 fn mcp_tool_call_result_preserves_meta_in_jsonl_event() {
     let mut processor = EventProcessorWithJsonOutput::new(/*last_message_path*/ None);
 

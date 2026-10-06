@@ -539,6 +539,16 @@ Local `thread/shellCommand` calls accept `projectEnv: "auto" | "bypass"`, defaul
 
 During an active turn, the note is appended to that turn and emits `item/completed`. For an idle thread, it appears in its own completed display-only turn and emits `turn/completed`. Notes persist in thread reads and transcript-style history. They remain excluded from model context, compaction, memory extraction, and title metadata. The TUI exposes this behavior as `/nts <note>`; see [the feature contract](../../wf_features/note-to-self.md).
 
+## Model capacity retries
+
+Capacity failures keep the turn running and retry the same model with a backoff
+from five seconds up to one minute, respecting longer server retry advice. Retry
+status arrives through `error` notifications with `willRetry: true`. After five
+minutes of consecutive capacity failures, `model/capacityWarning` carries
+`threadId`, `turnId`, and `message`. Clients can show a warning and request a
+desktop notification without marking the turn failed. Retries continue until
+recovery, interruption, or an existing task deadline.
+
 ## Model-only turns
 
 Experimental `turn/startModelOnly` starts an idle turn using the target thread's model-visible history with no tools, hooks, skill/plugin injection, memory startup, or automatic title generation. It accepts `threadId`, `input`, `model`, optional `effort`, and optional `outputSchema`, and returns the initial `turn` with the usual turn/item notifications. Parent-owned Multi-Agent V2 subagents reject direct turns.

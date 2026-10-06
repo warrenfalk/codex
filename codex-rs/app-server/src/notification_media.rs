@@ -119,6 +119,7 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::ModelSafetyBufferingUpdated(_)
         | ServerNotification::Warning(_)
         | ServerNotification::GuardianWarning(_)
+        | ServerNotification::ModelCapacityWarning(_)
         | ServerNotification::DeprecationNotice(_)
         | ServerNotification::ConfigWarning(_)
         | ServerNotification::FuzzyFileSearchSessionUpdated(_)

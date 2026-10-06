@@ -291,6 +291,17 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .send_server_notification(ServerNotification::GuardianWarning(notification))
                 .await;
         }
+        EventMsg::ModelCapacityWarning(warning) => {
+            outgoing
+                .send_server_notification(ServerNotification::ModelCapacityWarning(
+                    codex_app_server_protocol::ModelCapacityWarningNotification {
+                        thread_id: conversation_id.to_string(),
+                        turn_id: event_turn_id.clone(),
+                        message: warning.message,
+                    },
+                ))
+                .await;
+        }
         EventMsg::GuardianAssessment(assessment) => {
             let pending_command_execution = match build_item_from_guardian_event(
                 &assessment,
@@ -3205,6 +3216,36 @@ mod tests {
             }
             other => bail!("unexpected message: {other:?}"),
         }
+
+        apply_bespoke_event_handling(
+            Event {
+                id: "turn-1".into(),
+                msg: EventMsg::ModelCapacityWarning(codex_protocol::protocol::WarningEvent {
+                    message: "Still retrying the same model.".into(),
+                }),
+            },
+            conversation_id,
+            Arc::clone(&conversation),
+            Arc::clone(&thread_manager),
+            outgoing.clone(),
+            Arc::clone(&thread_state),
+            thread_watch_manager.clone(),
+        )
+        .await;
+        let ServerNotification::ModelCapacityWarning(warning) =
+            recv_broadcast_notification(&mut rx).await?
+        else {
+            bail!("expected capacity warning");
+        };
+        assert_eq!(
+            warning,
+            codex_app_server_protocol::ModelCapacityWarningNotification {
+                thread_id: conversation_id.to_string(),
+                turn_id: "turn-1".into(),
+                message: "Still retrying the same model.".into(),
+            },
+        );
+        assert_eq!(thread_watch_manager.running_turn_count().await, 1);
 
         for (phase, method, event) in [
             (
