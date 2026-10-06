@@ -24,6 +24,7 @@ mod refresh_lock;
 mod refresh_transaction;
 mod resolved_store;
 mod runtime;
+mod store_key;
 mod store_lock;
 
 #[cfg(test)]
@@ -36,7 +37,6 @@ use anyhow::Result;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_secrets::LocalSecretsNamespace;
-use codex_secrets::SecretName;
 use codex_secrets::SecretScope;
 use codex_secrets::SecretsBackendKind;
 use codex_secrets::SecretsManager;
@@ -49,10 +49,6 @@ use rmcp::transport::auth::OAuthTokenResponse;
 use rmcp::transport::auth::VendorExtraTokenFields;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value;
-use serde_json::map::Map as JsonMap;
-use sha2::Digest;
-use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
@@ -64,6 +60,10 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tracing::warn;
 
+use self::store_key::CredentialStoreKeys;
+use self::store_key::compute_secret_name;
+use self::store_key::compute_store_key;
+use self::store_key::secret_name_for_key;
 use self::store_lock::OAuthStore;
 use self::store_lock::OAuthStoreLock;
 use self::store_lock::OAuthStoreLockFailure;
@@ -91,7 +91,6 @@ use self::resolved_store::try_resolve_oauth_tokens_from_store_policy;
 pub(crate) use self::runtime::OAuthRuntime;
 
 const KEYRING_SERVICE: &str = "Codex MCP Credentials";
-const MCP_OAUTH_SECRET_PREFIX: &str = "MCP_OAUTH";
 const REFRESH_SKEW_MILLIS: u64 = 30_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -384,17 +383,19 @@ fn load_oauth_tokens_from_direct_keyring<K: KeyringStore>(
     server_name: &str,
     url: &str,
 ) -> Result<Option<StoredOAuthTokens>> {
-    let key = compute_store_key(server_name, url)?;
-    match keyring_store.load(KEYRING_SERVICE, &key) {
-        Ok(Some(serialized)) => {
-            let mut tokens: StoredOAuthTokens = serde_json::from_str(&serialized)
-                .context("failed to deserialize OAuth tokens from keyring")?;
-            refresh_expires_in_from_timestamp(&mut tokens);
-            Ok(Some(tokens))
+    for key in CredentialStoreKeys::new(server_name, url)?.iter() {
+        match keyring_store.load(KEYRING_SERVICE, key) {
+            Ok(Some(serialized)) => {
+                let mut tokens: StoredOAuthTokens = serde_json::from_str(&serialized)
+                    .context("failed to deserialize OAuth tokens from keyring")?;
+                refresh_expires_in_from_timestamp(&mut tokens);
+                return Ok(Some(tokens));
+            }
+            Ok(None) => {}
+            Err(error) => return Err(Error::new(error.into_error())),
         }
-        Ok(None) => Ok(None),
-        Err(error) => Err(Error::new(error.into_error())),
     }
+    Ok(None)
 }
 
 fn load_oauth_tokens_from_secrets_keyring<K: KeyringStore + Clone + 'static>(
@@ -418,19 +419,19 @@ fn load_oauth_tokens_from_secrets_keyring_with_lock_held<K: KeyringStore + Clone
         Arc::new(keyring_store.clone()),
         LocalSecretsNamespace::McpOAuth,
     );
-    let secret_name = compute_secret_name(server_name, url)?;
-    match manager
-        .get(&SecretScope::Global, &secret_name)
-        .context("failed to load MCP OAuth tokens from encrypted storage")?
-    {
-        Some(serialized) => {
+    for key in CredentialStoreKeys::new(server_name, url)?.iter() {
+        let secret_name = secret_name_for_key(key)?;
+        if let Some(serialized) = manager
+            .get(&SecretScope::Global, &secret_name)
+            .context("failed to load MCP OAuth tokens from encrypted storage")?
+        {
             let mut tokens: StoredOAuthTokens = serde_json::from_str(&serialized)
                 .context("failed to deserialize OAuth tokens from encrypted storage")?;
             refresh_expires_in_from_timestamp(&mut tokens);
-            Ok(Some(tokens))
+            return Ok(Some(tokens));
         }
-        None => Ok(None),
     }
+    Ok(None)
 }
 
 /// Classifies keyring load failures that affect Auto fallback policy.
@@ -505,9 +506,16 @@ fn save_oauth_tokens_to_direct_keyring<K: KeyringStore>(
 ) -> Result<()> {
     let serialized = serde_json::to_string(tokens).context("failed to serialize OAuth tokens")?;
 
-    let key = compute_store_key(server_name, &tokens.url)?;
-    match keyring_store.save(KEYRING_SERVICE, &key, &serialized) {
-        Ok(()) => Ok(()),
+    let keys = CredentialStoreKeys::new(server_name, &tokens.url)?;
+    match keyring_store.save(KEYRING_SERVICE, &keys.primary, &serialized) {
+        Ok(()) => {
+            if let Some(legacy) = &keys.legacy
+                && let Err(error) = keyring_store.delete(KEYRING_SERVICE, legacy)
+            {
+                warn!("failed to remove legacy OAuth credential key: {error}");
+            }
+            Ok(())
+        }
         Err(error) => {
             let message = format!(
                 "failed to write OAuth tokens to keyring: {}",
@@ -552,7 +560,13 @@ fn save_oauth_tokens_to_secrets_keyring_with_lock_held<K: KeyringStore + Clone +
     let secret_name = compute_secret_name(server_name, &tokens.url)?;
     manager
         .set(&SecretScope::Global, &secret_name, serialized)
-        .context("failed to write OAuth tokens to encrypted storage")
+        .context("failed to write OAuth tokens to encrypted storage")?;
+    if let Some(legacy) = CredentialStoreKeys::new(server_name, &tokens.url)?.legacy
+        && let Err(error) = manager.delete(&SecretScope::Global, &secret_name_for_key(&legacy)?)
+    {
+        warn!("failed to remove legacy encrypted OAuth credential key: {error}");
+    }
+    Ok(())
 }
 
 /// Saves to the selected keyring backend, then best-effort removes the fallback File entry.
@@ -563,8 +577,7 @@ fn save_oauth_tokens_with_keyring_and_cleanup_file<K: KeyringStore + Clone + 'st
     tokens: &StoredOAuthTokens,
 ) -> Result<()> {
     save_oauth_tokens_with_keyring(keyring_store, keyring_backend_kind, server_name, tokens)?;
-    let key = compute_store_key(server_name, &tokens.url)?;
-    if let Err(error) = delete_oauth_tokens_from_file(&key) {
+    if let Err(error) = delete_oauth_tokens_from_file(server_name, &tokens.url) {
         warn!(
             server_name,
             keyring_backend = ?keyring_backend_kind,
@@ -636,7 +649,6 @@ fn delete_oauth_tokens_from_keyring_and_file<K: KeyringStore + Clone + 'static>(
     server_name: &str,
     url: &str,
 ) -> Result<bool> {
-    let key = compute_store_key(server_name, url)?;
     let keyring_result =
         delete_oauth_tokens_from_keyring(keyring_store, keyring_backend_kind, server_name, url);
     let keyring_removed = match keyring_result {
@@ -653,7 +665,7 @@ fn delete_oauth_tokens_from_keyring_and_file<K: KeyringStore + Clone + 'static>(
         }
     };
 
-    let file_removed = delete_oauth_tokens_from_file(&key)?;
+    let file_removed = delete_oauth_tokens_from_file(server_name, url)?;
     Ok(keyring_removed || file_removed)
 }
 
@@ -682,10 +694,15 @@ fn delete_oauth_tokens_from_direct_keyring<K: KeyringStore>(
     server_name: &str,
     url: &str,
 ) -> Result<bool> {
-    let key = compute_store_key(server_name, url)?;
-    keyring_store
-        .delete(KEYRING_SERVICE, &key)
-        .map_err(|error| Error::new(error.into_error()))
+    let mut removed = false;
+    // Keep the authoritative entry if deleting the legacy alias fails. Otherwise
+    // the stale alias would become visible after a partially successful logout.
+    for key in CredentialStoreKeys::new(server_name, url)?.iter().rev() {
+        removed |= keyring_store
+            .delete(KEYRING_SERVICE, key)
+            .map_err(|error| Error::new(error.into_error()))?;
+    }
+    Ok(removed)
 }
 
 fn delete_oauth_tokens_from_secrets_keyring<K: KeyringStore + Clone + 'static>(
@@ -701,10 +718,12 @@ fn delete_oauth_tokens_from_secrets_keyring<K: KeyringStore + Clone + 'static>(
         Arc::new(keyring_store.clone()),
         LocalSecretsNamespace::McpOAuth,
     );
-    let secret_name = compute_secret_name(server_name, url)?;
-    let secrets_removed = manager
-        .delete(&SecretScope::Global, &secret_name)
-        .context("failed to delete OAuth tokens from encrypted storage")?;
+    let mut secrets_removed = false;
+    for key in CredentialStoreKeys::new(server_name, url)?.iter().rev() {
+        secrets_removed |= manager
+            .delete(&SecretScope::Global, &secret_name_for_key(key)?)
+            .context("failed to delete OAuth tokens from encrypted storage")?;
+    }
     Ok(secrets_removed)
 }
 
@@ -817,7 +836,6 @@ impl OAuthPersistor {
 }
 
 const FALLBACK_FILENAME: &str = ".credentials.json";
-const MCP_SERVER_TYPE: &str = "http";
 
 type FallbackFile = BTreeMap<String, FallbackTokenEntry>;
 
@@ -853,12 +871,18 @@ fn load_oauth_tokens_from_file_with_lock_held(
         return Ok(None);
     };
 
-    let key = compute_store_key(server_name, url)?;
+    let keys = CredentialStoreKeys::new(server_name, url)?;
     let local_server_name = server_name.strip_prefix("local:").unwrap_or(server_name);
 
-    for (stored_key, entry) in &store {
+    // Prefer the canonical entry even if an older alias sorts before it in the file.
+    for (stored_key, entry) in keys
+        .iter()
+        .filter_map(|key| store.get_key_value(key))
+        .chain(store.iter())
+    {
+        let matches_key = keys.iter().any(|key| stored_key == key);
         let matches_credential = if server_name.starts_with("executor:") {
-            stored_key == &key
+            matches_key
                 && entry.executor_owned
                 && entry.server_name == server_name
                 && entry.server_url == url
@@ -868,9 +892,9 @@ fn load_oauth_tokens_from_file_with_lock_held(
             entry.server_url == url
                 // Escaped names may also match another server's stored, escaped name.
                 // Only accept a legacy unescaped entry under this identity's own key.
-                && (!server_name.starts_with("local:") || stored_key == &key)
+                && (!server_name.starts_with("local:") || matches_key)
                 && (entry.server_name == local_server_name
-                    || (stored_key == &key && entry.server_name == server_name))
+                    || (matches_key && entry.server_name == server_name))
         };
         if !matches_credential {
             continue;
@@ -916,10 +940,14 @@ fn save_oauth_tokens_to_file(tokens: &StoredOAuthTokens) -> Result<()> {
 
 /// Updates the fallback File. The caller must hold the File aggregate-store lock.
 fn save_oauth_tokens_to_file_with_lock_held(tokens: &StoredOAuthTokens) -> Result<()> {
-    let key = compute_store_key(&tokens.server_name, &tokens.url)?;
+    let keys = CredentialStoreKeys::new(&tokens.server_name, &tokens.url)?;
     let mut store = read_fallback_file_unlocked()?.unwrap_or_default();
     let executor_owned = tokens.server_name.starts_with("executor:");
-    if executor_owned && store.get(&key).is_some_and(|entry| !entry.executor_owned) {
+    if executor_owned
+        && keys
+            .iter()
+            .any(|key| store.get(key).is_some_and(|entry| !entry.executor_owned))
+    {
         anyhow::bail!("executor OAuth credential key conflicts with a host-owned credential");
     }
 
@@ -946,25 +974,33 @@ fn save_oauth_tokens_to_file_with_lock_held(tokens: &StoredOAuthTokens) -> Resul
         executor_owned,
     };
 
-    store.insert(key, entry);
+    if let Some(legacy) = &keys.legacy {
+        store.remove(legacy);
+    }
+    store.insert(keys.primary, entry);
     write_fallback_file(&store)
 }
 
-fn delete_oauth_tokens_from_file(key: &str) -> Result<bool> {
+fn delete_oauth_tokens_from_file(server_name: &str, url: &str) -> Result<bool> {
+    let keys = CredentialStoreKeys::new(server_name, url)?;
     let _store_lock = OAuthStoreLock::acquire_for_write(OAuthStore::File)?;
     let mut store = match read_fallback_file_unlocked()? {
         Some(store) => store,
         None => return Ok(false),
     };
 
-    if key.starts_with("executor:")
-        && !key.contains('|')
-        && store.get(key).is_some_and(|entry| !entry.executor_owned)
+    if server_name.starts_with("executor:")
+        && keys
+            .iter()
+            .any(|key| store.get(key).is_some_and(|entry| !entry.executor_owned))
     {
         anyhow::bail!("executor OAuth credential key conflicts with a host-owned credential");
     }
 
-    let removed = store.remove(key).is_some();
+    let mut removed = false;
+    for key in keys.iter() {
+        removed |= store.remove(key).is_some();
+    }
 
     if removed {
         write_fallback_file(&store)?;
@@ -1011,51 +1047,6 @@ fn token_needs_refresh(expires_at: Option<u64>) -> bool {
         .as_millis() as u64;
 
     now.saturating_add(REFRESH_SKEW_MILLIS) >= expires_at
-}
-
-fn compute_store_key(server_name: &str, server_url: &str) -> Result<String> {
-    let executor_owned = server_name.starts_with("executor:");
-    let enterprise_owned = server_name.starts_with("ema-idp:");
-    let server_name = server_name.strip_prefix("local:").unwrap_or(server_name);
-    let mut payload = JsonMap::new();
-    payload.insert(
-        "type".to_string(),
-        Value::String(MCP_SERVER_TYPE.to_string()),
-    );
-    payload.insert("url".to_string(), Value::String(server_url.to_string()));
-    payload.insert("headers".to_string(), Value::Object(JsonMap::new()));
-    let payload = if enterprise_owned {
-        // The OS keyring is shared across homes. Keep enterprise sessions
-        // isolated by Codex profile as well as authenticated user and workspace.
-        let codex_home = find_codex_home()?;
-        fs::create_dir_all(&codex_home)?;
-        payload.insert(
-            "codex_home".to_string(),
-            serde_json::to_value(codex_home.as_path().canonicalize()?)?,
-        );
-        // Different binaries can enable different serde_json ordering features.
-        serde_json::to_value(payload.into_iter().collect::<BTreeMap<_, _>>())?
-    } else {
-        Value::Object(payload)
-    };
-    let truncated = sha_256_prefix(&payload)?;
-    let separator = if executor_owned { ':' } else { '|' };
-    Ok(format!("{server_name}{separator}{truncated}"))
-}
-
-/// Derive a valid secret-store name from the MCP OAuth store key.
-///
-/// `compute_store_key` intentionally includes readable identity components and
-/// punctuation, but `SecretName` only allows `A-Z`, `0-9`, and `_`.
-/// Re-hashing keeps the secret key deterministic while satisfying that
-/// restricted alphabet.
-fn compute_secret_name(server_name: &str, server_url: &str) -> Result<SecretName> {
-    let key = compute_store_key(server_name, server_url)?;
-    let mut hasher = Sha256::new();
-    hasher.update(key.as_bytes());
-    let digest = hasher.finalize();
-    let hex = format!("{digest:X}");
-    SecretName::new(&format!("{MCP_OAUTH_SECRET_PREFIX}_{}", &hex[..32]))
 }
 
 fn fallback_file_path() -> Result<PathBuf> {
@@ -1136,17 +1127,6 @@ fn write_fallback_file(store: &FallbackFile) -> Result<()> {
     Ok(())
 }
 
-fn sha_256_prefix(value: &Value) -> Result<String> {
-    let serialized =
-        serde_json::to_string(&value).context("failed to serialize MCP OAuth key payload")?;
-    let mut hasher = Sha256::new();
-    hasher.update(serialized.as_bytes());
-    let digest = hasher.finalize();
-    let hex = format!("{digest:x}");
-    let truncated = &hex[..16];
-    Ok(truncated.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1158,6 +1138,8 @@ mod tests {
     use std::sync::Arc;
     #[path = "credential_store_tests.rs"]
     mod credential_store_tests;
+    #[path = "key_compatibility_tests.rs"]
+    mod key_compatibility_tests;
     #[path = "persistor_tests.rs"]
     mod persistor_tests;
 

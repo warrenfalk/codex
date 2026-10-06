@@ -24,6 +24,11 @@ server or restart that server during a workstation update.
   subsequent frontend-only updates leave it running.
 - Separately updated clients and servers must still speak compatible app-server
   protocols. This packaging split does not promise arbitrary version mixing.
+- MCP OAuth logins are shared between the combined CLI and independently built
+  app-server, including servers configured in a project or linked worktree.
+  Both packages must use the same credential and refresh-lock identities regardless
+  of build features. Existing credentials from either package remain readable;
+  saving replaces old aliases and logout removes both historical key variants.
 
 ## Validation
 
@@ -36,3 +41,7 @@ Exercise the packaged server's public JSON-RPC initialization and a local
 command through an isolated test instance, including its bundled toolbelt.
 Verify that the supervised command uses the standalone package on Linux and
 macOS. Workstation activation remains a separate user action.
+Verify OAuth credential lookup, refresh persistence, and logout with credentials
+written by either historical build, using both JSON map-ordering configurations.
+Cover direct keyring, encrypted secrets, and file storage, preserving isolation
+between local, executor, and enterprise credentials.
