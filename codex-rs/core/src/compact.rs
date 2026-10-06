@@ -398,7 +398,7 @@ async fn run_compact_task_inner_impl(
             reviewer_compaction_hash: None,
         },
     )
-    .await;
+    .await?;
     sess.recompute_token_usage(&turn_context).await;
 
     sess.emit_turn_item_completed(&turn_context, compaction_item)

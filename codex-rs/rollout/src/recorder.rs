@@ -1840,7 +1840,7 @@ struct RolloutWriterState {
 }
 
 impl RolloutWriterState {
-    fn add_items(&mut self, items: Vec<RolloutItem>) -> std::io::Result<()> {
+    async fn add_items(&mut self, items: Vec<RolloutItem>) -> std::io::Result<()> {
         let mut pending = Vec::with_capacity(items.len());
         let mut new_bytes = 0usize;
         for item in items {
@@ -1852,15 +1852,17 @@ impl RolloutWriterState {
             });
         }
 
-        let queued_bytes = self.pending_bytes.saturating_add(new_bytes);
-        if queued_bytes > MAX_PENDING_ROLLOUT_BYTES {
-            return Err(IoError::other(format!(
-                "rollout backlog exceeds {MAX_PENDING_ROLLOUT_BYTES} bytes while persistence is degraded"
-            )));
+        if !self.pending_items.is_empty()
+            && self.pending_bytes.saturating_add(new_bytes) > MAX_PENDING_ROLLOUT_BYTES
+        {
+            // Bound accumulated backlog, not the size of a valid checkpoint. Drain older
+            // items before accepting an oversized batch, even for deferred rollouts. If
+            // storage is unavailable, reject this batch without dropping the queued items.
+            self.flush().await?;
         }
 
         self.pending_items.extend(pending);
-        self.pending_bytes = queued_bytes;
+        self.pending_bytes = self.pending_bytes.saturating_add(new_bytes);
         Ok(())
     }
 
@@ -2109,7 +2111,7 @@ async fn rollout_writer(
             break;
         };
         match cmd {
-            RolloutCmd::AddItems { items, ack } => match state.add_items(items) {
+            RolloutCmd::AddItems { items, ack } => match state.add_items(items).await {
                 Ok(()) => {
                     let _ = ack.send(Ok(()));
                     state.flush_if_materialized().await;
@@ -2459,3 +2461,7 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
 #[cfg(test)]
 #[path = "recorder_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "recorder_persistence_tests.rs"]
+mod persistence_tests;

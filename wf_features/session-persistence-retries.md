@@ -20,6 +20,23 @@ instead of treating persistence as a single fragile write path.
   structurally valid.
 - The in-memory backlog should stay bounded so a long-lived persistence failure
   cannot grow without limit.
+- The backlog budget must not reject a valid large session item or compaction
+  checkpoint on healthy storage. Checkpoints containing retained images can
+  exceed 16 MiB. Flush older queued data before accepting a batch that would
+  exceed the normal backlog budget. One oversized batch may remain pending;
+  further batches must wait for successful drainage rather than accumulating
+  behind it during an outage.
+- Compaction must not report success until its replacement-history checkpoint
+  has been accepted and flushed. If acceptance fails, keep the previous live
+  history. If flushing fails after acceptance, retain the checkpoint for retry
+  and keep live history consistent with that pending checkpoint. In either case,
+  surface a persistence error rather than a successful compaction notification.
+  If optional post-turn compaction fails to save, keep the completed answer and
+  show a warning about the persistence failure.
+- Resuming after a successful compaction must restore the saved checkpoint,
+  including retained images, without reviving pre-compaction tool output or
+  assistant messages. Validate this with a checkpoint larger than 16 MiB and
+  with simulated write failures followed by recovery.
 
 ## Why it matters
 

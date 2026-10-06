@@ -1032,15 +1032,17 @@ async fn writer_state_retries_write_error_before_reporting_flush_success() -> st
         materialize_requested: true,
         degraded: None,
     };
-    state.add_items(vec![RolloutItem::EventMsg(EventMsg::AgentMessage(
-        AgentMessageEvent {
-            message: "queued-after-writer-error".to_string(),
-            phase: None,
-            memory_citation: None,
-            delivery: None,
-            questions: None,
-        },
-    ))])?;
+    state
+        .add_items(vec![RolloutItem::EventMsg(EventMsg::AgentMessage(
+            AgentMessageEvent {
+                message: "queued-after-writer-error".to_string(),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            },
+        ))])
+        .await?;
 
     state.flush().await?;
     let text_after_retry = std::fs::read_to_string(&rollout_path)?;

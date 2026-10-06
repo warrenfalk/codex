@@ -770,6 +770,17 @@ pub(crate) async fn run_turn(
                             )
                             .await;
                         }
+                        // Storage failures must remain visible even when optional compaction
+                        // preserves the answer and the turn's successful status.
+                        if matches!(err.details(), CodexErrorDetails::Io(_)) {
+                            sess.send_event(
+                                &turn_context,
+                                EventMsg::Warning(WarningEvent {
+                                    message: err.to_string(),
+                                }),
+                            )
+                            .await;
+                        }
                         warn!(error = %err, "Post-turn compaction failed; preserving the completed turn");
                     }
                     break;

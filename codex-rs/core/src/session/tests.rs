@@ -3860,7 +3860,8 @@ async fn start_new_context_window_persists_checkpoint_state() {
 
     session
         .start_new_context_window(&step_context, world_state)
-        .await;
+        .await
+        .expect("save compacted history");
 
     let live_history = session.clone_history().await;
     assert!(live_history.raw_items().next().is_some());
@@ -5757,7 +5758,7 @@ async fn settings_checkpoint_waits_for_accepted_settings_persistence() {
     assert_ne!(committed, restored);
     drop(refresh_guard);
     update.await.expect("accepted settings update");
-    checkpoint.await;
+    checkpoint.await.expect("save compacted history");
     settings_checkpoint
         .await
         .expect("checkpoint current settings");
@@ -5863,7 +5864,8 @@ async fn mcp_attribution_checkpoints_cover_batch_prefixes_compaction_and_restore
                 reviewer_compaction_hash: None,
             },
         )
-        .await;
+        .await
+        .expect("save compacted history");
     session
         .flush_rollout()
         .await
@@ -5994,7 +5996,8 @@ async fn compaction_persists_resume_metadata_and_companion_records() {
                     reviewer_compaction_hash: None,
                 },
             )
-            .await;
+            .await
+            .expect("save compacted history");
     }
 
     session.flush_rollout().await.expect("flush checkpoints");
