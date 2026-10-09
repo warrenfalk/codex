@@ -2,7 +2,7 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"› /archive  archive the current chat and start a new one    "
+"› /archive  archive the chat: /archive [new|exit]           "
 "                                                            "
 "› /ar                                                       "
 "                                                            "

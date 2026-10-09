@@ -205,7 +205,7 @@ impl ChatWidget {
                 self.show_session_checkout_picker(ManagedWorktreeMode::New, /*name*/ None);
             }
             SlashCommand::Archive => {
-                self.app_event_tx.send(AppEvent::ArchiveCurrentThread);
+                self.dispatch_archive("");
             }
             SlashCommand::Delete => {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -625,13 +625,6 @@ impl ChatWidget {
         if !self.ensure_side_command_allowed_outside_review(cmd) {
             return;
         }
-        if cmd == SlashCommand::Archive && !args.trim().is_empty() {
-            self.add_to_history(history_cell::new_error_event(
-                "'/archive' does not accept arguments.".to_string(),
-            ));
-            self.request_redraw();
-            return;
-        }
         if !cmd.supports_inline_args() {
             self.dispatch_command(cmd);
             return;
@@ -649,6 +642,11 @@ impl ChatWidget {
         let trimmed = args.trim();
         if trimmed.is_empty() {
             self.dispatch_command(cmd);
+            return;
+        }
+
+        if cmd == SlashCommand::Archive {
+            self.dispatch_archive(trimmed);
             return;
         }
 

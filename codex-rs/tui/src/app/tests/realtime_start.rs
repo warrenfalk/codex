@@ -192,7 +192,12 @@ async fn lifecycle_actions_stop_parked_voice_before_removing_owner() -> Result<(
             };
             match action {
                 AgentsOverviewAction::Archive => {
-                    Box::pin(app.archive_current_thread(&mut tui, &mut server)).await?;
+                    Box::pin(app.archive_current_thread(
+                        &mut tui,
+                        &mut server,
+                        crate::app_event::ArchiveMode::NewChat,
+                    ))
+                    .await?;
                 }
                 AgentsOverviewAction::Delete => {
                     Box::pin(app.delete_current_thread(&mut tui, &mut server)).await?;
