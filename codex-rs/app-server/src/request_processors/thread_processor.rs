@@ -2171,11 +2171,6 @@ impl ThreadRequestProcessor {
                 "ephemeral threads do not support thread/revert",
             ));
         }
-        if !matches!(config_snapshot.history_mode, ThreadHistoryMode::Paginated) {
-            return Err(invalid_request(
-                "thread/revert only supports paginated threads",
-            ));
-        }
         let runtime_snapshot = ThreadRevertRuntimeSnapshot {
             config: thread.config().await.as_ref().clone(),
             settings: thread.restorable_thread_settings().await,
@@ -2260,7 +2255,7 @@ impl ThreadRequestProcessor {
             .await
             .map_err(|err| thread_store_mutation_error("revert", err));
         let response = self
-            .reload_paginated_thread(
+            .reload_thread_after_revert(
                 request_id,
                 thread_id,
                 runtime_snapshot,
@@ -2272,7 +2267,7 @@ impl ThreadRequestProcessor {
         Ok((response, thread_id.to_string()))
     }
 
-    async fn reload_paginated_thread(
+    async fn reload_thread_after_revert(
         &self,
         request_id: &ConnectionRequestId,
         thread_id: ThreadId,
@@ -2374,8 +2369,13 @@ impl ThreadRequestProcessor {
             thread_status,
             /*has_live_in_progress_turn*/ false,
         );
-        let (turns_backwards_cursor, items_backwards_cursor) =
-            Self::paginated_resume_backwards_cursors(self.thread_store.as_ref(), thread_id).await?;
+        let (turns_backwards_cursor, items_backwards_cursor) = match thread.history_mode {
+            codex_app_server_protocol::ThreadHistoryMode::Paginated => {
+                Self::paginated_resume_backwards_cursors(self.thread_store.as_ref(), thread_id)
+                    .await?
+            }
+            codex_app_server_protocol::ThreadHistoryMode::Legacy => (None, None),
+        };
         Ok(ThreadRevertResponse {
             thread,
             turns_backwards_cursor,
