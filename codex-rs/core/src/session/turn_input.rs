@@ -113,6 +113,10 @@ impl PreparedTurnInputSettings {
                 &session.services.selected_capability_roots,
             );
             session
+                .validate_inference_profile_settings(&updates)
+                .await
+                .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+            session
                 .preview_settings(&updates)
                 .await
                 .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;

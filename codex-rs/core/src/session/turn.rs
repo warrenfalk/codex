@@ -175,8 +175,14 @@ pub(crate) async fn run_turn(
     // Record results from hooks that finished after the previous turn before this turn's user prompt.
     drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ true).await;
 
-    let mut client_session =
-        prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
+    let prewarmed_client_session = prewarmed_client_session
+        .filter(|client_session| client_session.uses_provider(&turn_context.provider));
+    let mut client_session = prewarmed_client_session.unwrap_or_else(|| {
+        sess.services
+            .model_client
+            .for_provider(turn_context.provider.clone())
+            .new_session()
+    });
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
@@ -1416,11 +1422,12 @@ async fn maybe_run_previous_model_inline_compact(
     if !should_compact_for_comp_hash_change && previous_model == turn_context.model_info().slug {
         return Ok(());
     }
-    let mut previous_model_turn_context = turn_context
-        .with_model(previous_model.clone(), &sess.services.models_manager)
-        .await;
-    // `with_model` preserves the current turn's access program. Restore the previous
-    // turn's program so compaction uses the same model/cyber_access_program pair as that turn.
+    let mut previous_model_turn_context = sess
+        .turn_context_with_model(turn_context, previous_model.clone())
+        .await
+        .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+    // Restore the previous turn's program alongside its model and provider so compaction
+    // uses the same model/cyber_access_program pair as that turn.
     // Combining the previous model with the current turn's program can produce a pair
     // that the server rejects.
     previous_model_turn_context.cyber_access_program = cyber_access_program::for_provider(
@@ -1428,6 +1435,16 @@ async fn maybe_run_previous_model_inline_compact(
         previous_turn_settings.cyber_access_program,
     );
     let previous_model_turn_context = Arc::new(previous_model_turn_context);
+    let mut previous_provider_client_session =
+        (previous_model_turn_context.provider.info() != turn_context.provider.info()).then(|| {
+            sess.services
+                .model_client
+                .for_provider(previous_model_turn_context.provider.clone())
+                .new_session()
+        });
+    let compaction_client_session = previous_provider_client_session
+        .as_mut()
+        .unwrap_or(client_session);
 
     let reason = if should_compact_for_comp_hash_change {
         CompactionReason::CompHashChanged
@@ -1474,7 +1491,7 @@ async fn maybe_run_previous_model_inline_compact(
         sess,
         step_context,
         replacement_step_context,
-        client_session,
+        compaction_client_session,
         reason,
         CompactionPhase::PreTurn,
     )
@@ -2616,7 +2633,11 @@ async fn try_run_sampling_request(
         && turn_context.provider.info().is_openai();
     let mut preempt = step_context.preempt.clone().unwrap_or_default();
     let effort = sess
-        .reasoning_effort_for_request(&step_context.settings, super::RequestEffortUsage::Sampling)
+        .reasoning_effort_for_request(
+            &step_context.settings,
+            turn_context.provider.info(),
+            super::RequestEffortUsage::Sampling,
+        )
         .await;
     let mut stream = client_session
         .stream(

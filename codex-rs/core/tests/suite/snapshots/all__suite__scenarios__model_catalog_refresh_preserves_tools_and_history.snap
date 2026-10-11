@@ -35,6 +35,7 @@ Settings:
         Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
         </permissions instructions>
     [02] <model_catalog>
+        - `kimi-k3`: Moonshot AI flagship model with deep reasoning and a 1M-token context window. Reasoning efforts: max (default).
         - `visible-model`: Fast and capable Reasoning efforts: low, medium (default), high. Service tiers: priority.
         </model_catalog>
 02:message/user:
@@ -42,6 +43,7 @@ Settings:
 -- request 2 (turn) --
 03:message/developer:
     <model_catalog>
+    - `kimi-k3`: Moonshot AI flagship model with deep reasoning and a 1M-token context window. Reasoning efforts: max (default).
     - `visible-model`: Updated picker copy Reasoning efforts: low, medium (default), high. Service tiers: priority.
     </model_catalog>
 04:message/user:

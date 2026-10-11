@@ -111,7 +111,7 @@ requires_openai_auth = true
             .iter()
             .map(|model| model.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["gateway-model"]
+        vec!["gateway-model", "kimi-k3"]
     );
     assert_eq!(list_models(&mut server).await?, initial);
     assert_eq!(
