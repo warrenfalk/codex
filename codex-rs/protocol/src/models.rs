@@ -1,3 +1,4 @@
+use crate::PidNamespace;
 use std::collections::HashMap;
 use std::io;
 use std::num::NonZeroUsize;
@@ -425,6 +426,9 @@ pub enum PermissionProfile {
     Managed {
         file_system: ManagedFileSystemPermissions,
         network: NetworkSandboxPolicy,
+        #[serde(default, skip_serializing_if = "PidNamespace::is_isolated")]
+        #[ts(optional, as = "Option<PidNamespace>")]
+        pid_namespace: PidNamespace,
     },
     /// Do not apply an outer sandbox.
     Disabled,
@@ -475,6 +479,7 @@ impl Default for PermissionProfile {
                 glob_scan_max_depth: None,
             },
             network: NetworkSandboxPolicy::Restricted,
+            pid_namespace: PidNamespace::Isolated,
         }
     }
 }
@@ -486,6 +491,7 @@ impl PermissionProfile {
         Self::Managed {
             file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
             network: NetworkSandboxPolicy::Restricted,
+            pid_namespace: PidNamespace::Isolated,
         }
     }
 
@@ -510,10 +516,7 @@ impl PermissionProfile {
             }
             FileSystemSandboxKind::ExternalSandbox => return None,
         }
-        Some(Self::from_runtime_permissions(
-            &file_system,
-            NetworkSandboxPolicy::Restricted,
-        ))
+        Some(self.with_runtime_permissions(&file_system, NetworkSandboxPolicy::Restricted))
     }
 
     /// Managed workspace-write filesystem access with restricted network
@@ -549,6 +552,7 @@ impl PermissionProfile {
         Self::Managed {
             file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
             network,
+            pid_namespace: PidNamespace::Isolated,
         }
     }
 
@@ -567,6 +571,7 @@ impl PermissionProfile {
         Self::Managed {
             file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
             network,
+            pid_namespace: PidNamespace::Isolated,
         }
     }
 
@@ -593,11 +598,13 @@ impl PermissionProfile {
             Self::Managed {
                 file_system,
                 network,
+                pid_namespace,
             } => {
                 let file_system = materialize(file_system.to_sandbox_policy());
                 Self::Managed {
                     file_system: ManagedFileSystemPermissions::from_sandbox_policy(&file_system),
                     network,
+                    pid_namespace,
                 }
             }
             Self::Disabled => Self::Disabled,
@@ -640,6 +647,7 @@ impl PermissionProfile {
                         file_system_sandbox_policy,
                     ),
                     network: network_sandbox_policy,
+                    pid_namespace: PidNamespace::Isolated,
                 }
             }
         }
@@ -689,6 +697,7 @@ impl PermissionProfile {
             Self::Managed {
                 file_system,
                 network,
+                ..
             } => file_system
                 .to_sandbox_policy()
                 .to_legacy_sandbox_policy(*network, cwd),
@@ -718,6 +727,8 @@ enum TaggedPermissionProfile {
     Managed {
         file_system: ManagedFileSystemPermissions,
         network: NetworkSandboxPolicy,
+        #[serde(default)]
+        pid_namespace: PidNamespace,
     },
     Disabled,
     #[serde(rename_all = "snake_case")]
@@ -732,9 +743,11 @@ impl From<TaggedPermissionProfile> for PermissionProfile {
             TaggedPermissionProfile::Managed {
                 file_system,
                 network,
+                pid_namespace,
             } => Self::Managed {
                 file_system,
                 network,
+                pid_namespace,
             },
             TaggedPermissionProfile::Disabled => Self::Disabled,
             TaggedPermissionProfile::External { network } => Self::External { network },
@@ -776,6 +789,7 @@ impl From<LegacyPermissionProfile> for PermissionProfile {
         Self::Managed {
             file_system,
             network: network_sandbox_policy,
+            pid_namespace: PidNamespace::Isolated,
         }
     }
 }
@@ -2891,6 +2905,7 @@ mod tests {
         assert_eq!(
             permission_profile,
             PermissionProfile::Managed {
+                pid_namespace: PidNamespace::Isolated,
                 file_system: ManagedFileSystemPermissions::Restricted {
                     entries: vec![FileSystemSandboxEntry {
                         path: FileSystemPath::Special {
@@ -2987,6 +3002,7 @@ mod tests {
         assert_eq!(
             permission_profile,
             PermissionProfile::Managed {
+                pid_namespace: PidNamespace::Isolated,
                 file_system: ManagedFileSystemPermissions::Unrestricted,
                 network: NetworkSandboxPolicy::Restricted,
             },

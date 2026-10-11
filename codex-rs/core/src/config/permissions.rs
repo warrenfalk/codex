@@ -267,6 +267,7 @@ fn permission_profile_toml_from_file_system_policy(
         insert_filesystem_permission_toml(&mut filesystem.entries, entry);
     }
     PermissionProfileToml {
+        pid_namespace: None,
         description: None,
         extends: None,
         workspace_roots: None,
@@ -413,9 +414,9 @@ pub fn compile_permission_profile(
     workspace_write: Option<&WorkspaceWriteSettings>,
     startup_warnings: &mut Vec<String>,
 ) -> io::Result<CompiledPermissionProfile> {
-    let builtin = builtin_permission_profile(profile_name, workspace_write);
-    let (file_system, network, mut workspace_roots) = if let Some(builtin) = &builtin {
-        let (file_system, network) = builtin.to_runtime_permissions();
+    let (permission_profile, mut workspace_roots) = if let Some(builtin) =
+        builtin_permission_profile(profile_name, workspace_write)
+    {
         let workspace_roots = if profile_name == BUILT_IN_WORKSPACE_PROFILE {
             workspace_write
                 .into_iter()
@@ -429,7 +430,7 @@ pub fn compile_permission_profile(
         } else {
             Vec::new()
         };
-        (file_system, network, workspace_roots)
+        (builtin, workspace_roots)
     } else {
         reject_unknown_builtin_permission_profile(profile_name)?;
         let permissions = permissions.ok_or_else(|| {
@@ -439,7 +440,7 @@ pub fn compile_permission_profile(
             )
         })?;
         let profile = resolve_permission_profile(permissions, profile_name)?;
-        let (file_system, network) =
+        let permission_profile =
             compile_resolved_permission_profile(&profile, profile_name, context, startup_warnings)?;
         let workspace_roots = profile
             .workspace_roots
@@ -451,15 +452,15 @@ pub fn compile_permission_profile(
                     .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
             })
             .collect::<io::Result<Vec<_>>>()?;
-        (file_system, network, workspace_roots)
+        (permission_profile, workspace_roots)
     };
     let mut seen = HashSet::new();
     workspace_roots.retain(|root| seen.insert(root.clone()));
-    let file_system = file_system.with_materialized_project_roots_for_path_uris(&workspace_roots);
-    let permission_profile = match builtin {
-        Some(PermissionProfile::Disabled) => PermissionProfile::Disabled,
-        _ => PermissionProfile::from_runtime_permissions(&file_system, network),
-    };
+    let file_system = permission_profile
+        .file_system_sandbox_policy()
+        .with_materialized_project_roots_for_path_uris(&workspace_roots);
+    let permission_profile = permission_profile
+        .with_runtime_permissions(&file_system, permission_profile.network_sandbox_policy());
     Ok(CompiledPermissionProfile {
         permission_profile,
         workspace_roots,
@@ -471,7 +472,7 @@ fn compile_resolved_permission_profile(
     profile_name: &str,
     context: &ConfigPathContext,
     startup_warnings: &mut Vec<String>,
-) -> io::Result<(FileSystemSandboxPolicy, NetworkSandboxPolicy)> {
+) -> io::Result<PermissionProfile> {
     let mut file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(Vec::new());
     let base_network_sandbox_policy = NetworkSandboxPolicy::Restricted;
     if let Some(filesystem) = profile.filesystem.as_ref() {
@@ -541,7 +542,11 @@ fn compile_resolved_permission_profile(
     }
     let network_sandbox_policy =
         compile_network_sandbox_policy(profile.network.as_ref(), base_network_sandbox_policy);
-    Ok((file_system_sandbox_policy, network_sandbox_policy))
+    Ok(PermissionProfile::from_runtime_permissions(
+        &file_system_sandbox_policy,
+        network_sandbox_policy,
+    )
+    .with_pid_namespace(profile.pid_namespace.unwrap_or_default()))
 }
 
 pub(crate) fn reject_unknown_builtin_permission_profile(profile_name: &str) -> io::Result<()> {
