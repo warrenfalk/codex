@@ -1,0 +1,5 @@
+---
+source: core/tests/suite/compact_persistence.rs
+expression: "errors.join(\"\\n\")"
+---
+Error running remote compact task: Failed to save the compacted conversation: thread-store internal error: checkpoint rejected
