@@ -37,6 +37,7 @@ pub enum SlashCommand {
     Worktree,
     App,
     Init,
+    InitUpdate,
     Compact,
     Recap,
     Plan,
@@ -93,6 +94,9 @@ impl SlashCommand {
             SlashCommand::Feedback => "send logs to maintainers",
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
+            SlashCommand::InitUpdate => {
+                "create or update an AGENTS.md file based on the current repo"
+            }
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
             SlashCommand::Recap => "summarize the current conversation now",
             SlashCommand::Review => "review my current changes and find issues",
@@ -247,6 +251,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Worktree
             | SlashCommand::Init
+            | SlashCommand::InitUpdate
             | SlashCommand::Compact
             | SlashCommand::Recap
             | SlashCommand::Export

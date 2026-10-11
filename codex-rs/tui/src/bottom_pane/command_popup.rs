@@ -411,6 +411,32 @@ mod tests {
     }
 
     #[test]
+    fn selecting_init_update_by_exact_match() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
+        popup.on_composer_text_change("/init-update".to_string());
+
+        let selected = popup.selected_item();
+        match selected {
+            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "init-update"),
+            Some(CommandItem::ServiceTier(command)) => {
+                panic!("expected init-update command, got service tier {command:?}")
+            }
+            None => panic!("expected a selected command for exact match"),
+        }
+
+        let width = 76;
+        let area = Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            width,
+            popup.calculate_required_height(width),
+        );
+        let mut buf = Buffer::empty(area);
+        popup.render_ref(area, &mut buf);
+        insta::assert_snapshot!("command_popup_init_update", format!("{buf:?}"));
+    }
+
+    #[test]
     fn model_is_first_suggestion_for_mo() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/mo".to_string());
