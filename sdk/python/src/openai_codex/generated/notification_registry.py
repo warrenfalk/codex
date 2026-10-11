@@ -39,6 +39,7 @@ from .v2_all import McpServerEventStreamNotification
 from .v2_all import McpServerOauthLoginCompletedNotification
 from .v2_all import McpServerStatusUpdatedNotification
 from .v2_all import McpToolCallProgressNotification
+from .v2_all import ModelCapacityWarningNotification
 from .v2_all import ModelReroutedNotification
 from .v2_all import ModelSafetyBufferingUpdatedNotification
 from .v2_all import ModelVerificationNotification
@@ -125,6 +126,7 @@ KnownNotificationPayload: TypeAlias = (
     | McpServerOauthLoginCompletedNotification
     | McpServerStatusUpdatedNotification
     | McpToolCallProgressNotification
+    | ModelCapacityWarningNotification
     | ModelReroutedNotification
     | ModelSafetyBufferingUpdatedNotification
     | ModelVerificationNotification
@@ -215,6 +217,7 @@ NOTIFICATION_MODELS: dict[str, type[KnownNotificationPayload]] = {
     "mcpServer/event/stream/notification": McpServerEventStreamNotification,
     "mcpServer/oauthLogin/completed": McpServerOauthLoginCompletedNotification,
     "mcpServer/startupStatus/updated": McpServerStatusUpdatedNotification,
+    "model/capacityWarning": ModelCapacityWarningNotification,
     "model/rerouted": ModelReroutedNotification,
     "model/safetyBuffering/updated": ModelSafetyBufferingUpdatedNotification,
     "model/verification": ModelVerificationNotification,
@@ -283,6 +286,7 @@ DIRECT_TURN_ID_NOTIFICATION_TYPES: tuple[type[BaseModel], ...] = (
     ItemGuardianApprovalReviewStartedNotification,
     ItemStartedNotification,
     McpToolCallProgressNotification,
+    ModelCapacityWarningNotification,
     ModelReroutedNotification,
     ModelSafetyBufferingUpdatedNotification,
     ModelVerificationNotification,
