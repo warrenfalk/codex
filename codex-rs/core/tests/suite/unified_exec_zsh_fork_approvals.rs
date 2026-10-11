@@ -28,6 +28,7 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -58,7 +59,7 @@ use toml_edit::Key as TomlKey;
 use wiremock::MockServer;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_zsh_fork_parent_approval_preserves_denied_reads() -> Result<()> {
+async fn unified_exec_zsh_fork_parent_approval_bypasses_denied_reads() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let denied_dir = tempfile::tempdir_in(std::env::current_dir()?)?;
@@ -106,16 +107,7 @@ async fn unified_exec_zsh_fork_parent_approval_preserves_denied_reads() -> Resul
     wait_for_completion_without_approval(&test).await;
 
     let result = command_result(&results, call_id);
-    assert_ne!(
-        result.exit_code.unwrap_or(0),
-        0,
-        "denied-read command should stay sandboxed after parent approval"
-    );
-    assert!(
-        !result.stdout.contains(secret),
-        "denied-read command unexpectedly printed the secret: {}",
-        result.stdout
-    );
+    assert_eq!((result.exit_code, result.stdout.trim()), (Some(0), secret));
 
     Ok(())
 }
@@ -646,14 +638,21 @@ async fn unified_exec_zsh_fork_guardian_reviews_persistent_terminal_in_current_t
     assert!(guardian_requests[0].body_contains_text(&environment));
     assert!(guardian_requests[0].body_contains_text("The `cwd` field is its launch directory"));
     assert!(guardian_requests[1].body_contains_text(&outside_path.to_string_lossy()));
-    let guardian_text = guardian_requests[1].message_input_texts("user").join("");
+    let user_messages = guardian_requests[1].message_input_text_groups("user");
+    let guardian_text = user_messages
+        .last()
+        .context("intercepted command's latest Guardian assessment input")?
+        .join("");
     let permissions = guardian_text
         .split_once("PARENT TURN PERMISSION CONTEXT START")
         .and_then(|(_, text)| text.split_once("PARENT TURN PERMISSION CONTEXT END"))
         .map(|(permissions, _)| permissions)
         .context("intercepted command's Guardian permissions")?;
     assert!(permissions.contains(initial_denied_path.to_string_lossy().as_ref()));
-    assert!(!permissions.contains(next_denied_path.to_string_lossy().as_ref()));
+    assert!(
+        !permissions.contains(next_denied_path.to_string_lossy().as_ref()),
+        "intercepted command should retain its launch permissions: {permissions}"
+    );
 
     Ok(())
 }
@@ -745,8 +744,8 @@ fn permission_profile_from_toml(profile: &str) -> Result<PermissionProfile> {
                 ":project_roots" => FileSystemPath::Special {
                     value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
                 },
-                _ if *access == FileSystemAccessMode::Deny => FileSystemPath::GlobPattern {
-                    pattern: path.clone(),
+                _ if *access == FileSystemAccessMode::Deny => FileSystemPath::Path {
+                    path: AbsolutePathBuf::from_absolute_path(path)?.into(),
                 },
                 _ => anyhow::bail!("unexpected filesystem entry in test profile: {path}"),
             };

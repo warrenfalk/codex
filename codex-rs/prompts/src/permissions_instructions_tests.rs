@@ -83,7 +83,7 @@ fn builds_permissions_from_profile() {
     assert!(text.contains("`sandbox_mode` is `workspace-write`"));
     assert!(text.contains("Network access is enabled."));
     assert!(text.contains(writable_root.to_string_lossy().as_ref()));
-    assert!(text.contains("Do not request escalation or additional permissions"));
+    assert!(text.contains("Approved unsandboxed commands bypass these restrictions"));
     assert!(text.contains(&format!("path `{}`", denied_root.display())));
     assert!(text.contains(&format!("glob `{denied_glob}`")));
 }
@@ -150,7 +150,7 @@ fn builds_permissions_from_profile_with_executor_denied_reads() {
     );
     let text = instructions.body();
     assert!(text.contains("## Denied filesystem reads"));
-    assert!(text.contains("Do not request escalation or additional permissions"));
+    assert!(text.contains("Approved unsandboxed commands bypass these restrictions"));
     assert!(text.contains(r"path `C:\workspace\blocked`"));
     assert!(text.contains(&format!("glob `{denied_glob}`")));
 }
@@ -774,7 +774,7 @@ fn preserves_supplied_path_spellings_and_order() {
     let expected_body = concat!(
         "\n The writable roots are `C:\\work\\z`, `/work/a`.\n",
         "## Denied filesystem reads\n",
-        "The active permission profile denies reading these paths/globs. Do not request escalation or additional permissions to read them; these denials are policy restrictions.\n",
+        "The active permission profile blocks reading these paths/globs inside the sandbox. When the approval policy permits escalation and the task requires access, request it with `sandbox_permissions: \"require_escalated\"`. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted.\n",
         "- path `C:\\private`\n- path `/private`\n",
         "- glob `C:\\private\\**`\n- glob `/private/**`\n",
     );

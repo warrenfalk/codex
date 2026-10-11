@@ -4,7 +4,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::TurnInputRequest;
-use codex_exec_server::ExecParams;
 use codex_features::Feature;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -18,7 +17,6 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSandboxPolicyContext;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_protocol::permissions::ReadDenyMatcher;
 use codex_protocol::permissions::project_roots_glob_pattern;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EnvironmentConfigState;
@@ -647,10 +645,10 @@ async fn serve_exec_with_pushed_events(
 #[cfg_attr(not(windows), test_case(PushedExecScenario::Complete, ManagedNetworkScenario::Enabled { policy_callbacks: true }, true ; "foreign_windows_managed_network_preserves_approval_registration"))]
 #[cfg_attr(not(windows), test_case(PushedExecScenario::Complete, ManagedNetworkScenario::None, true ; "foreign_windows_workspace_sandbox"))]
 #[test_case(PushedExecScenario::DenyWin, ManagedNetworkScenario::None, true ; "old_windows_deny_read_allows_approved_escalation")]
-#[test_case(PushedExecScenario::DenyWinUnchanged, ManagedNetworkScenario::None, true ; "old_windows_deny_read_keeps_unmaterializable_policy_unchanged")]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinux, ManagedNetworkScenario::None, false ; "old_linux_deny_read_rejects_approved_escalation"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Deny), ManagedNetworkScenario::None, false ; "old_linux_deny_read_keeps_root_deny_unchanged"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Write), ManagedNetworkScenario::None, false ; "device_only_linux_deny_read_rejects_unchanged_writable_root_metadata"))]
+#[test_case(PushedExecScenario::DenyWinUnchanged, ManagedNetworkScenario::None, true ; "old_windows_deny_read_approved_escalation_omits_unmaterializable_policy")]
+#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinux, ManagedNetworkScenario::None, false ; "old_linux_deny_read_allows_approved_escalation"))]
+#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Deny), ManagedNetworkScenario::None, false ; "old_linux_root_deny_allows_approved_escalation"))]
+#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Write), ManagedNetworkScenario::None, false ; "device_only_linux_deny_read_allows_approved_escalation"))]
 #[cfg_attr(not(windows), test_case(PushedExecScenario::DenyLinux, ManagedNetworkScenario::None, false ; "linux_deny_read_allows_approved_escalation"))]
 #[test_case(PushedExecScenario::ElevatedPowerShell, ManagedNetworkScenario::None, true ; "windows_elevated_powershell_disables_profile")]
 #[cfg_attr(not(windows), test_case(PushedExecScenario::RejectedLongWindowsDangerousCommand, ManagedNetworkScenario::None, true ; "remote_windows_dangerous_command_rejection_is_bounded"))]
@@ -1048,24 +1046,6 @@ timeout = 900
     }
     if matches!(
         scenario,
-        PushedExecScenario::DenyOldLinux
-            | PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Write)
-    ) {
-        let request = response_mock.last_request().context("upgrade response")?;
-        let (output, _) = request
-            .function_call_output_content_and_success(CALL_ID)
-            .context("upgrade output")?;
-        assert!(
-            output
-                .expect("upgrade rejection should include output")
-                .contains("upgrade the exec-server")
-        );
-        assert!(!process_started.load(Ordering::SeqCst));
-        exec_server.abort();
-        return Ok(());
-    }
-    if matches!(
-        scenario,
         PushedExecScenario::RejectedLongWindowsDangerousCommand
     ) {
         let request = response_mock
@@ -1283,52 +1263,29 @@ timeout = 900
     if foreign_cwd {
         let params = &exec_server_result.process_start["params"];
         assert_eq!(params["cwd"], "file:///C:/workspace");
-        assert_eq!(params["sandbox"]["cwd"], "file:///C:/workspace");
-        assert_eq!(
-            params["sandbox"]["workspaceRoots"],
-            json!(["file:///C:/workspace", "file:///D:/other-workspace"])
-        );
-        if matches!(scenario, PushedExecScenario::ElevatedPowerShell) {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "elevated");
-            assert!(
-                params["argv"]
-                    .as_array()
-                    .is_some_and(|argv| argv.iter().any(|arg| arg == "-NoProfile")),
-                "elevated remote PowerShell must not load a user profile"
+        if !deny_read {
+            assert_eq!(params["sandbox"]["cwd"], "file:///C:/workspace");
+            assert_eq!(
+                params["sandbox"]["workspaceRoots"],
+                json!(["file:///C:/workspace", "file:///D:/other-workspace"])
             );
-        } else if deny_read {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "elevated");
-        } else {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "restricted-token");
+            if matches!(scenario, PushedExecScenario::ElevatedPowerShell) {
+                assert_eq!(params["sandbox"]["windowsSandboxLevel"], "elevated");
+                assert!(
+                    params["argv"]
+                        .as_array()
+                        .is_some_and(|argv| argv.iter().any(|arg| arg == "-NoProfile")),
+                    "elevated remote PowerShell must not load a user profile"
+                );
+            } else {
+                assert_eq!(params["sandbox"]["windowsSandboxLevel"], "restricted-token");
+            }
         }
     }
     if deny_read {
         let params = &exec_server_result.process_start["params"];
-        let params: ExecParams = serde_json::from_value(params.clone())?;
-        let sandbox = params.sandbox.context("sandbox with denied reads")?;
-        let context = sandbox.policy_context();
-        let policy = sandbox.permissions.file_system_sandbox_policy();
-        let policy = policy.materialize_project_roots_with_path_uris(context.workspace_roots);
-        if matches!(
-            scenario,
-            PushedExecScenario::DenyWinUnchanged | PushedExecScenario::DenyOldLinuxWithRoot(_)
-        ) {
-            let baseline = turn_permission_profile.file_system_sandbox_policy();
-            assert_eq!(
-                policy,
-                baseline.materialize_project_roots_with_path_uris(context.workspace_roots)
-            );
-            assert!(!policy.can_write_path(&context.cwd.join("../outside")?, &context));
-        } else {
-            let matcher =
-                ReadDenyMatcher::from_context(&policy, &context).context("denied reads")?;
-            assert!(policy.can_write_path(&context.cwd.join("../outside")?, &context));
-            for root in context.workspace_roots {
-                for path in ["secret.txt", "private.token"] {
-                    assert!(matcher.is_read_denied_uri(&root.join(path)?, &context));
-                }
-            }
-        }
+        assert_eq!(params["sandbox"], Value::Null);
+        assert!(process_started.load(Ordering::SeqCst));
     }
     if managed_network_enabled {
         let params = &exec_server_result.process_start["params"];

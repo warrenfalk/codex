@@ -405,7 +405,7 @@ fn denied_reads_text(paths: &[String], globs: &[String]) -> Option<String> {
     }
 
     Some(format!(
-        "## Denied filesystem reads\nThe active permission profile denies reading these paths/globs. Do not request escalation or additional permissions to read them; these denials are policy restrictions.\n{}",
+        "## Denied filesystem reads\nThe active permission profile blocks reading these paths/globs inside the sandbox. When the approval policy permits escalation and the task requires access, request it with `sandbox_permissions: \"require_escalated\"`. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted.\n{}",
         entries.join("\n")
     ))
 }
