@@ -1,0 +1,40 @@
+---
+source: cli/src/agents_cmd_tests.rs
+expression: help
+---
+Browse agent sessions or focus an attached TUI
+
+Usage: agents [OPTIONS]
+
+Options:
+      --json
+          Print a complete agents dashboard snapshot as one JSONL line
+
+      --watch
+          Keep emitting snapshots as the dashboard changes (requires --json)
+
+      --focus <SESSION_ID>
+          Focus an existing local TUI displaying this session, without opening one
+
+      --local <ADDR>
+          Connect the TUI to a shared local app server endpoint.
+
+          Accepted forms: `ws://host:port`, `wss://host:port`, `unix://`, or `unix://PATH`.
+
+      --remote <ADDR>
+          Connect the TUI to a remote app server endpoint.
+
+          Accepted forms: `ws://host:port`, `wss://host:port`, `unix://`, or `unix://PATH`.
+
+      --remote-auth-token-env <ENV_VAR>
+          Name of the environment variable containing the bearer token to send to a remote app
+          server websocket
+
+  -C, --cd <DIR>
+          Use this directory for new tasks on a remote server
+
+      --no-alt-screen
+          Disable alternate screen mode
+
+  -h, --help
+          Print help (see a summary with '-h')
