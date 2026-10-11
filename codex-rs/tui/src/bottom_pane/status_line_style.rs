@@ -1,4 +1,6 @@
-//! Theme-derived styling for the configurable footer statusline.
+//! Compact display values and theme-derived styling for the configurable footer statusline.
+
+use std::path::Path;
 
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -117,6 +119,28 @@ where
 {
     let mut spans = Vec::new();
     for (item, text) in segments {
+        let text = if matches!(
+            item,
+            StatusLineItem::ModelName | StatusLineItem::ModelWithReasoning
+        ) {
+            text.strip_prefix("gpt-")
+                .or_else(|| text.strip_prefix("GPT-"))
+                .map(str::to_owned)
+                .unwrap_or(text)
+        } else if item == StatusLineItem::ContextRemaining {
+            text.strip_prefix("Context ")
+                .map(str::to_owned)
+                .unwrap_or(text)
+        } else if item == StatusLineItem::CurrentDir {
+            let path = Path::new(&text);
+            path.parent()
+                .and_then(Path::file_name)
+                .zip(path.file_name())
+                .map(|(parent, name)| Path::new(parent).join(name).display().to_string())
+                .unwrap_or(text)
+        } else {
+            text
+        };
         if !spans.is_empty() {
             spans.push(STATUS_LINE_SEPARATOR.set_style(secondary_text_style()));
         }
@@ -222,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn status_line_segments_preserve_order_and_plain_text() {
+    fn status_line_segments_keep_order_and_apply_compact_formatting() {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
@@ -235,7 +259,7 @@ mod tests {
         )
         .expect("status line");
 
-        assert_eq!(line_text(&line), "gpt-5 · /repo · main");
+        assert_eq!(line_text(&line), "5 · /repo · main");
         assert_eq!(line.spans[0].style.fg, Some(Color::Cyan));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
@@ -319,7 +343,7 @@ mod tests {
         )
         .expect("status line");
 
-        assert_eq!(line_text(&line), "gpt-5 · Context 12% used");
+        assert_eq!(line_text(&line), "5 · Context 12% used");
         assert_eq!(line.spans[0].style, secondary_text_style());
         assert_eq!(line.spans[1].style, secondary_text_style());
         assert_eq!(line.spans[2].style, secondary_text_style());
@@ -392,3 +416,7 @@ mod tests {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "status_line_compact_tests.rs"]
+mod compact_tests;

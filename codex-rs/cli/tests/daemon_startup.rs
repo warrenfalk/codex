@@ -241,17 +241,17 @@ async fn daemon_startup(command: &str) -> Result<()> {
         };
         let expected = if command == "start" {
             // The draft header is visible before the session's command composer is ready.
-            steps.push_back(("GPT-5.6-Terra", b"/status\r"));
+            steps.push_back(("5.6-Terra", b"/status\r"));
             "Server:Localbackgroundserver"
         } else if elevated_launch || command == "restrictive-job" && elevated {
             if let Some(action) = command.strip_prefix("elevated-") {
                 args.push(action.into());
                 steps.push_back(("Nosessionsyet", b"\x1b"));
             }
-            steps.push_back(("GPT-5.6-Terra", b"\x14"));
+            steps.push_back(("5.6-Terra", b"\x14"));
             "Runningasadministrator:sharedbackgroundserverdisabled."
         } else if command == "restrictive-job" {
-            steps.push_back(("GPT-5.6-Terra", b"\x14"));
+            steps.push_back(("5.6-Terra", b"\x14"));
             "Runningwithoutthesharedbackgroundserver:thisWindowslauncher"
         } else if mismatch {
             args.extend(if disabling && !persisted {
@@ -269,7 +269,7 @@ async fn daemon_startup(command: &str) -> Result<()> {
             if command == "mismatch-cancel" {
                 "--no-daemon"
             } else {
-                steps.push_back(("GPT-5.6-Terra", b"/status\r"));
+                steps.push_back(("5.6-Terra", b"/status\r"));
                 if restart { "Server:Localbackgroundserver" } else { "Model:" }
             }
         } else if bedrock_onboarding {
@@ -277,7 +277,7 @@ async fn daemon_startup(command: &str) -> Result<()> {
         } else {
             args.extend([command.into(), "--strict-config".into()]);
             steps.push_back(("Nosessionsyet", b"\x1b"));
-            steps.push_back(("GPT-5.6-Terra", b"\x14"));
+            steps.push_back(("5.6-Terra", b"\x14"));
             if elevated {
                 "Runningasadministrator:sharedbackgroundserverdisabled."
             } else {
