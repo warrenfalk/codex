@@ -109,6 +109,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
         .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
         .build()
         .await?;
+    config.auto_thread_title = false;
     config.features.enable(codex_features::Feature::Worktrees)?;
     let mut server = Box::pin(start_server(&config)).await?;
     let mut conflicting = config.clone();

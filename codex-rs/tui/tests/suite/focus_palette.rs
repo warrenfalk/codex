@@ -67,16 +67,6 @@ async fn interactive_startup_honors_codex_home_symlink_opt_out() -> Result<()> {
     write_test_config(codex_home.path(), &workspace_path)?;
 
     let server = responses::start_mock_server().await;
-    // Automatic thread-title requests must not consume the tool responses.
-    let _title_mock = responses::mount_sse_once_match(
-        &server,
-        body_string_contains(r#"\"thread_source\":\"system\""#),
-        responses::sse(vec![
-            responses::ev_assistant_message("title", r#"{"title":"Symlink probe"}"#),
-            responses::ev_completed("title"),
-        ]),
-    )
-    .await;
     let _write_mock = responses::mount_sse_once_match(
         &server,
         body_string_contains(r#"\"thread_source\":\"user\""#),
@@ -366,6 +356,10 @@ impl PtyCodex {
             .env_remove("TERM_PROGRAM_VERSION")
             .env("OPENAI_API_KEY", "focus-palette-test")
             .env("CODEX_HOME", codex_home.path())
+            .env(
+                app_test_support::DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR,
+                "1",
+            )
             .stdin(stdin)
             .stdout(stdout)
             .stderr(slave)
