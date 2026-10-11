@@ -159,14 +159,21 @@ impl TranscriptView {
         let width = self.area.width.max(/*other*/ 1);
         // Session information belongs before all history, including pages not loaded yet.
         // Pinned displayed revisions above remain visible; hidden headers never enter the cache.
-        if self.history.has_unloaded_history()
-            && cell.as_any().is::<crate::history_cell::SessionInfoCell>()
+        if (self.clean_scrollback_enabled
+            && !self.detailed
+            && cell.history_visibility_kind() == crate::history_cell::HistoryVisibilityKind::Noise)
+            || (self.history.has_unloaded_history()
+                && cell.as_any().is::<crate::history_cell::SessionInfoCell>())
         {
             return Some(Arc::new(TextLayout::new(Vec::new(), width)));
         }
+        let clean_scrollback_enabled = self.clean_scrollback_enabled;
         let mode = self.mode;
         let ids = cell.activity_ids();
-        let disclosure = !self.detailed && mode == HistoryRenderMode::Rich && !ids.is_empty();
+        let disclosure = !clean_scrollback_enabled
+            && !self.detailed
+            && mode == HistoryRenderMode::Rich
+            && !ids.is_empty();
         let manually_expanded = self.disclosure.is_expanded(&ids);
         let expanded = disclosure && (full_content || manually_expanded);
         if manually_expanded {
@@ -185,7 +192,9 @@ impl TranscriptView {
             .keymap
             .primary_hint(KeymapContext::Global, "open_transcript");
         Some(self.cache.get(cell, width, presentation, || {
-            if disclosure {
+            if clean_scrollback_enabled && full_content {
+                TextLayout::new(cell.clean_transcript_hyperlink_lines(width), width)
+            } else if disclosure {
                 activity_layout(
                     ActivityTranscriptLines {
                         activity: if expanded {

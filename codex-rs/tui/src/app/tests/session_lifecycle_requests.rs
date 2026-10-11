@@ -24,6 +24,8 @@ use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
 use codex_protocol::items::EnteredReviewModeItem;
 use codex_protocol::items::ExitedReviewModeItem;
+use codex_protocol::items::HookPromptFragment;
+use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::protocol::ItemCompletedEvent;
@@ -2485,6 +2487,25 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<Result<Vec<_>, _>>()?;
+    let items = std::iter::once(TurnItem::HookPrompt(HookPromptItem {
+        id: "hidden-history-hook".to_string(),
+        fragments: vec![HookPromptFragment {
+            text: "hidden history hook".to_string(),
+            hook_run_id: "history-hook-run".to_string(),
+        }],
+    }))
+    .chain((0..305).map(|index| {
+        TurnItem::AgentMessage(AgentMessageItem {
+            id: format!("history-item-{index}"),
+            content: vec![AgentMessageContent::Text {
+                text: format!("history output {index}"),
+            }],
+            phase: None,
+            memory_citation: None,
+            delivery: None,
+            questions: None,
+        })
+    }));
     let events = std::iter::once(EventMsg::TurnStarted(TurnStartedEvent {
         turn_attribution: None,
         turn_id: "multi-page-turn".to_string(),
@@ -2494,20 +2515,11 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
         model_context_window: None,
         collaboration_mode_kind: Default::default(),
     }))
-    .chain((0..305).map(|index| {
+    .chain(items.map(|item| {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             thread_id,
             turn_id: "multi-page-turn".to_string(),
-            item: TurnItem::AgentMessage(AgentMessageItem {
-                id: format!("history-item-{index}"),
-                content: vec![AgentMessageContent::Text {
-                    text: format!("history output {index}"),
-                }],
-                phase: None,
-                memory_citation: None,
-                delivery: None,
-                questions: None,
-            }),
+            item,
             started_at_ms: None,
             completed_at_ms: 0,
         })
@@ -2594,6 +2606,7 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
     assert!(app.scrollback_has_older_history);
     while app_event_rx.try_recv().is_ok() {}
     let initial_page_requests = recorded_params(&requests, "thread/items/list").len();
+    app.clean_scrollback_enabled = true;
     app.open_transcript_overlay(&mut tui);
 
     app.handle_backtrack_overlay_event(
@@ -2617,6 +2630,19 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
             .iter()
             .any(|line| line.to_string().contains("history output 0"))
     }));
+    let hidden_hook = app
+        .transcript_cells
+        .iter()
+        .find(|cell| {
+            cell.display_lines(/*width*/ 80)
+                .iter()
+                .any(|line| line.to_string().contains("hidden history hook"))
+        })
+        .expect("older hook history should remain in the full transcript");
+    assert_eq!(
+        hidden_hook.history_visibility_kind(),
+        HistoryVisibilityKind::Noise
+    );
     let Some(Overlay::Transcript(overlay)) = app.overlay.as_mut() else {
         panic!("expected transcript overlay after beginning navigation");
     };
@@ -2635,6 +2661,7 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
         .join("\n");
     assert!(visible.contains("history output 0"), "{visible}");
     assert!(!visible.contains("history output 304"), "{visible}");
+    assert!(!visible.contains("hidden history hook"), "{visible}");
     app_server.shutdown().await?;
     proxy.await??;
     Ok(())

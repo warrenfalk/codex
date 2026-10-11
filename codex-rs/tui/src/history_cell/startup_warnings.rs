@@ -50,6 +50,10 @@ impl StartupWarningsCell {
 }
 
 impl HistoryCell for StartupWarningsCell {
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
+
     fn warning_entries(&self) -> Vec<WarningEntry> {
         self.other_sources
             .iter()

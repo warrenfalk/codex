@@ -175,6 +175,10 @@ impl HistoryCell for RequestUserInputResultCell {
         }
         lines
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 /// Retain the first-line label as text, keeping continuation alignment display-only.
