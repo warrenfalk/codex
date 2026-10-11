@@ -25,7 +25,6 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::RequestContext;
 use crate::plugin_config_reload;
 use crate::plugin_config_reload::PluginStartupConfig;
-use crate::request_future::box_request_future;
 use crate::request_processors::AccountRequestProcessor;
 use crate::request_processors::AppsRequestProcessor;
 use crate::request_processors::CatalogRequestProcessor;
@@ -110,6 +109,8 @@ use tracing::Instrument;
 
 use crate::models_refresh_worker::ModelsRefreshWorker;
 use crate::turn_admission::TurnAdmission;
+
+mod request_future;
 
 const CONNECTION_RPC_DRAIN_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
 
@@ -1356,7 +1357,7 @@ impl MessageProcessor {
                 .map(|response| Some(response.into())),
             ClientRequest::EventFirehose { .. } => Ok(Some(EventFirehoseResponse {}.into())),
             ClientRequest::ThreadStart { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.thread_processor.thread_start(
                         request_id.clone(),
                         params,
@@ -1380,7 +1381,7 @@ impl MessageProcessor {
                 Ok(response)
             }
             ClientRequest::ThreadResume { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.thread_processor.thread_resume(
                         ThreadResumeTarget::Client(request_id.clone()),
                         params,
@@ -1392,7 +1393,7 @@ impl MessageProcessor {
                 .await
             }
             ClientRequest::ThreadFork { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.thread_processor.thread_fork(
                         request_id.clone(),
                         params,
@@ -1508,7 +1509,7 @@ impl MessageProcessor {
                 self.thread_processor.thread_section_delete(params).await
             }
             ClientRequest::ThreadSettingsUpdate { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.turn_processor
                         .thread_settings_update(&request_id, params)
                 })
@@ -1551,7 +1552,7 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::ThreadRevert { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.thread_processor.thread_revert(
                         request_id.clone(),
                         params,
@@ -1721,7 +1722,7 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::TurnStart { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.turn_processor.turn_start(
                         request_id.clone(),
                         params,
@@ -1732,7 +1733,7 @@ impl MessageProcessor {
                 .await
             }
             ClientRequest::TurnStartModelOnly { params, .. } => {
-                box_request_future(|| {
+                request_future::boxed(|| {
                     self.turn_processor.turn_start_model_only(
                         request_id.clone(),
                         params,
