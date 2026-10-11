@@ -198,6 +198,8 @@ Do not use an entire workspace suite to discover missing tools or a broken runne
 - Retain the Cargo target and rooted native/V8 inputs across attempts when their
   configuration remains valid. Keep upstream comparison targets separate. Do not
   delete the whole target or alternate profiles as a routine troubleshooting step.
+  Remove replay-specific build caches after final validation as described in
+  [After finishing](#after-finishing).
 - Use the persistent `codex-rs/target` directory by default, or the user's chosen
   persistent `CARGO_TARGET_DIR`. Do not recreate an old `/tmp` symlink or override
   that choice from a previous replay's launcher. Temporary paths in historical
@@ -900,3 +902,19 @@ Confirm at the end:
 git status --short
 git log --oneline --decorate -n 10
 ```
+
+## After finishing
+
+Once final validation and any upstream failure comparisons are complete, recorded
+in the ledger, and no build or test is using the directories, remove temporary
+build artifacts created for this replay. Inspect the paths and resolve symlinks
+first: remove the replay's separate upstream comparison Cargo target (for example,
+`personal/replay-v0.160.0/baseline-target/`) and any accidental Cargo `target/`
+inside its replay worktree. Remove other replay-specific temporary build caches
+that are no longer needed. These are rebuildable artifacts, not replay history.
+
+Keep the selected persistent Cargo target (`codex-rs/target` by default), any
+native/V8 inputs still needed by it, and the replay worktrees, ledger, queue,
+and logs. Do not remove a target that the current launcher or `CARGO_TARGET_DIR`
+still selects. If follow-up tests need a temporary target, finish those tests
+before removing it, and record any cleanup deferred for that reason.
