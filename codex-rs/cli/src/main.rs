@@ -154,6 +154,10 @@ struct MultitoolCli {
 
     #[clap(subcommand)]
     subcommand: Option<Subcommand>,
+
+    /// Print the source commit used to build this executable.
+    #[clap(long)]
+    version_commit: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -1244,12 +1248,17 @@ async fn cli_main(
     remote_control_disabled: bool,
 ) -> anyhow::Result<()> {
     let MultitoolCli {
+        version_commit,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
+    if version_commit {
+        println!("{}", option_env!("STABLE_GIT_COMMIT").unwrap_or("unknown"));
+        return Ok(());
+    }
     // Retain the launch target through TUI exit, even if a launcher changes selection.
     let daemon_cli_executable = arg0_paths
         .codex_self_exe
@@ -3211,6 +3220,7 @@ mod tests {
             subcommand,
             feature_toggles: _,
             remote: _,
+            version_commit: _,
         } = cli;
         interactive
             .shared
@@ -3253,6 +3263,7 @@ mod tests {
             subcommand,
             feature_toggles: _,
             remote: _,
+            version_commit: _,
         } = cli;
         interactive
             .shared
@@ -3297,6 +3308,7 @@ mod tests {
             subcommand,
             feature_toggles: _,
             remote: _,
+            version_commit: _,
         } = cli;
 
         let Subcommand::Archive(SessionArchiveCommand {
