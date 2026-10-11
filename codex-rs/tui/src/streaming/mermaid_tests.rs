@@ -20,10 +20,13 @@ fn mermaid_stream_closes_resizes_and_preserves_raw_source() {
         render.append(
             &source,
             chunk,
-            Some(80),
-            &cwd,
-            HistoryRenderMode::Rich,
-            /*inline_visualization_context*/ None,
+            crate::streaming::render::StreamingRenderContext {
+                width: Some(80),
+                cwd: &cwd,
+                render_mode: HistoryRenderMode::Rich,
+                file_opener: codex_config::types::UriBasedFileOpener::None,
+                inline_visualization_context: None,
+            },
         );
         assert_eq!(
             render.lines,
@@ -32,6 +35,7 @@ fn mermaid_stream_closes_resizes_and_preserves_raw_source() {
                 Some(80),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None
             )
         );
@@ -54,6 +58,7 @@ fn mermaid_stream_closes_resizes_and_preserves_raw_source() {
             Some(width),
             &cwd,
             mode,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         assert_eq!(
@@ -63,6 +68,7 @@ fn mermaid_stream_closes_resizes_and_preserves_raw_source() {
                 Some(width),
                 &cwd,
                 mode,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None
             )
         );
@@ -91,20 +97,26 @@ fn mermaid_holdback_tracks_nested_blocks_after_normalized_markdown() {
         render.append(
             &source,
             prefix,
-            Some(80),
-            &cwd,
-            HistoryRenderMode::Rich,
-            /*inline_visualization_context*/ None,
+            crate::streaming::render::StreamingRenderContext {
+                width: Some(80),
+                cwd: &cwd,
+                render_mode: HistoryRenderMode::Rich,
+                file_opener: codex_config::types::UriBasedFileOpener::None,
+                inline_visualization_context: None,
+            },
         );
         for chunk in block.split_inclusive('\n') {
             source.push_str(chunk);
             render.append(
                 &source,
                 chunk,
-                Some(80),
-                &cwd,
-                HistoryRenderMode::Rich,
-                /*inline_visualization_context*/ None,
+                crate::streaming::render::StreamingRenderContext {
+                    width: Some(80),
+                    cwd: &cwd,
+                    render_mode: HistoryRenderMode::Rich,
+                    file_opener: codex_config::types::UriBasedFileOpener::None,
+                    inline_visualization_context: None,
+                },
             );
         }
         assert_eq!(render.mutable_fence_start, Some(prefix.len()));
@@ -113,6 +125,7 @@ fn mermaid_holdback_tracks_nested_blocks_after_normalized_markdown() {
             Some(80),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         assert_eq!(render.mutable_fence_start, Some(prefix.len()));
@@ -121,10 +134,13 @@ fn mermaid_holdback_tracks_nested_blocks_after_normalized_markdown() {
         render.append(
             &source,
             continuation,
-            Some(80),
-            &cwd,
-            HistoryRenderMode::Rich,
-            /*inline_visualization_context*/ None,
+            crate::streaming::render::StreamingRenderContext {
+                width: Some(80),
+                cwd: &cwd,
+                render_mode: HistoryRenderMode::Rich,
+                file_opener: codex_config::types::UriBasedFileOpener::None,
+                inline_visualization_context: None,
+            },
         );
         assert_eq!(render.mutable_fence_start, None);
         render.recompute(
@@ -132,6 +148,7 @@ fn mermaid_holdback_tracks_nested_blocks_after_normalized_markdown() {
             Some(80),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         assert_eq!(render.mutable_fence_start, None);
@@ -140,8 +157,12 @@ fn mermaid_holdback_tracks_nested_blocks_after_normalized_markdown() {
 
 #[test]
 fn mermaid_controller_keeps_diagram_mutable_and_returns_original_source() {
-    let mut controller =
-        StreamController::new(Some(80), &std::env::temp_dir(), HistoryRenderMode::Rich);
+    let mut controller = StreamController::new(
+        Some(80),
+        &std::env::temp_dir(),
+        HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
+    );
     let source = "```mermaid\nflowchart LR\nA[Request] --> B[Reply]\n```\n";
     for chunk in source.split_inclusive('\n') {
         controller.push(chunk);

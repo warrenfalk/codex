@@ -132,6 +132,7 @@ impl ProposedPlanCell {
                 &self.plan_markdown,
                 Some(wrap_width),
                 Some(self.cwd.as_path()),
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
                 list_spacing,
             );

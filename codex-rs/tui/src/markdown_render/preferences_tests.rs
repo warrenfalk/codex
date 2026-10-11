@@ -92,6 +92,7 @@ fn disabled_tables_keep_markdown_fences_and_cell_markup() {
         quoted,
         /*width*/ None,
         /*cwd*/ None,
+        codex_config::types::UriBasedFileOpener::None,
         crate::markdown_render::ListSpacing::AfterMultiline,
     );
     assert_eq!(

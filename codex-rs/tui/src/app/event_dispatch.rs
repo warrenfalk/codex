@@ -901,7 +901,7 @@ impl App {
             } => {
                 self.handle_consolidate_agent_message(
                     tui,
-                    history_cell::AgentMarkdownCell::new_with_inline_visualizations(source, &cwd, inline_visualization_context).with_copy_source(copy_source),
+                    history_cell::AgentMarkdownCell::new_with_file_opener_and_inline_visualizations(source, &cwd, self.config.file_opener, inline_visualization_context).with_copy_source(copy_source),
                     scrollback_reflow,
                     deferred_history_cell,
                 )?;
