@@ -163,7 +163,8 @@ async fn connected_trust_cancellation_and_acceptance_control_task_creation() -> 
             ("n new", b"n"),
             ("Folder access", b"\x1b"),
             ("Agent command center", b"o"),
-            ("Resume a previous session", b"\x1b[C"),
+            // Cwd is the resume default; move through Repo to All to find the saved task.
+            ("Resume a previous session", b"\x1b[C\x1b[C"),
             ("Untrusted saved task", b"\r"),
             ("Open existing task", b"\r"),
             ("moved-folder", b"\x1b"),
