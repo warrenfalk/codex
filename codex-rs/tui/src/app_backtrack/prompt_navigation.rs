@@ -25,11 +25,18 @@ impl App {
         ];
         full_hints.extend(details.clone());
         full_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
+        let mut copy_hints = full_hints.clone();
+        copy_hints.extend(
+            self.keymap
+                .primary_hint(crate::keymap::KeymapContext::Global, "copy")
+                .map(|key| (key.display_label(), "copy response")),
+        );
         let mut compact_hints = vec![("↑↓/jk ←→/hl".to_string(), "")];
         compact_hints.extend(details);
         compact_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
         let line = first_fitting_line(
             [
+                ("Browsing transcript", copy_hints),
                 ("Browsing transcript", full_hints.clone()),
                 ("Browsing", full_hints),
                 ("Browsing", compact_hints),
