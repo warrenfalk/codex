@@ -515,8 +515,8 @@ impl App {
                     Err(err) => return Err(err),
                 }
             }
-            AppEvent::ArchiveCurrentThread => {
-                return self.archive_current_thread(tui, app_server).await;
+            AppEvent::ArchiveCurrentThread(mode) => {
+                return self.archive_current_thread(tui, app_server, mode).await;
             }
             AppEvent::DeleteCurrentThread => {
                 return self.delete_current_thread(tui, app_server).await;
@@ -3610,74 +3610,6 @@ impl App {
                 AppRunControl::Exit(ExitReason::UserRequested)
             }
         }
-    }
-
-    pub(super) async fn archive_current_thread(
-        &mut self,
-        tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
-    ) -> Result<AppRunControl> {
-        let Some(thread_id) = self.active_thread_id.or(self.chat_widget.thread_id()) else {
-            self.chat_widget
-                .add_error_message("A thread must start before it can be archived.".to_string());
-            return Ok(AppRunControl::Continue);
-        };
-        if self.side_threads.contains_key(&thread_id) {
-            self.chat_widget.add_error_message(
-                "'/archive' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
-                    .to_string(),
-            );
-            return Ok(AppRunControl::Continue);
-        }
-
-        if !matches!(self.app_server_target, AppServerTarget::Embedded) {
-            self.shutdown_side_threads(app_server).await;
-            if !self.side_threads.is_empty() {
-                return Ok(AppRunControl::Continue);
-            }
-        }
-
-        let result = async {
-            self.stop_voice_for_removed_thread(app_server, thread_id)
-                .await?;
-            app_server.thread_archive(thread_id).await
-        }
-        .await;
-        Ok(match result {
-            Ok(()) if matches!(self.app_server_target, AppServerTarget::Embedded) => {
-                AppRunControl::Exit(ExitReason::Archived(thread_id))
-            }
-            Ok(()) => {
-                self.track_agents_overview_notification(&ServerNotification::ThreadArchived(
-                    codex_app_server_protocol::ThreadArchivedNotification {
-                        thread_id: thread_id.to_string(),
-                    },
-                ));
-                self.discard_thread_local_state(thread_id).await;
-                self.agents_overview.input_states.remove(&thread_id);
-                self.agents_overview.dispatched_requests.remove(&thread_id);
-                self.reset_for_thread_switch(tui)?;
-                self.pending_thread_switch_resets += 1;
-                self.app_event_tx
-                    .send(AppEvent::ResetTranscriptForThreadSwitch);
-                self.detach_current_thread_for_navigation(app_server, /*destination*/ None)
-                    .await;
-                self.reset_thread_event_state().await;
-                let init = self.chatwidget_init_for_forked_or_resumed_thread(
-                    tui,
-                    self.config.clone(),
-                    /*initial_user_message*/ None,
-                );
-                self.replace_chat_widget(ChatWidget::new_with_app_event(init));
-                self.open_agents_overview(app_server);
-                AppRunControl::Continue
-            }
-            Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("Failed to archive current thread: {err}"));
-                AppRunControl::Continue
-            }
-        })
     }
 
     pub(super) async fn delete_current_thread(

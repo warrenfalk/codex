@@ -84,6 +84,13 @@ pub(crate) enum AgentsOverviewAction {
     Delete,
 }
 
+/// What the TUI does after successfully archiving the current chat.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArchiveMode {
+    NewChat,
+    Exit,
+}
+
 /// Whether a managed checkout starts fresh or preserves the current conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ManagedWorktreeMode {
@@ -631,8 +638,8 @@ pub(crate) enum AppEvent {
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 
-    /// Archive the current active main thread and exit after it succeeds.
-    ArchiveCurrentThread,
+    /// Archive the current session, then start a fresh chat or exit.
+    ArchiveCurrentThread(ArchiveMode),
 
     /// Permanently delete the current active main thread and exit after it succeeds.
     DeleteCurrentThread,

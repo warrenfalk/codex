@@ -2994,22 +2994,6 @@ async fn slash_clear_is_disabled_while_task_running() {
 }
 
 #[tokio::test]
-async fn slash_archive_cancellation_keeps_task_running() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.bottom_pane.set_task_running(/*running*/ true);
-
-    chat.dispatch_command(SlashCommand::Archive);
-
-    assert!(chat.bottom_pane.has_active_view());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert!(!chat.bottom_pane.has_active_view());
-    assert!(chat.bottom_pane.is_task_running());
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
 async fn slash_memory_maintenance_reports_stubbed_feature() {
     for command in [SlashCommand::MemoryDrop, SlashCommand::MemoryUpdate] {
         let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -3139,32 +3123,6 @@ async fn slash_import_opens_claude_code_import_picker() {
         rx.try_recv(),
         Ok(AppEvent::OpenExternalAgentConfigMigration)
     );
-}
-
-#[tokio::test]
-async fn slash_archive_confirmation_requests_current_thread_archive() {
-    for running in [false, true] {
-        let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        chat.bottom_pane.set_task_running(running);
-
-        chat.dispatch_command(SlashCommand::Archive);
-
-        assert!(chat.bottom_pane.has_active_view());
-        assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-        assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-
-        let popup = render_bottom_popup(&chat, /*width*/ 80);
-        if running {
-            assert_chatwidget_snapshot!("slash_archive_running_confirmation_popup", popup);
-        } else {
-            assert_chatwidget_snapshot!("slash_archive_confirmation_popup", popup);
-        }
-
-        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
-        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-        assert_matches!(rx.try_recv(), Ok(AppEvent::ArchiveCurrentThread));
-    }
 }
 
 #[tokio::test]
