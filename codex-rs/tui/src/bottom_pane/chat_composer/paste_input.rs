@@ -12,14 +12,23 @@ use crate::bottom_pane::textarea::EditTarget;
 
 impl ChatComposer {
     pub(crate) fn insert_str(&mut self, text: &str) {
-        self.insert_str_at_target(self.draft.textarea.edit_target(), text);
+        let undo_checkpoint = self.editor_undo_checkpoint();
+        let started_vim_edit = self.begin_direct_vim_edit();
+        self.insert_str_raw(text);
+        if started_vim_edit {
+            self.finish_vim_edit();
+        }
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
     }
 
-    fn insert_str_at_target(&mut self, target: EditTarget, text: &str) {
+    pub(super) fn insert_str_raw(&mut self, text: &str) {
+        self.insert_str_raw_at_target(self.draft.textarea.edit_target(), text);
+    }
+
+    fn insert_str_raw_at_target(&mut self, target: EditTarget, text: &str) {
         if !text.is_empty() && self.sparkle.draft.get() == sparkle::SparkleDraft::Untouched {
             self.dismiss_sparkle();
         }
-        let started_vim_edit = self.begin_direct_vim_edit();
         let elements_before = target
             .replaces_text()
             .then(|| self.draft.textarea.element_payloads());
@@ -29,9 +38,6 @@ impl ChatComposer {
         }
         self.sync_bash_mode_from_text();
         self.sync_popups();
-        if started_vim_edit {
-            self.finish_vim_edit();
-        }
     }
 
     /// Include accepted but unflushed keys without changing live paste detection.
@@ -49,8 +55,11 @@ impl ChatComposer {
 
     /// Classify an explicit paste before integrating text shared with the buffered key path.
     pub fn handle_paste(&mut self, pasted: String) -> bool {
+        let undo_checkpoint = self.editor_undo_checkpoint();
         self.note_sparkle_paste(&pasted);
-        self.apply_paste(pasted)
+        let handled = self.apply_paste(pasted);
+        self.record_edit_from(undo_checkpoint, EditKind::Atomic);
+        handled
     }
 
     /// Enable or disable paste-burst handling.
@@ -99,7 +108,7 @@ impl ChatComposer {
                 true
             }
             FlushResult::Typed(ch) => {
-                self.insert_str(ch.to_string().as_str());
+                self.insert_str_raw(ch.to_string().as_str());
                 true
             }
             FlushResult::None => false,
@@ -169,7 +178,7 @@ impl ChatComposer {
             let cursor = self.draft.textarea.cursor();
             self.draft.textarea.insert_str_at(cursor, " ");
         } else {
-            self.insert_str_at_target(target, &pasted);
+            self.insert_str_raw_at_target(target, &pasted);
         }
         if is_blockquote {
             let textarea = &mut self.draft.textarea;
@@ -193,7 +202,7 @@ impl ChatComposer {
             return false;
         }
 
-        self.handle_paste_burst_flush(now);
+        self.flush_due_paste_burst_for_undo(now);
         if self
             .draft
             .paste_burst
