@@ -71,6 +71,8 @@ impl LocalSettings {
                 mouse_scroll_speed: config.tui_mouse_scroll_speed,
                 copy_on_select: config.tui_copy_on_select,
                 right_click_paste: config.tui_right_click_paste,
+                // Consumed by startup discovery before the active connection is selected.
+                local_app_server_url: None,
                 alternate_screen: config.tui_alternate_screen,
                 status_line: config.tui_status_line.clone(),
                 status_line_use_colors: config.tui_status_line_use_colors,
