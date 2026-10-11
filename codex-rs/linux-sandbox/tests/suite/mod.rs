@@ -3,3 +3,4 @@ mod bundled_bwrap;
 mod bwrap_path;
 mod landlock;
 mod managed_proxy;
+mod synthetic_mount_lifecycle;
