@@ -534,6 +534,13 @@ impl App {
             previous.park_voice();
             self.background_voice = Some(Box::new(previous));
         }
+        if !matches!(self.app_server_target, crate::AppServerTarget::Embedded) {
+            if self.reconnect.offline {
+                self.chat_widget.show_disconnected_mode_footer();
+            } else {
+                self.chat_widget.show_connected_mode_footer();
+            }
+        }
         self.sync_active_agent_label();
     }
 
