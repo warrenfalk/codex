@@ -10,7 +10,6 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxDirectSpawnTransformRequest;
 use codex_sandboxing::SandboxExecRequest;
@@ -133,7 +132,7 @@ impl FileSystemSandboxRunner {
         normalize_file_system_policy_root_aliases(&mut file_system_policy)?;
         #[cfg(windows)]
         bind_windows_cwd_relative_deny_read_globs(&mut file_system_policy, &cwd.uri)?;
-        let network_policy = NetworkSandboxPolicy::Restricted;
+        let network_policy = native_permissions.network_sandbox_policy();
         let permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
             native_permissions.enforcement(),
             &file_system_policy,
