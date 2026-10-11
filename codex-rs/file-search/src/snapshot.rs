@@ -25,7 +25,7 @@ pub(super) fn for_query(
         return None;
     }
     let limit = inner.limit.min(snapshot.matched_item_count() as usize);
-    let matches = snapshot
+    let mut matches = snapshot
         .matches()
         .iter()
         .take(limit)
@@ -53,10 +53,17 @@ pub(super) fn for_query(
             })
         })
         .collect();
+    let total_match_count = crate::path_local::augment_matches(
+        query,
+        &inner.search_directories,
+        inner.limit,
+        snapshot.matched_item_count() as usize,
+        &mut matches,
+    );
     Some(FileSearchSnapshot {
         query: query.to_string(),
         matches,
-        total_match_count: snapshot.matched_item_count() as usize,
+        total_match_count,
         scanned_file_count: snapshot.item_count() as usize,
         walk_complete,
     })
