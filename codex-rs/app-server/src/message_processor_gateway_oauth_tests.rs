@@ -133,15 +133,14 @@ delivery = {{ kind = "header", name = "X-Gateway-Authorization" }}
                 .recv()
                 .await
                 .expect("outgoing channel open during login");
-            if let OutgoingEnvelope::ToConnection {
-                connection_id,
+            if let OutgoingEnvelope::ToConnections {
+                connection_ids,
                 message: OutgoingMessage::AppServerNotification(notification),
-                ..
             } = envelope
                 && let ServerNotification::GatewayOAuthChanged(changed) = notification.notification
                 && let Some(url) = changed.auth_url
             {
-                assert_eq!(connection_id, TEST_CONNECTION_ID);
+                assert_eq!(connection_ids, vec![TEST_CONNECTION_ID]);
                 return url;
             }
         }
