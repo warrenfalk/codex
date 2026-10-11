@@ -5612,6 +5612,7 @@ async fn active_profile_update_rebuilds_network_proxy_config(
             (
                 "locked-down".to_string(),
                 PermissionProfileToml {
+                    instructions_file: None,
                     pid_namespace: None,
                     description: None,
                     extends: None,
@@ -5629,6 +5630,7 @@ async fn active_profile_update_rebuilds_network_proxy_config(
             (
                 "web-enabled".to_string(),
                 PermissionProfileToml {
+                    instructions_file: None,
                     pid_namespace: None,
                     description: None,
                     extends: None,
