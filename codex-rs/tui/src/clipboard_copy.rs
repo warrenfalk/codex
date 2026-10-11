@@ -1,4 +1,4 @@
-//! Clipboard copy backend for the TUI's `/copy` command and `Ctrl+O` hotkey.
+//! Clipboard copy backend for the TUI's text copy actions.
 //!
 //! Local copying uses the native clipboard, with WSL PowerShell as a fallback.
 //! In tmux, also forward to the attached terminal so clients attached after Codex
