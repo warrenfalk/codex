@@ -77,10 +77,15 @@ fn approval_resolution_uses_acting_model_timeout_instructions() {
 }
 
 #[cfg(unix)]
-#[test_case::test_case(ApprovalsReviewer::User, codex_extension_api::ApprovalDecision::AskUser; "manual prompt")]
-#[test_case::test_case(ApprovalsReviewer::AutoReview, codex_extension_api::ApprovalDecision::Allow; "cached allow")]
+#[test_case::test_case(AskForApproval::OnRequest, ApprovalsReviewer::User, codex_extension_api::ApprovalDecision::AskUser; "manual prompt")]
+#[test_case::test_case(AskForApproval::OnRequest, ApprovalsReviewer::AutoReview, codex_extension_api::ApprovalDecision::Allow; "cached allow")]
+#[test_case::test_case(AskForApproval::TrustSandbox, ApprovalsReviewer::User, codex_extension_api::ApprovalDecision::AskUser; "trust sandbox manual prompt")]
+#[test_case::test_case(AskForApproval::TrustSandbox, ApprovalsReviewer::AutoReview, codex_extension_api::ApprovalDecision::Allow; "trust sandbox cached allow")]
+#[test_case::test_case(AskForApproval::TrustSandboxTimeout, ApprovalsReviewer::User, codex_extension_api::ApprovalDecision::AskUser; "trust sandbox timeout manual prompt")]
+#[test_case::test_case(AskForApproval::TrustSandboxTimeout, ApprovalsReviewer::AutoReview, codex_extension_api::ApprovalDecision::Allow; "trust sandbox timeout cached allow")]
 #[tokio::test]
 async fn non_utf8_cwd_preserves_approval_routing(
+    approval_policy: AskForApproval,
     reviewer: ApprovalsReviewer,
     decision: codex_extension_api::ApprovalDecision,
 ) -> anyhow::Result<()> {
@@ -120,13 +125,14 @@ async fn non_utf8_cwd_preserves_approval_routing(
         .extensions = Arc::new(extensions.build());
     *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
     let mut review_context = GuardianReviewContext::from(&turn);
-    review_context.approval_policy = AskForApproval::OnRequest;
+    review_context.approval_policy = approval_policy;
     review_context.approvals_reviewer = reviewer;
     let context = ApprovalContext {
         review_context,
         cancellation_token: None,
         call_id: "non-utf8-cwd".to_string(),
         tool_name: ToolName::plain("exec_command"),
+        auto_approve_after: None,
         strict_auto_review: false,
         approval_reason: None,
         retry_reason: None,
@@ -213,6 +219,7 @@ async fn explicit_mcp_reviewer_override_takes_precedence_over_action_context() {
         approval_reason: None,
         retry_reason: None,
         network_approval_context: None,
+        auto_approve_after: None,
     };
 
     tokio::select! {
