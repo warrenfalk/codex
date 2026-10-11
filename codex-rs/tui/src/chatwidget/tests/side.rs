@@ -36,9 +36,10 @@ fn assert_side_rename_rejected(
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
             assert!(
-                rendered.contains("Side conversations are ephemeral and cannot be renamed."),
+                rendered.contains("Keep this side conversation as a fork before renaming it."),
                 "expected side conversation rename error, got {rendered:?}"
             );
+            insta::assert_snapshot!("side_rename_requires_keep", rendered);
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }
@@ -50,7 +51,7 @@ fn assert_side_rename_rejected(
 async fn slash_rename_is_rejected_for_side_threads() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_thread_rename_block_message(
-        "Side conversations are ephemeral and cannot be renamed.".to_string(),
+        "Keep this side conversation as a fork before renaming it.".to_string(),
     );
 
     chat.dispatch_command(SlashCommand::Rename);
@@ -111,7 +112,7 @@ async fn side_close_prompt_esc_and_ctrl_c_cancel() {
 }
 
 #[tokio::test]
-async fn side_close_prompt_emits_summary_choices_and_leave() {
+async fn side_close_prompt_emits_summary_keep_and_leave_choices() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.open_side_conversation_close_prompt();
@@ -129,6 +130,13 @@ async fn side_close_prompt_emits_summary_choices_and_leave() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::KeepAsFork);
+
+    chat.open_side_conversation_close_prompt();
+    for _ in 0..4 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_close_choice_event(&mut rx, SideConversationCloseChoice::Leave);
 }
@@ -173,7 +181,7 @@ async fn side_close_prompt_narrow_snapshot() {
 async fn slash_rename_with_args_is_rejected_for_side_threads() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_thread_rename_block_message(
-        "Side conversations are ephemeral and cannot be renamed.".to_string(),
+        "Keep this side conversation as a fork before renaming it.".to_string(),
     );
 
     chat.dispatch_command_with_args(SlashCommand::Rename, "investigate".to_string(), Vec::new());
