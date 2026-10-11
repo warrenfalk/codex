@@ -20,6 +20,32 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[test]
+fn note_to_self_projection_preserves_live_presentation_and_normal_visibility() {
+    let cwd = test_path_buf("/workspace").abs();
+    let note = "remember this\nexactly".to_string();
+    let expected = history_cell::new_note_to_self(note.clone());
+    let actual = cells(
+        ThreadItem::NoteToSelf {
+            id: "note-1".to_string(),
+            note,
+        },
+        &cwd,
+    );
+
+    assert_eq!(actual.len(), 1);
+    assert_eq!(
+        (
+            actual[0].transcript_lines(/*width*/ 80),
+            actual[0].history_visibility_kind(),
+        ),
+        (
+            expected.transcript_lines(/*width*/ 80),
+            history_cell::HistoryVisibilityKind::Normal,
+        ),
+    );
+}
+
+#[test]
 fn completed_patch_restores_rich_diff_and_styles() {
     let cwd = test_path_buf("/workspace").abs();
     let mut changes = vec![

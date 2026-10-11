@@ -193,6 +193,7 @@ fn without_thread_item_media(mut item: ThreadItem) -> ThreadItem {
         }
         ThreadItem::ImageGeneration(item) => item.result.clear(),
         ThreadItem::HookPrompt { .. }
+        | ThreadItem::NoteToSelf { .. }
         | ThreadItem::AgentMessage { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }
