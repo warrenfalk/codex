@@ -1,6 +1,9 @@
 //! Keeping a persisted side conversation as an ordinary fork.
 
 use super::*;
+use codex_context_fragments::AdditionalContextDeveloperFragment;
+use codex_context_fragments::ContextualUserFragment;
+use codex_protocol::models::ResponseItem;
 
 impl App {
     pub(super) async fn keep_side_conversation_as_fork(
@@ -41,6 +44,22 @@ impl App {
                 return Ok(());
             }
         };
+        let transition = AdditionalContextDeveloperFragment::new(
+            "side_conversation_end".into(),
+            "This conversation is now an ordinary fork. Side mode has ended; all previous side-only restrictions are superseded. Continue work requested after the fork boundary with normal capabilities under the current permissions and instructions. Inherited parent history remains reference-only unless a later user message explicitly asks you to continue a task from it.".into(),
+        );
+        if let Err(err) = app_server
+            .thread_inject_items(
+                thread_id,
+                vec![ResponseItem::from(transition.render_fragment())],
+            )
+            .await
+        {
+            self.chat_widget.add_error_message(format!(
+                "Failed to keep side conversation as a fork; it is still open: {err}"
+            ));
+            return Ok(());
+        }
         // Persistence started with thread/fork. No history export or replacement thread is needed.
         app_server.side_conversation_threads.remove(&thread_id);
         self.side_threads.remove(&thread_id);

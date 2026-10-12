@@ -9,6 +9,9 @@ async fn keep_side_fork_preserves_thread_and_restores_normal_commands() -> Resul
     let started = server.start_thread(&app.config).await?;
     let thread_id = started.session.thread_id;
     let parent_thread_id = ThreadId::new();
+    server
+        .thread_inject_items(thread_id, vec![App::side_boundary_prompt_item()])
+        .await?;
     let store = app.ensure_thread_channel(thread_id).store.clone();
     store.lock().await.set_session(started.session, Vec::new());
     app.active_thread_id = Some(thread_id);
@@ -35,13 +38,86 @@ async fn keep_side_fork_preserves_thread_and_restores_normal_commands() -> Resul
             .forked_from_id,
         Some(parent_thread_id)
     );
-    assert_eq!(
-        server
-            .thread_read(thread_id, /*include_turns*/ false)
-            .await?
-            .id,
-        thread_id.to_string()
+    let saved_thread = server
+        .thread_read(thread_id, /*include_turns*/ false)
+        .await?;
+    assert_eq!(saved_thread.id, thread_id.to_string());
+    server.shutdown().await?;
+    let saved = std::fs::read_to_string(saved_thread.path.expect("persisted fork path"))?;
+    let messages: Vec<_> = saved
+        .lines()
+        .map(serde_json::from_str::<codex_history::RolloutItem>)
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter_map(|item| match item {
+            codex_history::RolloutItem::ResponseItem(envelope) => Some(envelope.item),
+            _ => None,
+        })
+        .collect();
+    let ResponseItem::Message {
+        content: boundary_content,
+        ..
+    } = App::side_boundary_prompt_item()
+    else {
+        panic!("expected boundary message");
+    };
+    let boundary_index = messages.iter()
+        .position(|message| matches!(message, ResponseItem::Message { role, content, .. } if role == "user" && *content == boundary_content))
+        .expect("original boundary preserved");
+    assert!(boundary_index < messages.len() - 1);
+    let ResponseItem::Message { role, content, .. } = messages.last().expect("saved transition")
+    else {
+        panic!("expected transition message");
+    };
+    assert_eq!(role, "developer");
+    insta::assert_snapshot!(
+        "kept_side_fork_transition",
+        serde_json::to_string_pretty(content)?
     );
+    let mut recovered = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let resumed = recovered
+        .resume_thread(
+            &app.local_settings,
+            app.config.clone(),
+            thread_id,
+            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+        )
+        .await?;
+    assert_eq!(resumed.session.thread_id, thread_id);
+    recovered.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn keep_side_fork_retains_side_mode_when_transition_save_fails() -> Result<()> {
+    let mut app = make_test_app().await;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let started = server.start_thread(&app.config).await?;
+    let side_id = started.session.thread_id;
+    let parent_id = ThreadId::new();
+    server
+        .thread_inject_items(side_id, vec![App::side_boundary_prompt_item()])
+        .await?;
+    server.shutdown().await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    // Reading a saved unloaded thread succeeds, but injecting into it requires attachment.
+    assert!(
+        !server
+            .thread_read(side_id, /*include_turns*/ false)
+            .await?
+            .ephemeral
+    );
+    app.active_thread_id = Some(side_id);
+    app.side_threads
+        .insert(side_id, SideThreadState::new(parent_id));
+    server.side_conversation_threads.insert(side_id);
+    app.sync_side_thread_ui();
+
+    app.keep_side_conversation_as_fork(&mut server).await?;
+
+    assert!(app.chat_widget.side_conversation_active());
+    assert_eq!(app.active_side_parent_thread_id(), Some(parent_id));
+    assert!(server.side_conversation_threads.contains(&side_id));
     server.shutdown().await?;
     Ok(())
 }

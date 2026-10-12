@@ -6,7 +6,8 @@ conversation history if the client or server crashes.
 Every new side conversation is a durable fork from creation, with its parent lineage and all side
 messages retained. A crash or disconnect never deletes it. Opening it in a fresh client treats it
 as a normal fork, with ordinary commands and capabilities. Inherited parent history remains
-reference context; reopening must not restart the parent's unfinished task.
+reference context; reopening must not restart the parent's unfinished task unless a later user
+message explicitly asks to continue it.
 
 At creation, its saved name is `(Side) <parent name>`, using the parent's current name once.
 An unnamed parent (or unavailable parent name) uses `(Side) <side thread UUID>` instead.
@@ -19,6 +20,10 @@ Summarize for me, and Leave. Cancel remains the default. Keep as a fork retains 
 and its history and lets the user continue in it as a normal fork. It does not copy the conversation,
 start inference, or modify the parent. Side-only command restrictions and temporary model
 instructions end when the conversation is kept or opened as an ordinary fork.
+Keeping appends a durable instruction explicitly ending side mode before restoring normal
+capabilities. It preserves existing history in place, including the boundary and prior side turns,
+without starting inference. If saving this transition fails, the conversation stays open in side
+mode and reports the failure.
 
 Leave returns to the parent and permanently deletes the side conversation. Both summary choices
 save their result to the parent before deleting the side conversation. Summary generation or
@@ -29,6 +34,9 @@ discards it; a failed background deletion leaves its durable fork available for 
 Side mode remains intended for questions and lightweight exploration. Its temporary restrictions
 apply to individual side turns, while the boundary separating reference-only parent history from
 active side instructions remains meaningful after keeping or recovering the fork.
+The boundary is explicitly supersedable by later instructions, and later user messages can adopt
+tasks from inherited history. Compaction input is unchanged: keeping does not remove or rewrite
+history to retire the boundary or side restrictions, preserving the existing inference prefix.
 
 Validation must cover both close-menu widths and keyboard selection, persisted parent lineage,
 side history surviving a fresh server/client attachment, keeping the same thread with normal
@@ -36,3 +44,5 @@ commands restored, scoped side instructions ending on keep/recovery, explicit de
 changing the parent, and failure paths retaining the fork.
 Also cover named and unnamed parents, names surviving recovery and later parent renames, and
 ordinary user renaming after keeping the fork.
+Keeping must append the model-visible transition after existing history, preserve it through
+resume, and retain side mode if that transition cannot be saved.
