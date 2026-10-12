@@ -34,6 +34,8 @@ async fn side_fork_history_survives_server_restart_as_normal_fork() -> Result<()
         )
         .await?;
     let side_id = side.session.thread_id;
+    let fallback_name = format!("(Side) {side_id}");
+    assert_eq!(side.session.thread_name, Some(fallback_name.clone()));
     let side_context = server
         .side_turn_context(side_id, "first-turn")
         .expect("side context");
@@ -62,6 +64,7 @@ async fn side_fork_history_survives_server_restart_as_normal_fork() -> Result<()
         .await?;
     let before = server.thread_read(side_id, /*include_turns*/ true).await?;
     assert!(!before.ephemeral);
+    assert_eq!(before.name, Some(fallback_name.clone()));
     assert_eq!(before.forked_from_id, Some(parent_id.to_string()));
     server.shutdown().await?;
     let saved_history =
@@ -74,6 +77,7 @@ async fn side_fork_history_survives_server_restart_as_normal_fork() -> Result<()
         .await?;
     assert_eq!(after.turns, before.turns);
     assert_eq!(after.forked_from_id, before.forked_from_id);
+    assert_eq!(after.name, Some(fallback_name));
     let _ = recovered
         .resume_thread(
             &settings,
@@ -88,6 +92,63 @@ async fn side_fork_history_survives_server_restart_as_normal_fork() -> Result<()
     recovered.side_conversation_threads.remove(&side_id);
     assert_eq!(recovered.side_turn_context(side_id, "kept-turn"), None);
     recovered.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn side_fork_copies_parent_name_once_and_allows_renaming_after_keep() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .build()
+        .await?;
+    let parent_id = ThreadId::from_string(
+        &create_fake_rollout(
+            home.path(),
+            "2025-01-05T12-00-00",
+            "2025-01-05T12:00:00Z",
+            "Parent question",
+            Some(config.model_provider_id.as_str()),
+            /*git_info*/ None,
+        )
+        .expect("create parent rollout"),
+    )?;
+    let mut server = crate::start_embedded_app_server_for_picker(&config).await?;
+    server
+        .thread_set_name(parent_id, "Original Name".into())
+        .await?;
+    let side = server
+        .fork_side_thread(
+            &LocalSettings::from(&config),
+            config,
+            parent_id,
+            /*selected_profile*/ None,
+        )
+        .await?;
+    let side_id = side.session.thread_id;
+    assert_eq!(
+        side.session.thread_name.as_deref(),
+        Some("(Side) Original Name")
+    );
+    let saved = server.thread_read(side_id, /*include_turns*/ false).await?;
+    insta::assert_snapshot!("side_fork_saved_name", saved.name.expect("saved side name"));
+    server
+        .thread_set_name(parent_id, "New parent name".into())
+        .await?;
+    let after_parent_rename = server.thread_read(side_id, /*include_turns*/ false).await?;
+    assert_eq!(
+        after_parent_rename.name,
+        Some("(Side) Original Name".into())
+    );
+    server.side_conversation_threads.remove(&side_id);
+    let kept = server.thread_read(side_id, /*include_turns*/ false).await?;
+    assert_eq!(kept.name, after_parent_rename.name);
+    server
+        .thread_set_name(side_id, "Independent fork".into())
+        .await?;
+    let renamed = server.thread_read(side_id, /*include_turns*/ false).await?;
+    assert_eq!(renamed.name, Some("Independent fork".into()));
+    server.shutdown().await?;
     Ok(())
 }
 

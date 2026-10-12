@@ -8,6 +8,12 @@ messages retained. A crash or disconnect never deletes it. Opening it in a fresh
 as a normal fork, with ordinary commands and capabilities. Inherited parent history remains
 reference context; reopening must not restart the parent's unfinished task.
 
+At creation, its saved name is `(Side) <parent name>`, using the parent's current name once.
+An unnamed parent (or unavailable parent name) uses `(Side) <side thread UUID>` instead.
+Later parent renames and automatic title generation do not replace this name. Keeping or recovering
+the fork retains the prefix; users can rename it normally afterward. A naming failure must not
+prevent access to the already-created fork.
+
 The idle side-conversation close menu includes **Keep as a fork**, alongside Cancel, Summarize,
 Summarize for me, and Leave. Cancel remains the default. Keep as a fork retains the same thread
 and its history and lets the user continue in it as a normal fork. It does not copy the conversation,
@@ -28,3 +34,5 @@ Validation must cover both close-menu widths and keyboard selection, persisted p
 side history surviving a fresh server/client attachment, keeping the same thread with normal
 commands restored, scoped side instructions ending on keep/recovery, explicit deletion without
 changing the parent, and failure paths retaining the fork.
+Also cover named and unnamed parents, names surviving recovery and later parent renames, and
+ordinary user renaming after keeping the fork.

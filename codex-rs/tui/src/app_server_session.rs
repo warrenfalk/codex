@@ -992,32 +992,6 @@ impl AppServerSession {
         .await
     }
 
-    pub(crate) async fn fork_side_thread(
-        &mut self,
-        local_settings: &LocalSettings,
-        config: Config,
-        thread_id: ThreadId,
-        selected_profile: Option<&PermissionProfileSelection>,
-    ) -> Result<AppServerStartedThread> {
-        let started = self
-            .fork_thread_at_with_presentation(
-                local_settings,
-                config,
-                thread_id,
-                /*last_turn_id*/ None,
-                /*before_turn_id*/ None,
-                ForkGoalContinuation::StartIfIdle,
-                ForkPresentation::SideConversation,
-                selected_profile,
-                ForkPermissionMode::InheritSaved,
-                ForkConfigSource::Session,
-            )
-            .await?;
-        self.side_conversation_threads
-            .insert(started.session.thread_id);
-        Ok(started)
-    }
-
     #[expect(
         clippy::too_many_arguments,
         reason = "keep local preferences separate while the legacy Config parameter is still required"
