@@ -913,8 +913,20 @@ first: remove the replay's separate upstream comparison Cargo target (for exampl
 inside its replay worktree. Remove other replay-specific temporary build caches
 that are no longer needed. These are rebuildable artifacts, not replay history.
 
-Keep the selected persistent Cargo target (`codex-rs/target` by default), any
-native/V8 inputs still needed by it, and the replay worktrees, ledger, queue,
-and logs. Do not remove a target that the current launcher or `CARGO_TARGET_DIR`
-still selects. If follow-up tests need a temporary target, finish those tests
-before removing it, and record any cleanup deferred for that reason.
+After every update, also remove the original checkout's entire
+`codex-rs/target/debug` directory, including compiled dependencies, test binaries,
+build-script output, and incremental files. When using a separate replay worktree,
+this means the original checkout's debug cache, not just an accidental target
+inside the replay worktree. Resolve the path and check that no process is using
+it before deletion; record the cleanup and reclaimed space in the ledger.
+
+This final debug-cache cleanup applies even when `codex-rs/target` is the selected
+persistent Cargo target. Retain its artifacts between attempts while the update
+is in progress, then remove the debug directory after all validation, comparisons,
+and follow-up tests finish. Later debug builds will recreate it.
+
+Keep the target directory itself and its other profiles, any native/V8 inputs
+still needed by it, and the replay worktrees, ledger, queue, and logs. Preserve
+other targets still selected by the launcher or `CARGO_TARGET_DIR`. If a build or
+test still needs a directory scheduled for cleanup, wait until it finishes and
+record any cleanup that must be deferred.

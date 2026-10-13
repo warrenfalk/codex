@@ -41,6 +41,12 @@ in `/tmp`. Do not restore an old temporary target symlink simply because a prior
 replay used one. Keep upstream comparison artifacts in their own persistent
 target directory.
 
+Retain artifacts between attempts during an update. After all final validation
+and comparisons, remove the original checkout's full `codex-rs/target/debug`
+directory, even when its parent is the persistent target. Follow the
+[end-of-update cleanup instructions](UPDATE_INSTRUCTIONS.md#after-finishing);
+later debug builds recreate this cache.
+
 After moving or unlinking a target, check Cargo configuration, inherited
 `CARGO_TARGET_DIR`, and ignored launchers under `personal/`. A launcher can
 silently redirect builds to the old path even after the symlink is gone. Update
