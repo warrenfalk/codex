@@ -120,6 +120,8 @@ pub struct ConfigLayerEntry {
     pub disabled_reason: Option<String>,
     raw_toml: Option<RawTomlLayer>,
     hooks_config_folder_override: Option<AbsolutePathBuf>,
+    /// An inherited MCP projection has provenance but is not a discovery root.
+    pub(crate) mcp_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,6 +140,7 @@ impl ConfigLayerEntry {
             disabled_reason: None,
             raw_toml: None,
             hooks_config_folder_override: None,
+            mcp_only: false,
         }
     }
 
@@ -158,6 +161,7 @@ impl ConfigLayerEntry {
                 base_dir: raw_toml_base_dir,
             }),
             hooks_config_folder_override: None,
+            mcp_only: false,
         }
     }
 
@@ -174,6 +178,7 @@ impl ConfigLayerEntry {
             disabled_reason: Some(disabled_reason.into()),
             raw_toml: None,
             hooks_config_folder_override: None,
+            mcp_only: false,
         }
     }
 
@@ -217,6 +222,9 @@ impl ConfigLayerEntry {
 
     // Get the `.codex/` folder associated with this config layer, if any.
     pub fn config_folder(&self) -> Option<AbsolutePathBuf> {
+        if self.mcp_only {
+            return None;
+        }
         match &self.name {
             ConfigLayerSource::PackagedDefaults { .. } => None,
             ConfigLayerSource::Mdm { .. } => None,
@@ -660,6 +668,11 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<()> {
     // user config.
     let mut previous_project_dot_codex_folder: Option<&AbsolutePathBuf> = None;
     for layer in layers {
+        // MCP defaults retain their main-checkout source paths, outside this
+        // worktree's ancestry. They do not participate in directory discovery.
+        if layer.mcp_only {
+            continue;
+        }
         if let ConfigLayerSource::Project {
             dot_codex_folder: current_project_dot_codex_folder,
         } = &layer.name
