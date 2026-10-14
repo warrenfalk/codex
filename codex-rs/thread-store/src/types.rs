@@ -653,6 +653,9 @@ pub struct StoredThread {
     /// User-selected Daybreak preference, absent until explicitly set.
     #[serde(default)]
     pub daybreak_enabled: Option<bool>,
+    /// Persistent user acknowledgement state, independent of runtime activity.
+    #[serde(default)]
+    pub unread: bool,
     /// Working directory captured for the thread.
     pub cwd: PathBuf,
     /// CLI version captured for the thread.
@@ -828,6 +831,8 @@ pub struct ThreadMetadataPatch {
     pub project_id: ClearableField<String>,
     /// User-selected Daybreak preference; omission leaves it unchanged.
     pub daybreak_enabled: Option<bool>,
+    /// Replacement user acknowledgement state.
+    pub unread: Option<bool>,
 }
 
 impl ThreadMetadataPatch {
@@ -923,6 +928,9 @@ impl ThreadMetadataPatch {
         if next.daybreak_enabled.is_some() {
             self.daybreak_enabled = next.daybreak_enabled;
         }
+        if next.unread.is_some() {
+            self.unread = next.unread;
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -957,6 +965,7 @@ impl ThreadMetadataPatch {
             && self.memory_mode.is_none()
             && self.project_id.is_none()
             && self.daybreak_enabled.is_none()
+            && self.unread.is_none()
     }
 }
 

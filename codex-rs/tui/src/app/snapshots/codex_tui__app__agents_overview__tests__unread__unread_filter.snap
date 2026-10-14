@@ -1,0 +1,28 @@
+---
+source: tui/src/app/agents_overview_unread_tests.rs
+expression: "normalize_agent_center_snapshot(render_bottom_popup(&app.chat_widget, 110))"
+---
+  Agent command center  Group: Status  g
+   All 6   Needs you 1   Unread 2   Working 2   Ready 1   Inactive 0                         tab/⇧tab filter
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+      Tasks                                 Status         Updated  │ Task details
+  Unread  2                                                         │
+  › ● Unread result                         Unread          2m ago  │ Unread result
+    ● Unloaded unread                       Unread          2m ago  │ ● Unread
+                                                                    │
+                                                                    │ Model: Unknown
+                                                                    │ Reasoning: Unknown
+                                                                    │
+                                                                    │ Project
+                                                                    │ /tmp/project
+                                                                    │
+                                                                    │ Prompt
+                                                                    │ Unread result
+                                                                    │
+                                                                    │
+                                                                    │
+                                                                    │
+                                                                    │
+                                                                    │
+                                                                    │
+  ? help  esc back  ↑/↓ move  enter open  n new

@@ -2096,6 +2096,30 @@
             },
             "method": {
               "enum": [
+                "thread/unread/set"
+              ],
+              "title": "Thread/unread/setRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadUnreadSetParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/unread/setRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/goal/set"
               ],
               "title": "Thread/goal/setRequestMethod",
@@ -17669,6 +17693,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/unread/changed"
+              ],
+              "title": "Thread/unread/changedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadUnreadChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/unread/changedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/projectEnv/statusChanged"
               ],
               "title": "Thread/projectEnv/statusChangedNotificationMethod",
@@ -20558,6 +20602,11 @@
             "$ref": "#/definitions/Turn"
           },
           "type": "array"
+        },
+        "unread": {
+          "default": false,
+          "description": "Persistent acknowledgement state. New user prompts set this even while the thread is active. Runtime stops and turn completion do not change it.",
+          "type": "boolean"
         },
         "updatedAt": {
           "description": "Unix timestamp (in seconds) when the thread was last updated.",
@@ -24972,6 +25021,55 @@
         "threadId"
       ],
       "title": "ThreadUnarchivedNotification",
+      "type": "object"
+    },
+    "ThreadUnreadChangedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "unread": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "threadId",
+        "unread"
+      ],
+      "title": "ThreadUnreadChangedNotification",
+      "type": "object"
+    },
+    "ThreadUnreadSetParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "unread": {
+          "description": "Set unread explicitly, or acknowledge it. Acknowledgement is ignored during an active turn, including a turn waiting for approval or input. Ignored attempts are never deferred.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "threadId",
+        "unread"
+      ],
+      "title": "ThreadUnreadSetParams",
+      "type": "object"
+    },
+    "ThreadUnreadSetResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "unread": {
+          "description": "Authoritative unread state after applying or ignoring the request.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "unread"
+      ],
+      "title": "ThreadUnreadSetResponse",
       "type": "object"
     },
     "ThreadUnsubscribeParams": {

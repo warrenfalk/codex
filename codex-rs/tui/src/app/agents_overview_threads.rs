@@ -161,6 +161,11 @@ impl App {
                     thread.status = status.status.clone();
                 }
             }
+            ServerNotification::ThreadUnreadChanged(unread) => {
+                if let Some(thread) = thread {
+                    thread.unread = unread.unread;
+                }
+            }
             ServerNotification::ThreadNameUpdated(name) => {
                 if let Some(thread) = thread {
                     thread.name.clone_from(&name.thread_name);

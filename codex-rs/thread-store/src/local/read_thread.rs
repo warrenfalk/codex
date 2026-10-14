@@ -40,6 +40,9 @@ pub(super) async fn read_thread(
     let daybreak_enabled = sqlite_metadata
         .as_ref()
         .and_then(|metadata| metadata.daybreak_enabled);
+    let unread = sqlite_metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.unread);
     if let Some(metadata) = sqlite_metadata
         && (params.include_archived
             || (metadata.archived_at.is_none()
@@ -75,6 +78,7 @@ pub(super) async fn read_thread(
             }
             rollout_thread.project_id = thread.project_id;
             rollout_thread.daybreak_enabled = thread.daybreak_enabled;
+            rollout_thread.unread = thread.unread;
             rollout_thread.model = thread.model;
             rollout_thread.reasoning_effort = thread.reasoning_effort;
             rollout_thread.git_info = thread.git_info;
@@ -103,6 +107,7 @@ pub(super) async fn read_thread(
 
     let mut thread = read_thread_from_rollout_path(store, path).await?;
     thread.daybreak_enabled = daybreak_enabled;
+    thread.unread = unread;
     if let Some((model, reasoning_effort)) = persisted_model_settings {
         thread.model = model;
         thread.reasoning_effort = reasoning_effort;
@@ -158,6 +163,7 @@ pub(super) async fn read_thread_by_rollout_path(
             thread.section_entered_at = metadata.section_entered_at;
             thread.project_id = metadata.project_id;
             thread.daybreak_enabled = metadata.daybreak_enabled;
+            thread.unread = metadata.unread;
             thread.model = metadata.model;
             thread.reasoning_effort = metadata.reasoning_effort;
             if !metadata.cwd.as_os_str().is_empty()
@@ -417,6 +423,7 @@ pub(super) fn stored_thread_from_state_metadata(
         section_entered_at: metadata.section_entered_at,
         project_id: metadata.project_id,
         daybreak_enabled: metadata.daybreak_enabled,
+        unread: metadata.unread,
         cwd: metadata.cwd,
         cli_version: metadata.cli_version,
         originator: metadata.originator,
@@ -524,6 +531,7 @@ fn stored_thread_from_meta_line(
         section_entered_at: None,
         project_id: None,
         daybreak_enabled: None,
+        unread: false,
         cwd: meta_line.meta.cwd,
         cli_version: meta_line.meta.cli_version,
         originator: (!meta_line.meta.originator.is_empty()).then_some(meta_line.meta.originator),

@@ -1,5 +1,7 @@
 #[path = "agents_overview_discovery_tests.rs"]
 mod discovery;
+#[path = "agents_overview_unread_tests.rs"]
+mod unread;
 
 #[path = "agent_center_tests.rs"]
 mod command_center;
@@ -254,6 +256,7 @@ fn overview_thread(
         extra: None,
         project_id: None,
         daybreak_enabled: None,
+        unread: false,
         session_id: parent_thread_id.unwrap_or(thread_id).to_string(),
         forked_from_id: None,
         parent_thread_id: None,

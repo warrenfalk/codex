@@ -52,6 +52,7 @@ SELECT
     threads.section_entered_at_ms,
     threads.project_id,
     threads.daybreak_enabled,
+    threads.unread,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url
@@ -680,8 +681,9 @@ INSERT INTO threads (
     git_origin_url,
     memory_mode,
     project_id,
-    daybreak_enabled
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    daybreak_enabled,
+    unread
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -735,6 +737,7 @@ ON CONFLICT(id) DO NOTHING
         .bind("enabled")
         .bind(metadata.project_id.as_deref())
         .bind(metadata.daybreak_enabled)
+        .bind(metadata.unread)
         .execute(self.pool.as_ref())
         .await?;
         self.insert_thread_spawn_edge_from_source_if_absent(metadata.id, metadata.source.as_str())
@@ -989,8 +992,9 @@ INSERT INTO threads (
     git_origin_url,
     memory_mode,
     project_id,
-    daybreak_enabled
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    daybreak_enabled,
+    unread
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -1087,6 +1091,7 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(creation_memory_mode.unwrap_or("enabled"))
         .bind(metadata.project_id.as_deref())
         .bind(metadata.daybreak_enabled)
+        .bind(metadata.unread)
         .bind(observed_title)
         .bind(observed_title)
         .bind(metadata.has_derived_title())
@@ -1404,6 +1409,7 @@ SELECT
     threads.section_entered_at_ms,
     threads.project_id,
     threads.daybreak_enabled,
+    threads.unread,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url

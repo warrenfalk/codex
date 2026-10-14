@@ -1583,6 +1583,11 @@
           },
           "type": "array"
         },
+        "unread": {
+          "default": false,
+          "description": "Persistent acknowledgement state. New user prompts set this even while the thread is active. Runtime stops and turn completion do not change it.",
+          "type": "boolean"
+        },
         "updatedAt": {
           "description": "Unix timestamp (in seconds) when the thread was last updated.",
           "format": "int64",

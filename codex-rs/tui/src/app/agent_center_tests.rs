@@ -240,7 +240,7 @@ async fn live_center_rename_retains_target_when_status_leaves_filter() -> Result
         let mut view = app.agents_overview_view(threads.clone(), Some(id));
         // Reuse the Ready tab after the first iteration.
         if key == KeyCode::Esc {
-            for _ in 0..3 {
+            for _ in 0..4 {
                 view.handle_key_event(KeyCode::Tab.into());
             }
         }

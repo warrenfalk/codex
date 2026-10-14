@@ -58,6 +58,7 @@ mod thread_attachments;
 mod thread_metadata;
 mod thread_section_order;
 mod thread_sections;
+mod thread_unread;
 mod threads;
 
 pub use external_agent_config_imports::ExternalAgentConfigImportDetailsRecord;

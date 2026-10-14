@@ -1146,6 +1146,7 @@ fn stored_thread_from_state(
         section_entered_at: state.section_entered_at.get(&thread_id).copied(),
         project_id: None,
         daybreak_enabled: metadata.and_then(|metadata| metadata.daybreak_enabled),
+        unread: metadata.is_some_and(|metadata| metadata.unread == Some(true)),
         cwd: metadata
             .and_then(|metadata| metadata.cwd.clone())
             .unwrap_or_default(),

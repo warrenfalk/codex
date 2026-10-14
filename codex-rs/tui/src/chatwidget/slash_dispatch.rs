@@ -349,6 +349,14 @@ impl ChatWidget {
                     .counter("codex.thread.rename", /*inc*/ 1, &[]);
                 self.show_rename_prompt();
             }
+            SlashCommand::Ack | SlashCommand::Unread => {
+                if let Some(thread_id) = self.thread_id {
+                    self.app_event_tx.send(AppEvent::SetThreadUnread {
+                        thread_id,
+                        unread: cmd == SlashCommand::Unread,
+                    });
+                }
+            }
             SlashCommand::Model => {
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
@@ -1306,6 +1314,8 @@ impl ChatWidget {
             | SlashCommand::Export
             | SlashCommand::New
             | SlashCommand::Archive
+            | SlashCommand::Ack
+            | SlashCommand::Unread
             | SlashCommand::Delete
             | SlashCommand::Clear
             | SlashCommand::Resume

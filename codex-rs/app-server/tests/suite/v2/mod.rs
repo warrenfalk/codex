@@ -160,6 +160,8 @@ mod thread_status;
 mod thread_timeline;
 mod thread_unarchive;
 mod thread_unload;
+#[path = "thread_unread_tests.rs"]
+mod thread_unread;
 mod thread_unsubscribe;
 mod turn_cost_otel;
 mod turn_interrupt;

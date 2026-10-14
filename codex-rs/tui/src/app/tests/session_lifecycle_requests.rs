@@ -4799,10 +4799,20 @@ async fn external_writer_escape_preserves_snapshot_and_explicit_quits() -> Resul
             app.thread_event_channels[&thread_id].attachment(),
             ThreadEventAttachment::ExternalWriter
         );
-        assert!(requests.lock().unwrap().iter().all(|request| matches!(
-            request.method.as_str(),
-            "thread/read" | "thread/list" | "thread/loaded/list" | "thread/turns/list"
-        )));
+        assert!(requests.lock().unwrap().iter().all(|request| {
+            matches!(
+                request.method.as_str(),
+                "thread/read" | "thread/list" | "thread/loaded/list" | "thread/turns/list"
+            ) || (request.method == "thread/unread/set"
+                && request.params
+                    == Some(
+                        serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+                    ))
+        }));
+        assert_eq!(
+            recorded_params(&requests, "thread/unread/set"),
+            vec![serde_json::json!({"threadId": thread_id.to_string(), "unread": false})]
+        );
         server.shutdown().await?;
         proxy.await??;
     }

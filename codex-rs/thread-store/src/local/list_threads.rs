@@ -95,6 +95,20 @@ pub(super) async fn list_threads(
         }
     }
     if let Some(state_db) = state_db {
+        let thread_ids = items
+            .iter()
+            .map(|thread| thread.thread_id)
+            .collect::<Vec<_>>();
+        let unread = state_db
+            .unread_thread_ids(&thread_ids)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!("failed to read thread unread state: {err}");
+                Default::default()
+            });
+        for thread in &mut items {
+            thread.unread = unread.contains(&thread.thread_id);
+        }
         let sectioned_thread_ids = items
             .iter()
             .filter(|thread| thread.section.is_some())

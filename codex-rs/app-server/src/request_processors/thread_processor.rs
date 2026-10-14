@@ -6258,6 +6258,7 @@ pub(crate) fn thread_from_stored_thread(
         created_at: thread.created_at.timestamp(),
         updated_at: thread.updated_at.timestamp(),
         recency_at: Some(thread.recency_at.timestamp()),
+        unread: thread.unread,
         status: ThreadStatus::NotLoaded,
         path,
         cwd,
@@ -6457,6 +6458,7 @@ fn build_thread_from_snapshot(
         git_info: None,
         name: None,
         daybreak_enabled: None,
+        unread: false,
         turns: Vec::new(),
     }
 }
