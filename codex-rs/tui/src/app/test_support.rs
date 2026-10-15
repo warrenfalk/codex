@@ -125,6 +125,7 @@ pub(crate) async fn make_test_app() -> App {
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
+        pending_focus_ack: None,
         _test_codex_home: test_codex_home,
     }
 }

@@ -201,6 +201,7 @@ impl App {
             }
             _ => return,
         }
+        self.sync_thread_unread_indicator();
         if !matches!(
             notification,
             ServerNotification::ThreadReverted(_) | ServerNotification::ThreadTokenUsageUpdated(_)

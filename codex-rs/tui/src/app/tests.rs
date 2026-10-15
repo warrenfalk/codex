@@ -68,6 +68,8 @@ mod patch_approval_tests;
 mod permission_selection_tests;
 #[path = "tests/projectless_tests.rs"]
 mod projectless_tests;
+#[path = "tests/thread_unread_tests.rs"]
+mod thread_unread_tests;
 #[path = "tests/unavailable_commands_tests.rs"]
 mod unavailable_commands;
 
@@ -6467,6 +6469,7 @@ async fn make_test_app() -> Box<App> {
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
+        pending_focus_ack: None,
         _test_codex_home: test_codex_home,
     })
 }
@@ -6592,6 +6595,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
+            pending_focus_ack: None,
             _test_codex_home: test_codex_home,
         }),
         rx,

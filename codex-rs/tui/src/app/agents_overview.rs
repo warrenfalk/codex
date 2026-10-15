@@ -88,6 +88,7 @@ impl Drop for AgentsOverviewState {
 
 impl App {
     pub(super) fn open_agents_overview(&mut self, app_server: &AppServerSession) {
+        self.pending_focus_ack = None;
         if matches!(self.app_server_target, AppServerTarget::Embedded) {
             let workload_identity_selected = codex_login::is_workload_identity_selected();
             self.chat_widget.show_selection_view(SelectionViewParams {
@@ -271,6 +272,7 @@ impl App {
         {
             self.refresh_changed_agents_overview_threads(app_server);
         }
+        self.sync_thread_unread_indicator();
         self.repaint_agents_overview();
     }
 

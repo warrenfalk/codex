@@ -695,6 +695,7 @@ pub(crate) struct App {
     // persist an older toggle after a newer one.
     pending_hook_enabled_writes: HashMap<String, Option<bool>>,
     recap: recap::RecapState,
+    pending_focus_ack: Option<(ThreadId, tokio::time::Instant)>,
     // App fixtures keep their home alive across widget replacement; drop it last.
     #[cfg(test)]
     _test_codex_home: Option<tempfile::TempDir>,
@@ -873,6 +874,7 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
+        self.handle_unread_focus(tui, app_server, &event).await;
         if let TuiEvent::Key(key) = &event
             && self.chat_widget.handle_speech_key(*key)
         {
@@ -1206,6 +1208,7 @@ impl App {
         if tui.is_owned_screen() {
             return self.render_owned_transcript(tui, screen_size);
         }
+        self.sync_thread_unread_indicator();
         self.chat_widget
             .empty_state_animation
             .borrow_mut()

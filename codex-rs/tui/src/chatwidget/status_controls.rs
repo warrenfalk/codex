@@ -8,6 +8,16 @@ use super::*;
 use crate::status::format_status_limit_delta_vs_pace;
 
 impl ChatWidget {
+    pub(crate) fn set_unread_indicator(&mut self, show_unread: bool) {
+        let show_unread =
+            show_unread && !self.bottom_pane.is_task_running() && !self.side_conversation_active();
+        if self.status_state.unread_indicator != show_unread {
+            self.status_state.unread_indicator = show_unread;
+            self.refresh_status_line();
+            self.request_redraw();
+        }
+    }
+
     /// Update the status indicator header and details.
     ///
     /// Passing `None` clears any existing details. Returns whether the visible status indicator

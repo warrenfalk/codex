@@ -123,6 +123,7 @@ pub(super) struct StatusState {
     pub(super) retry_status_header: Option<String>,
     pub(super) pending_status_indicator_restore: bool,
     pub(super) thread_title_generation_pending: bool,
+    pub(super) unread_indicator: bool,
 }
 
 impl Default for StatusState {
@@ -138,6 +139,7 @@ impl Default for StatusState {
             retry_status_header: None,
             pending_status_indicator_restore: false,
             thread_title_generation_pending: false,
+            unread_indicator: false,
         }
     }
 }

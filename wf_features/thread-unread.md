@@ -12,8 +12,16 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
   permission or user input, or while a descendant is active. The server enforces this for every client. Ignored attempts are
   discarded; they are not retried or applied when work stops.
 - Opening an existing session from the agent list or successfully focusing it through
-  `codex agents --focus` makes one acknowledgement attempt. Listing, reading, receiving updates,
-  or simply remaining in an open session never acknowledges it.
+  `codex agents --focus` makes one acknowledgement attempt. Listing, reading, and receiving
+  updates never acknowledge a session.
+- Returning terminal focus to a displayed session makes one acknowledgement attempt after
+  one continuous second of focus. Losing focus, suspending, disconnecting, switching to another
+  session, or showing the agent list before the delay expires prevents that attempt. An attempt ignored
+  during active work is not retried when work stops or while focus remains unchanged.
+- The displayed session shows `unread` in bright blue in the footer while its unread flag is
+  set and neither it nor a descendant has active work. The indicator disappears on acknowledgement
+  or when work starts. It remains available even with no configured status-line items and takes
+  priority over those items in narrow terminals. Ephemeral side conversations never show it.
 - Turn completion, failure, interruption, and unloading leave unread unchanged. Acknowledgement
   survives server restarts and history reconciliation. Existing sessions begin acknowledged.
 - Acknowledging or marking unread does not send input to the agent or change session recency.
@@ -50,4 +58,6 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
 - Passive reads and watch streams never acknowledge sessions. Watch updates reconcile unread
   notifications received during in-flight reads.
 - Snapshots cover unread list rows and filters, priority against working and blocked sessions,
-  and the JSON output. Slash commands never submit agent input.
+  the bright blue stopped-session footer indicator, and the JSON output. Slash commands never
+  submit agent input. Focus tests cover the one-second delay, cancellation, and the absence of
+  automatic retries after a working-session acknowledgement is ignored.
