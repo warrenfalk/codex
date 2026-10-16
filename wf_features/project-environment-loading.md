@@ -84,6 +84,25 @@ Codex should not proactively strip variables exported by direnv. If
 `direnv export json` includes `DIRENV_*` variables, V1 includes them in the
 captured environment.
 
+## Configuration Changes
+
+At the start of each new turn, including a user shell-command turn, reload the
+file-backed `shell_environment_policy` using normal configuration discovery,
+trust restrictions, and precedence. This includes applicable project config,
+selected user profiles, and session config overrides. It does not change which
+configuration sources a worktree inherits.
+Adding, replacing, or removing configured variables and changing inheritance or
+filtering takes effect without creating or cold-resuming a session. This also
+applies when direnv loading is bypassed or disabled.
+
+The policy is captured for the turn. Editing config during an active turn takes
+effect on its next turn; running processes retain their original environment.
+Environment settings supplied explicitly by an environment owner remain owned
+by that owner. Unrelated session settings are not reloaded by this feature.
+
+If configuration cannot be loaded, retain the previous policy for the turn and
+emit a warning without including configuration contents or credential values.
+
 ## Status And Cancellation
 
 Project environment status is separate from thread lifecycle status. Building a
@@ -128,3 +147,7 @@ single-flight concurrent builds, command workdir selection, `/ps` listing,
 `/stop` cancellation, waiter interruption, `disable_project_env`, bounded status
 APIs, and confirmation that standalone `command/exec`, hooks, `apply_patch`, and
 internal helpers are unchanged.
+
+Also cover turn-boundary policy additions, replacements, removals, filtering,
+session/profile/project precedence, worktree config discovery, malformed config
+recovery, and stable command environments within an already-started turn.

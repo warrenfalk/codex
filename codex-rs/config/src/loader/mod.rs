@@ -6,7 +6,7 @@ mod macos;
 mod managed_requirements;
 mod project_discovery;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod worktree_mcp;
 
 #[cfg(test)]

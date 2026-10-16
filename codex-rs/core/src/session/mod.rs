@@ -250,6 +250,7 @@ mod handlers;
 mod inference_profile;
 mod inject;
 mod reasoning_effort;
+mod shell_environment_reload;
 mod submission;
 pub(crate) use reasoning_effort::RequestEffortUsage;
 pub(crate) use submission::Submission;
