@@ -301,6 +301,7 @@ pub(crate) use misalignment_policy::MisalignmentTurnSource;
 mod pets;
 mod session_flow;
 mod session_header;
+mod session_indicators;
 use self::session_header::SessionHeader;
 mod clipboard;
 mod copy_picker;

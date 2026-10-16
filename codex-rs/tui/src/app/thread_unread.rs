@@ -1,4 +1,4 @@
-//! One-shot acknowledgement after sustained terminal focus and stopped-session footer state.
+//! One-shot acknowledgement after sustained terminal focus and the stopped-session indicator.
 
 use super::App;
 use super::agents_overview::AGENTS_OVERVIEW_VIEW_ID;

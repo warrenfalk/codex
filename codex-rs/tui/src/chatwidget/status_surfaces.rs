@@ -198,10 +198,7 @@ impl ChatWidget {
     }
 
     fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
-        let unread = self.status_state.unread_indicator
-            && !self.bottom_pane.is_task_running()
-            && !self.side_conversation_active();
-        let enabled = unread || !selections.status_line_items.is_empty();
+        let enabled = !selections.status_line_items.is_empty();
         self.bottom_pane.set_status_line_enabled(enabled);
         if !enabled {
             self.set_status_line(/*status_line*/ None);
@@ -211,9 +208,6 @@ impl ChatWidget {
 
         let mut segments = Vec::new();
         for item in &selections.status_line_items {
-            if unread && *item == StatusLineItem::Status {
-                continue;
-            }
             if let Some(value) = self.status_line_value_for_item(*item) {
                 segments.push((*item, value));
             }
@@ -224,13 +218,6 @@ impl ChatWidget {
             self.local_settings.tui.status_line_use_colors,
             self.thread_id,
         );
-        if unread {
-            let line = line.get_or_insert_with(Line::default);
-            if !line.spans.is_empty() {
-                line.spans.insert(/*index*/ 0, " · ".dim());
-            }
-            line.spans.insert(/*index*/ 0, "unread".light_blue());
-        }
         if let Some(badge) = self.connected_mode_status_badge() {
             let line = line.get_or_insert_with(|| Line::from(Vec::<Span<'static>>::new()));
             if !line.spans.is_empty() {

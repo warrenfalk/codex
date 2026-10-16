@@ -3,7 +3,8 @@ source: tui/src/chatwidget/tests/thread_unread_tests.rs
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                            "
+"unread                                                      "
 "                                                            "
 "› Ask Codex to do anything                                  "
 "                                                            "
-"  unread                                                    "
+"  ? for shortcuts                        100% context left  "

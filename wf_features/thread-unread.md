@@ -18,10 +18,11 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
   one continuous second of focus. Losing focus, suspending, disconnecting, switching to another
   session, or showing the agent list before the delay expires prevents that attempt. An attempt ignored
   during active work is not retried when work stops or while focus remains unchanged.
-- The displayed session shows `unread` in bright blue in the footer while its unread flag is
+- The displayed session shows `unread` in bright blue above the input while its unread flag is
   set and neither it nor a descendant has active work. The indicator disappears on acknowledgement
-  or when work starts. It remains available even with no configured status-line items and takes
-  priority over those items in narrow terminals. Ephemeral side conversations never show it.
+  or when work starts. It shares the notes-to-self reminder row, preceding the magenta notes
+  reminder when both are present, and stays visible in narrow terminals. It is independent of
+  configured footer status items. Ephemeral side conversations never show it.
 - Turn completion, failure, interruption, and unloading leave unread unchanged. Acknowledgement
   survives server restarts and history reconciliation. Existing sessions begin acknowledged.
 - Acknowledging or marking unread does not send input to the agent or change session recency.
@@ -58,6 +59,6 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
 - Passive reads and watch streams never acknowledge sessions. Watch updates reconcile unread
   notifications received during in-flight reads.
 - Snapshots cover unread list rows and filters, priority against working and blocked sessions,
-  the bright blue stopped-session footer indicator, and the JSON output. Slash commands never
-  submit agent input. Focus tests cover the one-second delay, cancellation, and the absence of
-  automatic retries after a working-session acknowledgement is ignored.
+  the bright blue stopped-session indicator above the input, coexistence with notes, and the JSON
+  output. Slash commands never submit agent input. Focus tests cover the one-second delay,
+  cancellation, and the absence of automatic retries after a working-session acknowledgement is ignored.

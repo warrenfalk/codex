@@ -263,6 +263,7 @@ async fn unread_indicator_tracks_notifications_and_active_descendants() -> Resul
     let grandchild = ThreadId::new();
     app.active_thread_id = Some(root);
     app.chat_widget.local_settings.tui.status_line = Some(Vec::new());
+    app.chat_widget.refresh_status_line();
     for (id, parent) in [(root, None), (child, Some(root)), (grandchild, Some(child))] {
         let thread: Thread = serde_json::from_value(serde_json::json!({
             "id": id.to_string(), "sessionId": root.to_string(), "parentThreadId": parent,
@@ -278,7 +279,7 @@ async fn unread_indicator_tracks_notifications_and_active_descendants() -> Resul
             unread: true,
         },
     ));
-    assert_eq!(app.chat_widget.status_line_text(), Some("unread".into()));
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
     for active_flags in [
         Vec::new(),
         vec![ThreadActiveFlag::WaitingOnApproval],
@@ -290,7 +291,7 @@ async fn unread_indicator_tracks_notifications_and_active_descendants() -> Resul
                 status: ThreadStatus::Active { active_flags },
             },
         ));
-        assert_eq!(app.chat_widget.status_line_text(), None);
+        assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
     }
     app.track_agents_overview_notification(&ServerNotification::ThreadStatusChanged(
         ThreadStatusChangedNotification {
@@ -298,10 +299,10 @@ async fn unread_indicator_tracks_notifications_and_active_descendants() -> Resul
             status: ThreadStatus::Idle,
         },
     ));
-    assert_eq!(app.chat_widget.status_line_text(), Some("unread".into()));
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
     app.active_thread_id = Some(child);
     app.sync_thread_unread_indicator();
-    assert_eq!(app.chat_widget.status_line_text(), None);
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
     app.active_thread_id = Some(root);
     app.track_agents_overview_notification(&ServerNotification::ThreadUnreadChanged(
         ThreadUnreadChangedNotification {
@@ -309,6 +310,6 @@ async fn unread_indicator_tracks_notifications_and_active_descendants() -> Resul
             unread: false,
         },
     ));
-    assert_eq!(app.chat_widget.status_line_text(), None);
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
     Ok(())
 }

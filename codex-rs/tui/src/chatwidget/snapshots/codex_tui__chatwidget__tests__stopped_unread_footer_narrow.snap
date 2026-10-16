@@ -3,7 +3,8 @@ source: tui/src/chatwidget/tests/thread_unread_tests.rs
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                        "
+"unread · 1 note to self "
 "                        "
 "› Ask Codex to do anyth "
 "                        "
-"  unread · 5.6-Sol      "
+"  Ready · 5.6-Sol       "
