@@ -159,7 +159,7 @@ impl AppServerSession {
             self.history_pagination.insert(
                 thread_id,
                 ThreadHistoryPagination {
-                    history_mode: ThreadHistoryMode::Paginated,
+                    history_mode: response.thread.history_mode,
                     next_turn_cursor: response.turns_backwards_cursor.clone(),
                     next_item_cursor: response.items_backwards_cursor.clone(),
                     ..ThreadHistoryPagination::default()

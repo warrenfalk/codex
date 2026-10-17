@@ -74,6 +74,8 @@ mod history_hydration_tests;
 #[path = "tests/permission_shortcuts_tests.rs"]
 mod permission_shortcuts_tests;
 mod plugin_catalog;
+#[path = "tests/prompt_edit_tests.rs"]
+mod prompt_edit_tests;
 #[path = "tests/prompt_rewrite_request_tests.rs"]
 mod prompt_rewrite_requests;
 mod rate_limits;
@@ -8420,12 +8422,16 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
     assert_eq!(selection, expected);
 
     app.apply_backtrack_selection(selection);
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let event = std::iter::from_fn(|| app_event_rx.try_recv().ok())
-        .find(|event| matches!(event, AppEvent::RevertSessionForPromptEdit { .. }))
+        .find(|event| matches!(event, AppEvent::ForkSessionForPromptEdit { .. }))
         .expect("prompt edit fork should be requested");
     assert_matches!(
         event,
-        AppEvent::RevertSessionForPromptEdit {
+        AppEvent::ForkSessionForPromptEdit {
             thread_id,
             selected_cell,
             prompt,
