@@ -40,6 +40,7 @@ pub use provider::ProviderAuthRecoveryMessages;
 pub use provider::ProviderUnauthorizedRecovery;
 pub use provider::SharedModelProvider;
 pub use provider::create_model_provider;
+pub use provider::create_model_provider_with_capabilities;
 
 #[cfg(test)]
 #[path = "workspace_routing_tests.rs"]

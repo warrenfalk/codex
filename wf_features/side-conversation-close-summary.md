@@ -30,6 +30,8 @@ Side conversation summary
 ```
 
 The parent TUI transcript shows the saved summary as an assistant message with the same heading.
+Every live TUI session viewing the parent thread shows the saved summary immediately, including sessions other than the one that created and closed the side conversation.
+The live summary is a display item only: saving it does not start or complete a parent-thread turn.
 Saved parent threads also replay the summary in the transcript when their history is read again.
 
 On successful `Summarize for me` completion, the final assistant text from the summary turn is saved in the parent thread through the normal note-to-self path with this note body:
@@ -50,4 +52,4 @@ If summarization fails, is interrupted, produces no assistant text, parent injec
 
 ## Validation
 
-Validation should cover the close prompt default, Cancel/Esc/Ctrl+C behavior, both summary choices, Leave preserving the discard path, running-turn interrupt priority, unchanged composer and popup behavior, successful assistant-summary injection and discard, successful personal-summary note creation and discard, and failure cases that keep the side conversation open.
+Validation should cover the close prompt default, Cancel/Esc/Ctrl+C behavior, both summary choices, Leave preserving the discard path, running-turn interrupt priority, unchanged composer and popup behavior, successful assistant-summary injection and discard, successful personal-summary note creation and discard, failure cases that keep the side conversation open, immediate summary display in every subscribed session without a synthetic turn completion, and silent hidden-context injection.
