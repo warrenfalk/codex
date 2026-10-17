@@ -3,8 +3,8 @@
 //! A textarea does not own pending paste payloads, image attachments, or mention targets. Keeping
 //! edit transactions here lets one snapshot restore those values together with visible text. Keys
 //! and direct composer-owned changes share the same bounded transaction state.
-//! Committed snapshots share a byte budget. One pending edit snapshot has its own matching cap,
-//! so canceled commands cannot evict committed history.
+//! Undo and redo snapshots have separate entry and byte budgets. A pending edit snapshot is not
+//! counted against either direction, so canceled commands cannot evict committed history.
 
 use std::collections::VecDeque;
 
@@ -14,8 +14,8 @@ use super::ComposerDraft;
 use crate::key_hint::KeyBindingListExt;
 use crossterm::event::KeyEvent;
 
-const MAX_VIM_UNDO_STEPS: usize = 64;
-const MAX_VIM_UNDO_BYTES: usize = 1024 * 1024;
+const MAX_VIM_UNDO_STEPS: usize = 100;
+const MAX_VIM_UNDO_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Default)]
 pub(super) struct VimHistory {
@@ -47,17 +47,16 @@ impl ComposerDraft {
 
 impl VimHistory {
     fn trim(&mut self) {
-        while self.undo.len() > MAX_VIM_UNDO_STEPS
-            || self
-                .undo
-                .iter()
-                .chain(self.redo.iter())
-                .map(ComposerDraft::vim_history_bytes)
-                .sum::<usize>()
-                > MAX_VIM_UNDO_BYTES
-        {
-            if self.undo.pop_front().is_none() {
-                self.redo.pop_front();
+        for stack in [&mut self.undo, &mut self.redo] {
+            while stack.len() > 1
+                && (stack.len() > MAX_VIM_UNDO_STEPS
+                    || stack
+                        .iter()
+                        .map(ComposerDraft::vim_history_bytes)
+                        .sum::<usize>()
+                        > MAX_VIM_UNDO_BYTES)
+            {
+                stack.pop_front();
             }
         }
     }
@@ -167,25 +166,9 @@ impl ChatComposer {
     }
 
     fn begin_vim_edit_transaction(&mut self) {
-        let visible_bytes = self.draft.textarea.text().len();
-        let paste_bytes = self
-            .draft
-            .pending_pastes
-            .iter()
-            .map(|(placeholder, pasted)| placeholder.len() + pasted.len())
-            .sum::<usize>();
-        if visible_bytes.saturating_add(paste_bytes) > MAX_VIM_UNDO_BYTES {
-            self.vim_history = VimHistory::default();
-            return;
-        }
-
         let snapshot = self.snapshot_draft();
-        if snapshot.vim_history_bytes() <= MAX_VIM_UNDO_BYTES {
-            self.vim_history.pending = Some(snapshot);
-            self.vim_history.trim();
-        } else {
-            self.vim_history = VimHistory::default();
-        }
+        self.vim_history.pending = Some(snapshot);
+        self.vim_history.trim();
     }
 
     /// Commit a complete normal-mode command or one insert-mode session.
