@@ -1,4 +1,7 @@
 use super::*;
+use crate::config::Config;
+use crate::config::ConfigOverrides;
+use codex_config::config_toml::ConfigToml;
 use codex_config::permissions_toml::FilesystemPermissionToml;
 use codex_config::permissions_toml::FilesystemPermissionsToml;
 use codex_config::permissions_toml::NetworkDomainPermissionToml;
@@ -18,6 +21,60 @@ use codex_utils_path_uri::PathConvention;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
+
+#[tokio::test]
+async fn pid_namespace_inheritance_survives_config_resolution() -> anyhow::Result<()> {
+    use codex_protocol::PidNamespace;
+
+    let temp = TempDir::new()?;
+    let codex_home = AbsolutePathBuf::try_from(temp.path().join("home"))?;
+    let cwd = temp.path().join("workspace");
+    std::fs::create_dir_all(&cwd)?;
+    let config: ConfigToml = toml::from_str(
+        r#"
+[permissions.default]
+extends = ":workspace"
+
+[permissions.trusted-workspace]
+extends = "default"
+pid_namespace = "host"
+
+[permissions.trusted-workspace-conservative]
+extends = "trusted-workspace"
+
+[permissions.isolated-child]
+extends = "trusted-workspace-conservative"
+pid_namespace = "isolated"
+"#,
+    )?;
+    let mut baseline = None;
+    for (profile, namespace) in [
+        ("default", PidNamespace::Isolated),
+        ("trusted-workspace", PidNamespace::Host),
+        ("trusted-workspace-conservative", PidNamespace::Host),
+        ("isolated-child", PidNamespace::Isolated),
+    ] {
+        let resolved = Config::load_from_base_config_with_overrides(
+            config.clone(),
+            ConfigOverrides {
+                cwd: Some(cwd.clone()),
+                default_permissions: Some(profile.to_string()),
+                ..Default::default()
+            },
+            codex_home.clone(),
+        )
+        .await?;
+        let actual = resolved.permissions.effective_permission_profile();
+        let baseline = baseline.get_or_insert_with(|| actual.clone());
+        assert_eq!(
+            actual,
+            baseline.clone().with_pid_namespace(namespace),
+            "profile {profile}"
+        );
+    }
+    assert!(toml::from_str::<PermissionProfileToml>("pid_namespace = 'shared'").is_err());
+    Ok(())
+}
 
 #[test]
 fn active_arg0_helper_dir_selects_only_the_first_session_alias_directory() -> anyhow::Result<()> {
@@ -391,6 +448,7 @@ fn compile_permission_profile_resolves_enabled_workspace_roots() -> std::io::Res
             entries: BTreeMap::from([(
                 "workspace".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: Some(WorkspaceRootsToml {
@@ -592,6 +650,7 @@ fn read_write_trailing_glob_suffix_compiles_as_subpath() -> std::io::Result<()> 
             entries: BTreeMap::from([(
                 "workspace".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,

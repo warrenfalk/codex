@@ -1320,11 +1320,7 @@ async fn file_system_sandboxed_write_allows_additional_write_root(
         permissions.network_sandbox_policy(),
         Some(&additional_permissions),
     );
-    sandbox.permissions = PermissionProfile::from_runtime_permissions_with_enforcement(
-        permissions.enforcement(),
-        &file_system_policy,
-        network_policy,
-    );
+    sandbox.permissions = permissions.with_runtime_permissions(&file_system_policy, network_policy);
 
     file_system
         .write_file(
