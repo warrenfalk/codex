@@ -1,0 +1,14 @@
+---
+source: tui/src/bottom_pane/command_popup.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 76, height: 1 },
+    content: [
+        "› /init-update  create or update an AGENTS.md file based on the current repo",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD | REVERSED,
+        x: 16, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: REVERSED,
+    ]
+}
