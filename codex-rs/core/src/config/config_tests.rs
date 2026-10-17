@@ -1488,6 +1488,7 @@ strip_request_headers = ["authorization"]
             entries: BTreeMap::from([(
                 "dev".to_string(),
                 PermissionProfileToml {
+                    instructions_file: None,
                     pid_namespace: None,
                     description: Some("Day-to-day workspace access.".to_string()),
                     extends: None,
@@ -1717,6 +1718,7 @@ async fn permissions_profiles_proxy_policy_does_not_start_managed_network_proxy_
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -1768,6 +1770,7 @@ async fn permissions_profiles_proxy_policy_starts_managed_network_proxy() -> std
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -1925,6 +1928,7 @@ async fn network_proxy_feature_matrix_preserves_sandbox_network_semantics() -> s
                     entries: BTreeMap::from([(
                         "dev".to_string(),
                         PermissionProfileToml {
+                            instructions_file: None,
                             pid_namespace: None,
                             description: None,
                             extends: None,
@@ -2310,6 +2314,7 @@ async fn network_proxy_feature_uses_profile_network_proxy_settings() -> std::io:
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -2375,6 +2380,7 @@ enabled = false
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -2427,6 +2433,7 @@ async fn permissions_profiles_network_disabled_by_default_does_not_start_proxy()
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -2477,6 +2484,7 @@ async fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::
             entries: BTreeMap::from([(
                 "dev".to_string(),
                 PermissionProfileToml {
+                    instructions_file: None,
                     pid_namespace: None,
                     description: None,
                     extends: None,
@@ -2585,6 +2593,7 @@ async fn default_permissions_extended_profile_preserves_parent_metadata() -> std
                     (
                         "base".to_string(),
                         PermissionProfileToml {
+                            instructions_file: None,
                             pid_namespace: None,
                             description: None,
                             extends: None,
@@ -2602,6 +2611,7 @@ async fn default_permissions_extended_profile_preserves_parent_metadata() -> std
                     (
                         "dev".to_string(),
                         PermissionProfileToml {
+                            instructions_file: None,
                             pid_namespace: None,
                             description: None,
                             extends: Some("base".to_string()),
@@ -3096,6 +3106,7 @@ async fn permission_profile_override_preserves_configured_network_policy_without
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -3159,6 +3170,7 @@ async fn workspace_root_glob_none_compiles_to_filesystem_pattern_entry() -> std:
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -3242,6 +3254,7 @@ async fn permissions_profiles_require_default_permissions() -> std::io::Result<(
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -3372,6 +3385,7 @@ async fn workspace_profile_applies_rules_to_runtime_and_profile_workspace_roots(
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -3508,6 +3522,7 @@ async fn default_permissions_profile_can_extend_builtin_workspace() -> std::io::
                 entries: BTreeMap::from([(
                     "workspace-with-network".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
@@ -3610,6 +3625,7 @@ async fn default_permissions_profile_can_extend_builtin_read_only() -> std::io::
                 entries: BTreeMap::from([(
                     "read-only-with-network".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string()),
@@ -4061,6 +4077,7 @@ async fn permissions_profiles_allow_direct_write_roots_outside_workspace_root()
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: Some("Workspace access.".to_string()),
                         extends: None,
@@ -4126,6 +4143,7 @@ async fn permissions_profiles_reject_nested_entries_for_non_workspace_roots() ->
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -4190,6 +4208,7 @@ async fn load_workspace_permission_profile(
 #[tokio::test]
 async fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
+        instructions_file: None,
         pid_namespace: None,
         description: None,
         extends: None,
@@ -4238,6 +4257,7 @@ async fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<(
 async fn permissions_profiles_allow_unknown_special_paths_with_nested_entries()
 -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
+        instructions_file: None,
         pid_namespace: None,
         description: None,
         extends: None,
@@ -4279,6 +4299,7 @@ async fn permissions_profiles_allow_unknown_special_paths_with_nested_entries()
 #[tokio::test]
 async fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
+        instructions_file: None,
         pid_namespace: None,
         description: None,
         extends: None,
@@ -4311,6 +4332,7 @@ async fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io
 #[tokio::test]
 async fn permissions_profiles_allow_empty_filesystem_with_warning() -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
+        instructions_file: None,
         pid_namespace: None,
         description: None,
         extends: None,
@@ -4350,6 +4372,7 @@ async fn permissions_profiles_reject_workspace_root_parent_traversal() -> std::i
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,
@@ -4400,6 +4423,7 @@ async fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> 
                 entries: BTreeMap::from([(
                     "dev".to_string(),
                     PermissionProfileToml {
+                        instructions_file: None,
                         pid_namespace: None,
                         description: None,
                         extends: None,

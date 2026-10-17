@@ -323,6 +323,7 @@ fn empty_catalog_permission_message_preserves_non_sandbox_sections() {
             reviewer: ApprovalsReviewer::User,
             messages: ResolvedApprovalMessages::new(/*messages*/ None),
             permission_messages: ResolvedPermissionMessages::new(Some(&messages)),
+            profile_instructions: None,
         },
     )
     .body()
@@ -485,6 +486,7 @@ fn empty_catalog_approval_message_suppresses_legacy_approval_section() {
             reviewer: ApprovalsReviewer::User,
             messages: ResolvedApprovalMessages::new(Some(&messages)),
             permission_messages: ResolvedPermissionMessages::new(/*messages*/ None),
+            profile_instructions: None,
         },
     )
     .body()
@@ -789,6 +791,7 @@ fn preserves_supplied_path_spellings_and_order() {
             reviewer: ApprovalsReviewer::User,
             messages: ResolvedApprovalMessages::new(Some(&approval_messages)),
             permission_messages: ResolvedPermissionMessages::new(Some(&permission_messages)),
+            profile_instructions: None,
         },
     );
     let expected_body = concat!(
