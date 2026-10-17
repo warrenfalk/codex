@@ -6,7 +6,7 @@ mod macos;
 mod managed_requirements;
 mod project_discovery;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "projectless_directory_tests.rs"]

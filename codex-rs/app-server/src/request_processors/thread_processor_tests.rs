@@ -93,6 +93,34 @@ mod background_terminal_pagination_tests {
                 .is_err()
         );
     }
+
+    #[test]
+    fn paginates_with_string_process_id_cursor() {
+        let terminals = vec![
+            terminal("1"),
+            terminal("project-env:/repo/.envrc"),
+            terminal("3"),
+        ];
+
+        let (data, next_cursor) = paginate_background_terminals(
+            &terminals,
+            Some("project-env:/repo/.envrc".to_string()),
+            Some(1),
+        )
+        .expect("valid page");
+
+        assert_eq!(data, vec![terminal("3")]);
+        assert_eq!(next_cursor, None);
+
+        assert!(
+            paginate_background_terminals(
+                &terminals,
+                Some("project-env:/other/.envrc".to_string()),
+                Some(1),
+            )
+            .is_err()
+        );
+    }
 }
 
 mod thread_processor_behavior_tests {

@@ -81,6 +81,7 @@ async fn thread_shell_command_history_responses_exclude_persisted_command_execut
                 thread_id: thread.id.clone(),
                 command: shell_command,
                 timeout_ms: None,
+                project_env: None,
             },
         })
         .await?;
@@ -194,6 +195,7 @@ async fn thread_shell_command_returns_error_when_local_environment_is_disabled()
             thread_id: thread.id,
             command: "pwd".to_string(),
             timeout_ms: None,
+            project_env: None,
         })
         .await?;
     let error = mcp
@@ -307,6 +309,7 @@ async fn check_thread_shell_command_in_active_turn(timeout_ms: Option<i64>) -> R
                 thread_id: thread.id.clone(),
                 command: shell_command,
                 timeout_ms,
+                project_env: None,
             },
         })
         .await?;

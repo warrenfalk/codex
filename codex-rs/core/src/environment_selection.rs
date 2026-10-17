@@ -627,14 +627,15 @@ impl ThreadEnvironments {
 
     /// Changes the defaults inherited by all selected and later-added environments. A step that
     /// already captured its environments keeps the previous values.
-    pub(crate) fn set_active_thread_defaults(&self, defaults: EnvironmentConfig) {
+    /// Returns whether the defaults changed.
+    pub(crate) fn set_active_thread_defaults(&self, defaults: EnvironmentConfig) -> bool {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let ThreadEnvironmentsState {
             thread_defaults,
             environments,
         } = &mut *state;
         if thread_defaults.common == defaults {
-            return;
+            return false;
         }
         thread_defaults.common = defaults;
         for environment in environments.iter_mut() {
@@ -655,6 +656,7 @@ impl ThreadEnvironments {
                 self.restart_shell_snapshot(environment, resolved);
             }
         }
+        true
     }
 
     pub(crate) fn set_snapshot_credential_broker(&self, broker: SnapshotCredentialBrokerState) {
