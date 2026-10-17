@@ -79,6 +79,7 @@ codex-utils-path-uri = { workspace = true }
 codex-utils-redacted-string = { workspace = true }
 codex-websocket-auth = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
+dirs = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 libc = { workspace = true }
@@ -90,6 +91,7 @@ serde_json = { workspace = true }
 supports-color = { workspace = true }
 sys-locale = { workspace = true }
 tempfile = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
     "macros",
