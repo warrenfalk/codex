@@ -25,14 +25,10 @@ use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::default_exec_approval_requirement;
 use crate::tools::sandboxing::ensure_native_sandbox;
 use crate::tools::sandboxing::sandbox_override_for_first_attempt;
-use crate::tools::sandboxing::unsandboxed_execution_allowed;
 use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::exec_output::ExecToolCallOutput;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::permissions::PROTECTED_METADATA_PATH_NAMES;
-use codex_protocol::permissions::file_system_root;
 use codex_protocol::protocol::ReviewDecision;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxType;
@@ -227,72 +223,8 @@ impl ToolOrchestrator {
         }
 
         // 2) First attempt under the selected sandbox.
-        let unsandboxed_allowed = unsandboxed_execution_allowed(&file_system_sandbox_policy);
-        let sandbox_override = sandbox_override_for_first_attempt(
-            tool.sandbox_permissions(req),
-            &requirement,
-            &file_system_sandbox_policy,
-            already_approved,
-        );
-        let (escalated_profile, writable_root_metadata) = if sandbox_override
-            == SandboxOverride::EscalatedSandboxWithRestrictions
-        {
-            let context = environment.sandbox_context(/*additional_permissions*/ None);
-            let policy_context = context.policy_context();
-            let baseline = permission_profile.file_system_sandbox_policy();
-            let file_system = baseline.for_approved_command(&policy_context);
-            let writable_root_metadata = file_system_root(&policy_context).is_some_and(|root| {
-                file_system.can_write_path(&root, &policy_context)
-                    && PROTECTED_METADATA_PATH_NAMES.iter().any(|name| {
-                        root.join_descendant(name)
-                            .is_ok_and(|path| file_system.can_write_path(&path, &policy_context))
-                    })
-            });
-            let escalated_profile = (file_system != baseline
-                && file_system
-                    != baseline.materialize_project_roots_with_path_uris(workspace_roots))
-            .then(|| {
-                PermissionProfile::from_runtime_permissions_with_enforcement(
-                    permission_profile.enforcement(),
-                    &file_system,
-                    permission_profile.network_sandbox_policy(),
-                )
-            });
-            (escalated_profile, writable_root_metadata)
-        } else {
-            (None, false)
-        };
-        if (escalated_profile.is_some() || writable_root_metadata)
-            && environment.environment.is_remote()
-        {
-            let info = environment.environment.info().await.map_err(|err| {
-                ToolError::Rejected(format!(
-                    "could not verify exec-server support for escalation with denied reads: {err}"
-                ))
-            })?;
-            if !matches!(info.platform_os.as_deref(), Some("windows" | "macos"))
-                && !info
-                    .capabilities
-                    .linux_approved_root_write_preserves_restrictions
-            {
-                return Err(ToolError::Rejected(
-                    "this exec-server cannot safely escalate with denied reads; upgrade the exec-server and retry"
-                        .to_string(),
-                ));
-            }
-        }
-        let escalated_local_profile = escalated_profile
-            .as_ref()
-            .filter(|_| !executor_managed_process_sandbox)
-            .map(|profile| {
-                profile
-                    .clone()
-                    .materialize_project_roots_with_path_uris(workspace_roots)
-            });
-        let initial_permissions = escalated_local_profile
-            .as_ref()
-            .or(escalated_profile.as_ref())
-            .unwrap_or(&permissions);
+        let sandbox_override =
+            sandbox_override_for_first_attempt(tool.sandbox_permissions(req), &requirement);
         let network_approval_spec = tool.network_approval_spec(req, tool_ctx);
         // An explicit owner proxy requirement permits filtered egress, like an enabled
         // controller proxy. Traffic-only owner policies stay offline unless command
@@ -329,7 +261,7 @@ impl ToolOrchestrator {
             SandboxOverride::BypassSandboxFirstAttempt => false,
             SandboxOverride::NoOverride | SandboxOverride::EscalatedSandboxWithRestrictions => {
                 sandbox_manager.should_sandbox(
-                    initial_permissions,
+                    &permissions,
                     sandbox_preference,
                     managed_network_active,
                 )
@@ -341,7 +273,7 @@ impl ToolOrchestrator {
         );
         let initial_sandbox = if sandbox_requested && !executor_managed_process_sandbox {
             sandbox_manager.select_initial(
-                initial_permissions,
+                &permissions,
                 sandbox_preference,
                 windows_sandbox_type,
                 managed_network_active,
@@ -366,8 +298,8 @@ impl ToolOrchestrator {
             sandbox_override,
             sandbox: initial_sandbox,
             sandbox_requested,
-            permissions: initial_permissions,
-            exec_server_permissions: escalated_profile.as_ref().unwrap_or(permission_profile),
+            permissions: &permissions,
+            exec_server_permissions: permission_profile,
             enforce_managed_network: managed_network_active,
             manager: &sandbox_manager,
             sandbox_cwd: &sandbox_policy_cwd,
@@ -461,16 +393,6 @@ impl ToolOrchestrator {
                         return Err(ToolError::Codex(err));
                     }
                 }
-                if !unsandboxed_allowed && network_approval_context.is_none() {
-                    otel.sandbox_outcome(
-                        &otel_tn,
-                        otel_ci,
-                        "denied",
-                        initial_duration,
-                        /*escalated_duration*/ None,
-                    );
-                    return Err(ToolError::Codex(err));
-                }
                 let retry_reason =
                     if let Some(network_approval_context) = network_approval_context.as_ref() {
                         format!(
@@ -515,16 +437,18 @@ impl ToolOrchestrator {
                         .await?;
                 }
 
-                let retry_sandbox_requested = !unsandboxed_allowed
+                // A host-specific network approval does not authorize bypassing
+                // the filesystem sandbox.
+                let retry_sandbox_requested = network_approval_context.is_some()
                     && sandbox_manager.should_sandbox(
-                        initial_permissions,
+                        &permissions,
                         sandbox_preference,
                         managed_network_active,
                     );
                 let retry_sandbox = if retry_sandbox_requested && !executor_managed_process_sandbox
                 {
                     sandbox_manager.select_initial(
-                        initial_permissions,
+                        &permissions,
                         sandbox_preference,
                         windows_sandbox_type,
                         managed_network_active,
@@ -532,19 +456,17 @@ impl ToolOrchestrator {
                 } else {
                     SandboxType::None
                 };
-                let retry_sandbox_exe = if unsandboxed_allowed {
-                    None
-                } else {
+                let retry_sandbox_exe = if retry_sandbox_requested {
                     codex_sandbox_exe
+                } else {
+                    None
                 };
                 let retry_attempt = SandboxAttempt {
                     sandbox_override,
                     sandbox: retry_sandbox,
                     sandbox_requested: retry_sandbox_requested,
-                    permissions: initial_permissions,
-                    exec_server_permissions: escalated_profile
-                        .as_ref()
-                        .unwrap_or(permission_profile),
+                    permissions: &permissions,
+                    exec_server_permissions: permission_profile,
                     enforce_managed_network: managed_network_active,
                     manager: &sandbox_manager,
                     sandbox_cwd: &sandbox_policy_cwd,
