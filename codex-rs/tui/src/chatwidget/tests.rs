@@ -300,6 +300,8 @@ mod subagent_activity;
 #[path = "tests/terminal_program_status.rs"]
 mod terminal_program_status;
 mod terminal_title;
+#[path = "tests/thread_archive_tests.rs"]
+mod thread_archive_tests;
 #[path = "tests/tool_activity_tests.rs"]
 mod tool_activity_tests;
 mod usage;

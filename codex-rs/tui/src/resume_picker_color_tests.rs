@@ -265,19 +265,12 @@ async fn narrow_toolbar_keeps_keyboard_focused_control_visible() {
                 Some(PathBuf::from("/tmp/codex")),
                 action,
             );
-            if matches!(action, SessionPickerAction::Resume) {
-                state.status = SessionStatus::Archived;
-            }
-            let controls: &[(&str, &str)] = match action {
-                SessionPickerAction::Resume => &[
-                    ("Filter: Cwd", "Cwd"),
-                    ("Status: Archived", "Archived"),
-                    ("Sort: Updated", "Updated"),
-                ],
-                SessionPickerAction::Fork => {
-                    &[("Filter: Cwd", "Cwd"), ("Sort: Updated", "Updated")]
-                }
-            };
+            state.status = SessionStatus::Archived;
+            let controls = &[
+                ("Filter: Cwd", "Cwd"),
+                ("Status: Archived", "Archived"),
+                ("Sort: Updated", "Updated"),
+            ];
             for &(label, value) in controls {
                 with_test_default_colors(
                     DefaultColors {
