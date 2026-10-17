@@ -29,6 +29,7 @@ fn unterminated_visualization_preview_uses_the_stream_context() {
         Some(80),
         codex_home.path(),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
         Some(context),
     );
     controller.push("::codex-inline-vis{file=\"chart.html\"}");
@@ -464,6 +465,7 @@ fn streaming_hides_partial_directive_and_renders_completed_link() {
         /*width*/ Some(80),
         Path::new("/workspace"),
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
         Some(context),
     );
 
