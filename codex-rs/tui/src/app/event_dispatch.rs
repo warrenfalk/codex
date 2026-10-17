@@ -61,50 +61,52 @@ impl App {
         if matches!(event, AppEvent::ForkCurrentSession { .. }) {
             self.chat_widget.fork_in_progress = false;
         }
-        if self.reconnect.offline
-            && !matches!(
-                &event,
-                AppEvent::OpenDaemonMenu
-                    | AppEvent::OpenWarnings
-                    | AppEvent::StatusLineSetup { .. }
-                    | AppEvent::StatusLineSetupCancelled
-                    | AppEvent::TerminalTitleSetup { .. }
-                    | AppEvent::TerminalTitleSetupPreview { .. }
-                    | AppEvent::TerminalTitleSetupCancelled
-                    | AppEvent::OpenConfigEditor(_)
-                    | AppEvent::SyntaxThemeSelected { .. }
-                    | AppEvent::SyntaxThemePreviewed
-                    | AppEvent::OpenKeymapActionMenu { .. }
-                    | AppEvent::OpenKeymapReplaceBindingMenu { .. }
-                    | AppEvent::OpenKeymapCapture { .. }
-                    | AppEvent::OpenKeymapDebug
-                    | AppEvent::KeymapCaptured { .. }
-                    | AppEvent::KeymapCleared { .. }
-                    | AppEvent::TestConfigNotification
-                    | AppEvent::SendConfigTestNotification { .. }
-                    | AppEvent::SaveConfigPreference(_)
-                    | AppEvent::CopyWarning(_)
-                    | AppEvent::UpdateWarnings { .. }
-                    | AppEvent::CopySelection { .. }
-                    | AppEvent::SelectTranscriptCopy { .. }
-                    | AppEvent::TranscriptCopyClosed
-                    | AppEvent::ConfirmDaemonUpdate(_)
-                    | AppEvent::RunDaemonUpdate(_)
-                    | AppEvent::InsertHistoryCell(_)
-                    | AppEvent::CommitRealtimeTranscriptHistory
-                    | AppEvent::ResetTranscriptForThreadSwitch
-                    | AppEvent::ResetTranscriptForThreadSwitchPreservingScreen
-                    | AppEvent::FinishPromptRevert { .. }
-                    | AppEvent::ManagedWorktreeCreated(_)
-                    | AppEvent::AgentsOverviewWorktreeCreated(_)
-                    | AppEvent::AgentsOverviewPinToggled { .. }
-                    | AppEvent::AppendMessageHistoryEntry { .. }
-                    | AppEvent::BeginInitialHistoryReplayBuffer
-                    | AppEvent::BeginThreadSwitchHistoryReplayBuffer
-                    | AppEvent::EndInitialHistoryReplayBuffer
-                    | AppEvent::FatalExitRequest(_)
-            )
-        {
+        let allowed_offline = matches!(
+            &event,
+            AppEvent::OpenDaemonMenu
+                | AppEvent::OpenWarnings
+                | AppEvent::StatusLineSetup { .. }
+                | AppEvent::StatusLineSetupCancelled
+                | AppEvent::TerminalTitleSetup { .. }
+                | AppEvent::TerminalTitleSetupPreview { .. }
+                | AppEvent::TerminalTitleSetupCancelled
+                | AppEvent::OpenConfigEditor(_)
+                | AppEvent::SyntaxThemeSelected { .. }
+                | AppEvent::SyntaxThemePreviewed
+                | AppEvent::OpenKeymapActionMenu { .. }
+                | AppEvent::OpenKeymapReplaceBindingMenu { .. }
+                | AppEvent::OpenKeymapCapture { .. }
+                | AppEvent::OpenKeymapDebug
+                | AppEvent::KeymapCaptured { .. }
+                | AppEvent::KeymapCleared { .. }
+                | AppEvent::TestConfigNotification
+                | AppEvent::SendConfigTestNotification { .. }
+                | AppEvent::SaveConfigPreference(_)
+                | AppEvent::CopyWarning(_)
+                | AppEvent::UpdateWarnings { .. }
+                | AppEvent::CopySelection { .. }
+                | AppEvent::SelectTranscriptCopy { .. }
+                | AppEvent::TranscriptCopyClosed
+                | AppEvent::ConfirmDaemonUpdate(_)
+                | AppEvent::RunDaemonUpdate(_)
+                | AppEvent::InsertHistoryCell(_)
+                | AppEvent::CommitRealtimeTranscriptHistory
+                | AppEvent::ResetTranscriptForThreadSwitch
+                | AppEvent::ResetTranscriptForThreadSwitchPreservingScreen
+                | AppEvent::FinishPromptRevert { .. }
+                | AppEvent::ManagedWorktreeCreated(_)
+                | AppEvent::AgentsOverviewWorktreeCreated(_)
+                | AppEvent::AgentsOverviewPinToggled { .. }
+                | AppEvent::AppendMessageHistoryEntry { .. }
+                | AppEvent::BeginInitialHistoryReplayBuffer
+                | AppEvent::BeginThreadSwitchHistoryReplayBuffer
+                | AppEvent::EndInitialHistoryReplayBuffer
+                | AppEvent::FatalExitRequest(_)
+        );
+        #[cfg(unix)]
+        let allowed_offline =
+            allowed_offline || matches!(&event, AppEvent::AgentsFocusRequested(_));
+        if self.reconnect.offline && !allowed_offline {
             return Ok(AppRunControl::Continue);
         }
         if matches!(
@@ -1015,6 +1017,8 @@ impl App {
             AppEvent::FocusNotificationRequested => {
                 self.chat_widget.notify(Notification::FocusRequested);
             }
+            #[cfg(unix)]
+            AppEvent::AgentsFocusRequested(pending) => self.handle_agents_focus(tui, pending).await,
             AppEvent::Exit(mode) => {
                 if matches!(mode, ExitMode::ShutdownFirst | ExitMode::ShutdownAfterInterrupt) {
                     self.show_shutdown_feedback(tui)?;
