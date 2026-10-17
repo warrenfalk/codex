@@ -4165,7 +4165,7 @@ impl Session {
         reference_context_item: TurnContextItem,
         mut world_state_baseline: WorldStateSnapshot,
         installation: impl Into<CompactedHistoryInstallation<'a>>,
-    ) -> bool {
+    ) -> CodexResult<bool> {
         let installation = installation.into();
         let compaction_model_hash = match &installation {
             CompactedHistoryInstallation::Complete(metadata) => &metadata.compaction_model_hash,
@@ -4195,7 +4195,7 @@ impl Session {
         // Wait for accepted updates to finish persisting, then keep later updates from
         // overtaking the current settings snapshot while its checkpoint is written.
         let _settings_guard = thread_settings::acquire_persistence_lock(self).await;
-        let (compacted_item, started_item) = {
+        let (compacted_item, started_item, reviewer_compaction_hash) = {
             let mut state = self.state.lock().await;
             let complete_replacement =
                 matches!(&installation, CompactedHistoryInstallation::Complete(_));
@@ -4217,7 +4217,7 @@ impl Session {
                         || self.services.model_client.auth_owner_generation()
                             != prefix.auth_owner_generation
                     {
-                        return false;
+                        return Ok(false);
                     }
                     let current = state.history.annotated_items();
                     let suffix = &current[prefix.len..];
@@ -4283,22 +4283,17 @@ impl Session {
                 );
             }
             let replacement_history = items.clone();
-            state.replace_annotated_history(
-                items,
-                Some(reference_context_item.clone()),
-                HistoryReplacement::Compaction {
-                    reviewer_compaction_hash: metadata.reviewer_compaction_hash,
-                },
-            );
-            state.reasoning_effort_pin = ReasoningEffortPin::Compacted;
-            state
-                .history
-                .set_world_state_baseline(world_state_baseline.clone());
+            // Prepare the checkpoint without replacing live history: a full persistence
+            // backlog may still reject it. Prefix validation and suffix retention above
+            // apply equally to foreground and background compaction results.
+            let mut compacted_history = state.history.clone();
+            compacted_history
+                .replace_compacted(items.clone(), metadata.reviewer_compaction_hash.as_deref());
             let compacted_item = CompactedItem {
                 message: metadata.message,
                 replacement_history: Some(replacement_history),
-                guardian_history: state.history.guardian_history_checkpoint(),
-                retained_context: Some(state.history.retained_context().clone()),
+                guardian_history: compacted_history.guardian_history_checkpoint(),
+                retained_context: Some(compacted_history.retained_context().clone()),
                 mcp_resource_origins: self.services.mcp_runtime.resource_origin_checkpoint(),
                 window_number: Some(metadata.window_number),
                 first_window_id: Some(metadata.window_ids.first_window_id.to_string()),
@@ -4316,33 +4311,61 @@ impl Session {
                     previous_turn_settings: state.previous_turn_settings(),
                 }),
             };
-            (compacted_item, started_item)
+            (
+                compacted_item,
+                started_item,
+                metadata.reviewer_compaction_hash,
+            )
         };
 
         if let Some((turn_context, item)) = started_item {
             // The prefix is now known to be valid; announce the install before checkpoint I/O.
             self.emit_turn_item_started(turn_context, item).await;
         }
-        let world_state_item = WorldStateItem::full(world_state_baseline.into_object());
+        let world_state_item = WorldStateItem::full(world_state_baseline.clone().into_object());
         let rollout_items = [
             RolloutItem::Compacted(compacted_item),
             RolloutItem::WorldState(world_state_item),
-            RolloutItem::TurnContext(reference_context_item),
+            RolloutItem::TurnContext(reference_context_item.clone()),
             // The frozen turn context must not override current settings in persisted metadata.
             RolloutItem::EventMsg(thread_settings::applied_event(self).await),
         ];
-        if self.persist_rollout_items(&rollout_items).await
-            && let Some(revision) = mcp_revision
+        if let Some(live_thread) = self.live_thread() {
+            live_thread
+                .append_items(&rollout_items)
+                .await
+                .map_err(|err| {
+                    CodexErr::Io(std::io::Error::other(format!(
+                        "Failed to save the compacted conversation: {err}"
+                    )))
+                })?;
+        }
         {
+            let mut state = self.state.lock().await;
+            state.replace_annotated_history(
+                items,
+                Some(reference_context_item),
+                HistoryReplacement::Compaction {
+                    reviewer_compaction_hash,
+                },
+            );
+            state.reasoning_effort_pin = ReasoningEffortPin::Compacted;
+            state.history.set_world_state_baseline(world_state_baseline);
+            state.queue_pending_session_start_source(codex_hooks::SessionStartSource::Compact);
+        }
+        // Accepted checkpoints remain queued for retry if this barrier fails. Keep the live
+        // history aligned with that queue, but do not report compaction success until flushed.
+        self.flush_rollout().await.map_err(|err| {
+            CodexErr::Io(std::io::Error::other(format!(
+                "Failed to save the compacted conversation: {err}"
+            )))
+        })?;
+        if let Some(revision) = mcp_revision {
             self.services
                 .executed_tool_calls
                 .mark_mcp_attribution_persisted(revision);
         }
-        {
-            let mut state = self.state.lock().await;
-            state.queue_pending_session_start_source(codex_hooks::SessionStartSource::Compact);
-        }
-        true
+        Ok(true)
     }
 
     pub fn enabled(&self, feature: Feature) -> bool {
@@ -4777,7 +4800,7 @@ impl Session {
         &self,
         step_context: &StepContext,
         world_state: Arc<WorldState>,
-    ) {
+    ) -> CodexResult<()> {
         let turn_context = step_context.turn.as_ref();
         let history = self.clone_history().await;
         let input_goal_ids = crate::context::UserGoalUpdate::message_ids(history.raw_items());
@@ -4827,8 +4850,9 @@ impl Session {
                 reviewer_compaction_hash: None,
             },
         )
-        .await;
+        .await?;
         self.recompute_token_usage(turn_context).await;
+        Ok(())
     }
 
     pub(crate) async fn reference_context_item(&self) -> Option<TurnContextItem> {
