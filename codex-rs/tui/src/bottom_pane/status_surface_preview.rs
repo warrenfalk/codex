@@ -25,6 +25,7 @@ pub(crate) enum StatusSurfacePreviewItem {
     ContextUsed,
     FiveHourLimit,
     WeeklyLimit,
+    WeeklyLimitBar,
     CodexVersion,
     ContextWindowSize,
     UsedTokens,
@@ -62,7 +63,8 @@ impl StatusSurfacePreviewItem {
             StatusSurfacePreviewItem::ContextRemaining => "Context 0% left",
             StatusSurfacePreviewItem::ContextUsed => "Context 0% used",
             StatusSurfacePreviewItem::FiveHourLimit => "primary 0%",
-            StatusSurfacePreviewItem::WeeklyLimit => "secondary 0%",
+            StatusSurfacePreviewItem::WeeklyLimit => "limit 55%, time 48%",
+            StatusSurfacePreviewItem::WeeklyLimitBar => "[█████████│█░░░░░░░░░]",
             StatusSurfacePreviewItem::CodexVersion => "0.0.0",
             StatusSurfacePreviewItem::ContextWindowSize => "0 window",
             StatusSurfacePreviewItem::UsedTokens => "0 used",
@@ -101,6 +103,7 @@ impl StatusSurfacePreviewItem {
             Self::ContextUsed,
             Self::FiveHourLimit,
             Self::WeeklyLimit,
+            Self::WeeklyLimitBar,
             Self::CodexVersion,
             Self::ContextWindowSize,
             Self::UsedTokens,
@@ -219,6 +222,9 @@ impl StatusSurfacePreviewData {
         item: StatusSurfacePreviewItem,
         fallback: &str,
     ) -> String {
+        if item == StatusSurfacePreviewItem::WeeklyLimit {
+            return fallback.to_string();
+        }
         self.live_value_for(item)
             .and_then(rate_limit_preview_copy)
             .map(|copy| copy.description.to_string())
