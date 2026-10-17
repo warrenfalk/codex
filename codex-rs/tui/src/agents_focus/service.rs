@@ -255,3 +255,7 @@ pub(super) async fn focus(
         None => Err(no_match()),
     }
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;
