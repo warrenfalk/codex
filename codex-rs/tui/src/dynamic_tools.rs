@@ -1023,6 +1023,7 @@ async fn execute_inner(
                                         "name": "webSearch", "status": null
                                     })),
                                     ThreadItem::UserMessage { .. }
+                                    | ThreadItem::NoteToSelf { .. }
                                     | ThreadItem::FunctionCallOutput { .. }
                                     | ThreadItem::HookPrompt { .. }
                                     | ThreadItem::AgentMessage { .. }
@@ -1389,6 +1390,11 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
                     UserInput::Skill { name, path } => json!({"type": "skill", "name": name, "path": path}),
                     UserInput::Mention { name, path } => json!({"type": "mention", "name": name, "path": path}),
                 }).collect::<Vec<_>>()
+            }),
+            ThreadItem::NoteToSelf { id, note } => json!({
+                "type": "noteToSelf",
+                "id": id,
+                "note": truncate(note, DEFAULT_OUTPUT_CHARS)
             }),
             ThreadItem::HookPrompt { id, fragments } => json!({
                 "type": "hookPrompt", "id": id, "fragmentCount": fragments.len()
