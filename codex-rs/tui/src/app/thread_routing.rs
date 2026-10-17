@@ -1775,8 +1775,26 @@ impl App {
         tui: &mut tui::Tui,
         frame_deadline: Instant,
     ) -> Result<()> {
+        let drained = self
+            .drain_active_thread_events_with_deadline(Some(frame_deadline))
+            .await;
+        if drained && self.backtrack_render_pending {
+            tui.frame_requester().schedule_frame();
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) async fn drain_active_thread_events_now(&mut self) -> bool {
+        self.drain_active_thread_events_with_deadline(None).await
+    }
+
+    async fn drain_active_thread_events_with_deadline(
+        &mut self,
+        frame_deadline: Option<Instant>,
+    ) -> bool {
         let Some(mut rx) = self.active_thread_rx.take() else {
-            return Ok(());
+            return false;
         };
 
         let mut disconnected = false;
@@ -1792,7 +1810,7 @@ impl App {
                     break;
                 }
             }
-            if Instant::now() >= frame_deadline {
+            if frame_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 break;
             }
         }
@@ -1803,10 +1821,7 @@ impl App {
             self.clear_active_thread().await;
         }
 
-        if self.backtrack_render_pending {
-            tui.frame_requester().schedule_frame();
-        }
-        Ok(())
+        true
     }
 
     /// Returns `(closed_thread_id, primary_thread_id)` when a non-primary active
@@ -2214,6 +2229,25 @@ impl App {
         } else {
             None
         };
+        let completed_side_summary_turn = match &event {
+            ThreadBufferedEvent::Notification(notification) => match notification.as_ref() {
+                ServerNotification::TurnStarted(notification) => {
+                    if let Ok(thread_id) = ThreadId::from_string(&notification.thread_id) {
+                        self.note_side_summary_turn_started(thread_id, &notification.turn.id);
+                    }
+                    None
+                }
+                ServerNotification::TurnCompleted(notification) => {
+                    ThreadId::from_string(&notification.thread_id)
+                        .ok()
+                        .map(|thread_id| (thread_id, notification.turn.clone()))
+                }
+                _ => None,
+            },
+            ThreadBufferedEvent::Request(_)
+            | ThreadBufferedEvent::HistoryEntryResponse(_)
+            | ThreadBufferedEvent::FeedbackSubmission(_) => None,
+        };
         let had_active_modal = self.chat_widget.has_active_modal();
         self.handle_thread_event_now_recovering_file_changes(event)
             .await;
@@ -2235,6 +2269,10 @@ impl App {
             self.chat_widget.pre_draw_tick();
             self.render_chat_widget_frame(tui, tui.terminal.last_known_screen_size)?;
             self.discard_startup_modal_input(tui)?;
+        }
+        if let Some((thread_id, turn)) = completed_side_summary_turn {
+            self.handle_side_summary_turn_completed(tui, app_server, thread_id, turn)
+                .await?;
         }
         if self.backtrack_render_pending {
             tui.frame_requester().schedule_frame();
