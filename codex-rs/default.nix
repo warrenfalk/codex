@@ -21,6 +21,11 @@ rustPlatform.buildRustPackage (_: {
 
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
+    # cargoBuildHook overrides HOST_CC/CXX; use the AWS-LC-specific settings
+    # so its compiler probe agrees with the target compiler below.
+    AWS_LC_SYS_HOST_CC = "${llvmPackages.clang}/bin/clang";
+    AWS_LC_SYS_HOST_CXX = "${llvmPackages.clang}/bin/clang++";
+
     # rama-boring-sys honors target-specific CC/CXX vars (matches cc crate behavior).
     CC_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang";
     CXX_x86_64_unknown_linux_gnu = "${llvmPackages.clang}/bin/clang++";
