@@ -243,7 +243,7 @@ pub(super) async fn build_test_processor(
     mpsc::Receiver<crate::outgoing_message::OutgoingEnvelope>,
 ) {
     let (outgoing_tx, outgoing_rx) = mpsc::channel(16);
-    let config_manager = ConfigManager::new(
+    let mut config_manager = ConfigManager::new(
         config.codex_home.to_path_buf(),
         Vec::new(),
         LoaderOverrides::with_managed_config_path_for_tests(
@@ -254,6 +254,7 @@ pub(super) async fn build_test_processor(
         Arg0DispatchPaths::default(),
         Arc::new(codex_config::NoopThreadConfigLoader),
     );
+    config_manager.auto_thread_title_override = Some(config.auto_thread_title);
     let analytics_events_client =
         analytics_events_client_from_config(Arc::clone(&auth_manager), config.as_ref());
     let outgoing = Arc::new(OutgoingMessageSender::new(
