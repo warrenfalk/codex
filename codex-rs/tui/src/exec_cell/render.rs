@@ -9,6 +9,7 @@ use crate::exec_command::strip_bash_lc_and_escape;
 use crate::history_cell::ActivityDisclosure;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::HistoryRenderMode;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::plain_lines;
 use crate::motion::MotionMode;
 use crate::motion::ReducedMotionIndicator;
@@ -210,6 +211,10 @@ fn activity_marker(start_time: Option<Instant>, animations_enabled: bool) -> Spa
 }
 
 impl HistoryCell for ExecCell {
+    fn clean_transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.group.details.clean_transcript_hyperlink_lines(width)
+    }
+
     fn append_reasoning(&mut self, cell: Box<dyn HistoryCell>) -> Result<(), Box<dyn HistoryCell>> {
         if self.is_exploring_cell() {
             self.group.push_detail(std::sync::Arc::from(cell));
@@ -277,6 +282,10 @@ impl HistoryCell for ExecCell {
         } else {
             self.command_display_lines(width)
         }
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 
     fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
