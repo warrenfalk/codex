@@ -208,6 +208,8 @@ pub enum AskForApproval {
     #[ts(rename = "untrusted")]
     UnlessTrusted,
     OnRequest,
+    TrustSandbox,
+    TrustSandboxTimeout,
     #[experimental("askForApproval.granular")]
     Granular {
         sandbox_approval: bool,
@@ -226,6 +228,8 @@ impl AskForApproval {
         match self {
             AskForApproval::UnlessTrusted => CoreAskForApproval::UnlessTrusted,
             AskForApproval::OnRequest => CoreAskForApproval::OnRequest,
+            AskForApproval::TrustSandbox => CoreAskForApproval::TrustSandbox,
+            AskForApproval::TrustSandboxTimeout => CoreAskForApproval::TrustSandboxTimeout,
             AskForApproval::Granular {
                 sandbox_approval,
                 rules,
@@ -249,6 +253,8 @@ impl From<CoreAskForApproval> for AskForApproval {
         match value {
             CoreAskForApproval::UnlessTrusted => AskForApproval::UnlessTrusted,
             CoreAskForApproval::OnRequest => AskForApproval::OnRequest,
+            CoreAskForApproval::TrustSandbox => AskForApproval::TrustSandbox,
+            CoreAskForApproval::TrustSandboxTimeout => AskForApproval::TrustSandboxTimeout,
             CoreAskForApproval::Granular(granular_config) => AskForApproval::Granular {
                 sandbox_approval: granular_config.sandbox_approval,
                 rules: granular_config.rules,

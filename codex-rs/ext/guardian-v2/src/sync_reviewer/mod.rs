@@ -25,9 +25,8 @@ use codex_extension_api::TurnStopInput;
 use codex_guardian_reviewer::ReviewDenials;
 use codex_guardian_reviewer::ReviewerPool;
 use codex_guardian_reviewer::ReviewerTasks;
+use codex_guardian_reviewer::routes_approval_policy_to_guardian;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadSource;
@@ -163,11 +162,10 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
             if input.session_source.is_internal()
-                || !matches!(
+                || !routes_approval_policy_to_guardian(
                     input.config.permissions.approval_policy.value(),
-                    AskForApproval::OnRequest | AskForApproval::Granular(_)
+                    input.config.approvals_reviewer,
                 )
-                || input.config.approvals_reviewer != ApprovalsReviewer::AutoReview
             {
                 return;
             }

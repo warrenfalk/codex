@@ -26,6 +26,11 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 
+const APPROVAL_POLICY_TRUST_SANDBOX: &str =
+    include_str!("../templates/permissions/approval_policy/trust_sandbox.md");
+const APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT: &str =
+    include_str!("../templates/permissions/approval_policy/trust_sandbox_timeout.md");
+
 const REQUEST_PERMISSION_RULE: &str =
     include_str!("../templates/permissions/approval_policy/on_request_rule_request_permission.md");
 const REQUEST_PERMISSIONS_TOOL: &str = "# request_permissions Tool\n\nThe built-in `request_permissions` tool is available in this session. Invoke it when you need to request additional `network` or `file_system` permissions before later shell-like commands need them. Request only the specific permissions required for the task.";
@@ -297,6 +302,9 @@ fn approval_text(
             ApprovalsReviewer::User => messages.on_request,
             ApprovalsReviewer::AutoReview => messages.on_request_auto_review,
         },
+        AskForApproval::TrustSandbox | AskForApproval::TrustSandboxTimeout => {
+            ResolvedApprovalMessages::new(/*messages*/ None).on_request
+        }
         AskForApproval::Never => messages.never,
         AskForApproval::UnlessTrusted => messages.unless_trusted,
         AskForApproval::Granular(_) => ResolvedMessage::Bundled(GRANULAR_INTRO),
@@ -314,13 +322,20 @@ fn approval_text(
                 base.to_string()
             }
         }
-        AskForApproval::OnRequest => {
+        AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout => {
             let rule = if exec_permission_approvals_enabled {
                 REQUEST_PERMISSION_RULE
             } else {
                 base
             };
             let mut sections = vec![rule.to_string()];
+            if approval_policy == AskForApproval::TrustSandbox {
+                sections.push(APPROVAL_POLICY_TRUST_SANDBOX.to_string());
+            } else if approval_policy == AskForApproval::TrustSandboxTimeout {
+                sections.push(APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT.to_string());
+            }
             if request_permissions_tool_enabled {
                 sections.push(REQUEST_PERMISSIONS_TOOL.to_string());
             }

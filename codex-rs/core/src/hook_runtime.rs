@@ -1032,9 +1032,11 @@ fn hook_run_metric_tags(run: &HookRunSummary) -> [(&'static str, &'static str); 
 fn hook_permission_mode(approval_policy: AskForApproval) -> String {
     match approval_policy {
         AskForApproval::Never => "bypassPermissions",
-        AskForApproval::UnlessTrusted | AskForApproval::OnRequest | AskForApproval::Granular(_) => {
-            "default"
-        }
+        AskForApproval::UnlessTrusted
+        | AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
+        | AskForApproval::Granular(_) => "default",
     }
     .to_string()
 }
