@@ -45,6 +45,7 @@ mod state;
 mod strict_config;
 pub mod test_support;
 mod thread_config;
+mod tts;
 mod tui_effects;
 mod tui_keymap;
 mod tui_mouse_scroll;
