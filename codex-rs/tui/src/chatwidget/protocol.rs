@@ -353,6 +353,7 @@ impl ChatWidget {
                     self.on_realtime_conversation_closed(notification.reason);
                 }
             }
+            ServerNotification::ThreadReverted(_) => self.reset_notes(),
             ServerNotification::ServerRequestResolved(_)
             | ServerNotification::ServerRequestObserved(_)
             | ServerNotification::AccountUpdated(_)
@@ -362,7 +363,6 @@ impl ChatWidget {
             | ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadReadStateChanged(_)
             | ServerNotification::ThreadProjectEnvStatusChanged(_)
-            | ServerNotification::ThreadReverted(_)
             | ServerNotification::ThreadQueueChanged(_)
             | ServerNotification::ThreadPredictionUpdated(_)
             | ServerNotification::ThreadArchived(_)
