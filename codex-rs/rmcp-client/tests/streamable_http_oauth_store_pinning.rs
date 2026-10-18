@@ -1,6 +1,7 @@
 mod streamable_http_test_support;
 
 use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -110,22 +111,23 @@ impl HttpClient for RecordingHttpClient {
 
 #[derive(Debug, Default)]
 struct TestKeyringState {
-    secret: Mutex<Option<Vec<u8>>>,
+    secrets: Mutex<HashMap<(String, String), Vec<u8>>>,
     fail_reads: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
 struct TestCredential {
     state: Arc<TestKeyringState>,
+    key: (String, String),
 }
 
 impl CredentialApi for TestCredential {
     fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
-        *self
-            .state
-            .secret
+        self.state
+            .secrets
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(secret.to_vec());
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(self.key.clone(), secret.to_vec());
         Ok(())
     }
 
@@ -138,19 +140,20 @@ impl CredentialApi for TestCredential {
         }
 
         self.state
-            .secret
+            .secrets
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .get(&self.key)
+            .cloned()
             .ok_or(keyring::Error::NoEntry)
     }
 
     fn delete_credential(&self) -> keyring::Result<()> {
         self.state
-            .secret
+            .secrets
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
+            .remove(&self.key)
             .map(|_| ())
             .ok_or(keyring::Error::NoEntry)
     }
@@ -169,11 +172,12 @@ impl CredentialBuilderApi for TestCredentialBuilder {
     fn build(
         &self,
         _target: Option<&str>,
-        _service: &str,
-        _user: &str,
+        service: &str,
+        user: &str,
     ) -> keyring::Result<Box<Credential>> {
         Ok(Box::new(TestCredential {
             state: Arc::clone(&self.state),
+            key: (service.to_string(), user.to_string()),
         }))
     }
 
