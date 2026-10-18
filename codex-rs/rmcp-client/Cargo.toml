@@ -102,6 +102,7 @@ ignored-paths = [
     "src/oauth/tests/persistor_tests.rs",
     "src/oauth/tests/credential_store_tests.rs",
     "src/oauth/tests/telemetry_tests.rs",
+    "src/oauth/tests/key_compatibility_tests.rs",
 ]
 
 [lib]

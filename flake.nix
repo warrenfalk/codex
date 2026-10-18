@@ -51,6 +51,9 @@
               rustc = rustToolchain;
             };
           };
+          codex-app-server-unwrapped = pkgs.callPackage ./nix/app-server.nix {
+            inherit codex-rs-unwrapped;
+          };
           # Keep a deliberately small, manifest-driven toolbelt in the package
           # closure so the packaged CLI has a predictable baseline PATH.
           bundledShellToolNames =
@@ -120,11 +123,21 @@
                 --prefix PATH : "${pkgs.lib.makeBinPath [ bundledShellToolbelt ]}"
             '';
           };
+          codex-app-server = pkgs.symlinkJoin {
+            name = "codex-app-server-${codex-app-server-unwrapped.version}";
+            paths = [ codex-app-server-unwrapped ];
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram "$out/bin/codex-app-server" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [ bundledShellToolbelt ]}"
+            '';
+          };
         in
         {
           codex = codex;
           codex-rs = codex;
           codex-rs-unwrapped = codex-rs-unwrapped;
+          inherit codex-app-server codex-app-server-unwrapped;
           default = codex;
         }
       );
