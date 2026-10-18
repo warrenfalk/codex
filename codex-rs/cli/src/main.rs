@@ -35,6 +35,7 @@ use codex_state::StateRuntime;
 use codex_tui::AppExitInfo;
 use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
+use codex_tui::LastSessionScope;
 use codex_tui::UpdateAction;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
@@ -376,19 +377,23 @@ struct DebugTraceReduceCommand {
 #[derive(Debug, Parser)]
 struct ResumeCommand {
     /// Session id (UUID) or session name. UUIDs take precedence if it parses.
-    /// If omitted, use --last to pick the most recent recorded session.
+    /// If omitted, use --last or --last-for-repo to pick the most recent eligible session.
     #[arg(value_name = "SESSION_ID")]
     session_id: Option<String>,
 
-    /// Continue the most recent session without showing the picker.
+    /// Continue the most recent session in the current directory without showing the picker.
     #[arg(long = "last", default_value_t = false)]
     last: bool,
+
+    /// Continue the most recent session in the corresponding directory across this repo's worktrees.
+    #[arg(long, conflicts_with_all = ["last", "all", "prompt"])]
+    last_for_repo: bool,
 
     /// Show all sessions (disables cwd filtering and shows CWD column).
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
-    /// Include non-interactive sessions in the resume picker and --last selection.
+    /// Include non-interactive sessions in the resume picker and latest-session selection.
     #[arg(long = "include-non-interactive", default_value_t = false)]
     include_non_interactive: bool,
 
@@ -1688,6 +1693,7 @@ async fn cli_main(
         Some(Subcommand::Resume(ResumeCommand {
             session_id,
             last,
+            last_for_repo,
             all,
             include_non_interactive,
             remote,
@@ -1698,7 +1704,11 @@ async fn cli_main(
                 interactive,
                 root_config_overrides.clone(),
                 session_id,
-                last,
+                if last_for_repo {
+                    Some(LastSessionScope::Repo)
+                } else {
+                    last.then_some(LastSessionScope::Cwd)
+                },
                 all,
                 include_non_interactive,
                 config_overrides,
@@ -2887,22 +2897,22 @@ fn finalize_resume_interactive(
     mut interactive: TuiCli,
     root_config_overrides: CliConfigOverrides,
     session_id: Option<String>,
-    last: bool,
+    last: Option<LastSessionScope>,
     show_all: bool,
     include_non_interactive: bool,
     mut resume_cli: TuiCli,
 ) -> TuiCli {
     // Start with the parsed interactive CLI so resume shares the same
     // configuration surface area as `codex` without additional flags.
-    // Clap assigns the first positional to `session_id`. With `--last`, reinterpret it as the
-    // prompt when no second positional prompt was provided.
-    let resume_session_id = if last && resume_cli.prompt.is_none() {
+    // Clap assigns the first positional to `session_id`. With either latest-session flag,
+    // reinterpret it as the prompt when no second positional prompt was provided.
+    let resume_session_id = if last.is_some() && resume_cli.prompt.is_none() {
         resume_cli.prompt = session_id;
         None
     } else {
         session_id
     };
-    interactive.resume_picker = resume_session_id.is_none() && !last;
+    interactive.resume_picker = resume_session_id.is_none() && last.is_none();
     interactive.resume_last = last;
     interactive.resume_session_id = resume_session_id;
     interactive.resume_show_all = show_all;
@@ -3023,6 +3033,10 @@ fn print_completion(cmd: CompletionCommand) {
     let name = "codex";
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
 }
+
+#[cfg(test)]
+#[path = "resume_scope_tests.rs"]
+mod resume_scope_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3230,7 +3244,7 @@ enabled = true
         );
     }
 
-    fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
+    pub(super) fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             mut interactive,
@@ -3246,6 +3260,7 @@ enabled = true
         let Subcommand::Resume(ResumeCommand {
             session_id,
             last,
+            last_for_repo,
             all,
             include_non_interactive,
             remote: _,
@@ -3260,7 +3275,11 @@ enabled = true
             interactive,
             root_overrides,
             session_id,
-            last,
+            if last_for_repo {
+                Some(LastSessionScope::Repo)
+            } else {
+                last.then_some(LastSessionScope::Cwd)
+            },
             all,
             include_non_interactive,
             resume_cli,
@@ -4277,7 +4296,7 @@ enabled = true
 
         assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
         assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id, None);
     }
 
@@ -4312,7 +4331,7 @@ enabled = true
     fn resume_picker_logic_none_and_not_last() {
         let interactive = finalize_resume_from_args(["codex", "resume"].as_ref());
         assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id, None);
         assert!(!interactive.resume_show_all);
     }
@@ -4321,7 +4340,7 @@ enabled = true
     fn resume_picker_logic_last() {
         let interactive = finalize_resume_from_args(["codex", "resume", "--last"].as_ref());
         assert!(!interactive.resume_picker);
-        assert!(interactive.resume_last);
+        assert_eq!(interactive.resume_last, Some(LastSessionScope::Cwd));
         assert_eq!(interactive.resume_session_id, None);
         assert!(!interactive.resume_show_all);
     }
@@ -4333,7 +4352,7 @@ enabled = true
         );
 
         assert!(!interactive.resume_picker);
-        assert!(interactive.resume_last);
+        assert_eq!(interactive.resume_last, Some(LastSessionScope::Cwd));
         assert_eq!(interactive.resume_session_id, None);
         assert_eq!(
             interactive.prompt.as_deref(),
@@ -4354,7 +4373,7 @@ enabled = true
     fn resume_picker_logic_with_session_id() {
         let interactive = finalize_resume_from_args(["codex", "resume", "1234"].as_ref());
         assert!(!interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("1234"));
         assert!(!interactive.resume_show_all);
     }
@@ -4365,7 +4384,7 @@ enabled = true
             finalize_resume_from_args(["codex", "resume", "1234", "continue here"].as_ref());
 
         assert!(!interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("1234"));
         assert_eq!(interactive.prompt.as_deref(), Some("continue here"));
     }
@@ -4439,7 +4458,7 @@ enabled = true
             .any(|p| p == std::path::Path::new("/tmp/b.png"));
         assert!(has_a && has_b);
         assert!(!interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
     }
 
@@ -4455,7 +4474,7 @@ enabled = true
         );
         assert!(interactive.dangerously_bypass_approvals_and_sandbox);
         assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id, None);
     }
 
@@ -4467,7 +4486,7 @@ enabled = true
 
         assert!(interactive.bypass_hook_trust);
         assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_last, None);
         assert_eq!(interactive.resume_session_id, None);
     }
 
