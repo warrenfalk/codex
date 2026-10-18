@@ -30,6 +30,7 @@ pub(crate) enum ResponsesStreamRequest {
 }
 
 pub(crate) struct ResponsesStreamRetryState {
+    capacity: crate::capacity_retry::CapacityRetryState,
     retries: u64,
     connection_retries: u64,
     connection_retry_delay: Duration,
@@ -38,6 +39,7 @@ pub(crate) struct ResponsesStreamRetryState {
 impl Default for ResponsesStreamRetryState {
     fn default() -> Self {
         Self {
+            capacity: Default::default(),
             retries: 0,
             connection_retries: 0,
             connection_retry_delay: INITIAL_CONNECTION_RETRY_DELAY,
@@ -64,6 +66,11 @@ pub(crate) async fn handle_response_stream_error(
     request: ResponsesStreamRequest,
 ) -> Result<(), CodexErr> {
     let turn_context = &step_context.turn;
+    if matches!(err.details(), CodexErrorDetails::ServerOverloaded) {
+        retry_state.capacity.wait(sess, turn_context, &err).await;
+        return Ok(());
+    }
+    retry_state.capacity = Default::default();
     if matches!(request, ResponsesStreamRequest::Sampling)
         && matches!(err.details(), CodexErrorDetails::ContentFilter)
     {

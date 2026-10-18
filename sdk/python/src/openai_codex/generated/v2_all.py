@@ -3079,6 +3079,15 @@ class ModelAvailabilityNux(BaseModel):
     message: str
 
 
+class ModelCapacityWarningNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    message: str
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
 class ModelListParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -5144,6 +5153,23 @@ class GuardianWarningServerNotification(BaseModel):
     ] = None
     method: Annotated[Literal["guardianWarning"], Field(title="GuardianWarningNotificationMethod")]
     params: GuardianWarningNotification
+
+
+class ModelCapacityWarningServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["model/capacityWarning"], Field(title="Model/capacityWarningNotificationMethod")
+    ]
+    params: ModelCapacityWarningNotification
 
 
 class DeprecationNoticeServerNotification(BaseModel):
@@ -14319,6 +14345,7 @@ class ServerNotification(
         | ModelSafetyBufferingUpdatedServerNotification
         | WarningServerNotification
         | GuardianWarningServerNotification
+        | ModelCapacityWarningServerNotification
         | DeprecationNoticeServerNotification
         | ConfigWarningServerNotification
         | FuzzyFileSearchSessionUpdatedServerNotification
@@ -14412,6 +14439,7 @@ class ServerNotification(
         | ModelSafetyBufferingUpdatedServerNotification
         | WarningServerNotification
         | GuardianWarningServerNotification
+        | ModelCapacityWarningServerNotification
         | DeprecationNoticeServerNotification
         | ConfigWarningServerNotification
         | FuzzyFileSearchSessionUpdatedServerNotification
