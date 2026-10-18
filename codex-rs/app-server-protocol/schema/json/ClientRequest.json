@@ -5762,6 +5762,22 @@
       ],
       "type": "object"
     },
+    "ThreadUnreadSetParams": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "unread": {
+          "description": "Set unread explicitly, or acknowledge it. Acknowledgement is ignored during an active turn, including a turn waiting for approval or input. Ignored attempts are never deferred.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "threadId",
+        "unread"
+      ],
+      "type": "object"
+    },
     "ThreadUnsubscribeParams": {
       "properties": {
         "threadId": {
@@ -6503,6 +6519,30 @@
         "params"
       ],
       "title": "Thread/name/setRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/unread/set"
+          ],
+          "title": "Thread/unread/setRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadUnreadSetParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/unread/setRequest",
       "type": "object"
     },
     {

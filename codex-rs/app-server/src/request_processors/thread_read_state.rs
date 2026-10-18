@@ -3,7 +3,6 @@
 use super::*;
 use crate::error_code::method_not_found;
 use codex_app_server_protocol::ThreadReadState;
-use codex_app_server_protocol::ThreadReadStateChangedNotification;
 use codex_app_server_protocol::ThreadReadStateOperation;
 use codex_app_server_protocol::ThreadReadStateUpdateParams;
 use codex_app_server_protocol::ThreadReadStateUpdateResponse;
@@ -11,22 +10,13 @@ use codex_app_server_protocol::ThreadUnreadPosition;
 use codex_state::ReadStateOperation;
 use codex_state::ReadStateUpdate;
 
-// These scopes have product notification policy the local server cannot resolve.
-// Do not advertise read state for them until their policy reaches this publisher.
+// Fork acknowledgement is available for every durable session, including subagents.
+// Terminal publication below retains its separate notification policy.
 fn eligible(thread: &Thread) -> bool {
     !thread.ephemeral
-        && !matches!(
-            thread.source,
-            codex_app_server_protocol::SessionSource::SubAgent(_)
-                | codex_app_server_protocol::SessionSource::Unknown
-        )
-        && matches!(
-            thread.thread_source,
-            None | Some(codex_app_server_protocol::ThreadSource::User)
-        )
 }
 
-fn to_api(state: codex_state::ThreadReadState) -> ThreadReadState {
+pub(crate) fn to_api(state: codex_state::ThreadReadState) -> ThreadReadState {
     ThreadReadState {
         first_unread: state.first_unread_turn.map(|turn_id| {
             if turn_id.is_empty() {
@@ -66,22 +56,15 @@ pub(super) async fn snapshots(
 
 pub(super) async fn notify(
     db: &StateDbHandle,
-    manager: &ThreadStateManager,
     outgoing: &Arc<OutgoingMessageSender>,
     id: ThreadId,
 ) {
     match db.thread_read_states(&[id]).await {
         Ok(mut states) => {
             if let Some(state) = states.remove(&id) {
-                let subscribers = manager.subscribed_connection_ids(id).await;
-                ThreadScopedOutgoingMessageSender::new(Arc::clone(outgoing), subscribers, id)
-                    .send_server_notification(ServerNotification::ThreadReadStateChanged(
-                        ThreadReadStateChangedNotification {
-                            thread_id: id.to_string(),
-                            read_state: to_api(state),
-                        },
-                    ))
-                    .await;
+                for notification in crate::thread_unread::receipt_notifications(id, to_api(state)) {
+                    outgoing.send_server_notification(notification).await;
+                }
             }
         }
         Err(err) => tracing::warn!("could not project committed read state: {err}"),
@@ -174,13 +157,30 @@ impl ThreadRequestProcessor {
             ThreadReadStateOperation::Read => ReadStateOperation::Read,
             ThreadReadStateOperation::Unread => ReadStateOperation::Unread,
         };
+        let (_guards, active) = self.lock_thread_acknowledgement(id).await?;
+        if matches!(&operation, ReadStateOperation::Read) && active {
+            let current = db
+                .thread_read_states(&[id])
+                .await
+                .map_err(|error| {
+                    internal_error(format!("failed to read acknowledgement state: {error}"))
+                })?
+                .remove(&id)
+                .ok_or_else(|| invalid_request("thread read state unavailable"))?;
+            return Ok(Some(
+                ThreadReadStateUpdateResponse {
+                    read_state: to_api(current),
+                }
+                .into(),
+            ));
+        }
         let outcome = db
             .update_thread_read_state(id, &params.expected_revision, operation)
             .await
             .map_err(|err| internal_error(format!("read state was not saved: {err}")))?;
         match outcome {
             ReadStateUpdate::Applied(state) => {
-                notify(db, &self.thread_state_manager, &self.outgoing, id).await;
+                notify(db, &self.outgoing, id).await;
                 Ok(Some(
                     ThreadReadStateUpdateResponse {
                         read_state: to_api(state),

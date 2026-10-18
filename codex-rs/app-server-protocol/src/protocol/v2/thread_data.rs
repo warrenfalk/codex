@@ -258,6 +258,10 @@ pub struct Thread {
     pub recency_at: Option<i64>,
     /// Current runtime status for the thread.
     pub status: ThreadStatus,
+    /// Persistent acknowledgement state. New user prompts set this even while the thread is active.
+    /// Runtime stops and turn completion do not change it.
+    #[serde(default)]
+    pub unread: bool,
     /// [UNSTABLE] Path to the thread on disk.
     pub path: Option<PathBuf>,
     /// Working directory captured for the thread.
@@ -322,6 +326,8 @@ struct ThreadCompatibility {
     updated_at: i64,
     recency_at: Option<i64>,
     status: ThreadStatus,
+    #[serde(default)]
+    unread: bool,
     path: Option<PathBuf>,
     cwd: AbsolutePathBuf,
     cli_version: String,
@@ -363,6 +369,7 @@ impl<'de> Deserialize<'de> for Thread {
             updated_at: thread.updated_at,
             recency_at: thread.recency_at,
             status: thread.status,
+            unread: thread.unread,
             path: thread.path,
             cwd: thread.cwd,
             cli_version: thread.cli_version,

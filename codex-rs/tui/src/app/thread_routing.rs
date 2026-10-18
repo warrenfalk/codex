@@ -131,6 +131,7 @@ impl App {
     }
 
     pub(super) async fn clear_active_thread(&mut self) {
+        self.pending_focus_ack = None;
         if let Some(active_id) = self.active_thread_id.take() {
             self.set_thread_active(active_id, /*active*/ false).await;
         }

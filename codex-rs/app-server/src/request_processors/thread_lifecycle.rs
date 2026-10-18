@@ -396,8 +396,7 @@ pub(super) async fn ensure_listener_task_running(
                         ).await
                     {
                         super::thread_read_state::notify(
-                            &db, &thread_state_manager,
-                            &outgoing_for_task, conversation_id,
+                            &db, &outgoing_for_task, conversation_id,
                         ).await;
                     }
                     apply_bespoke_event_handling(

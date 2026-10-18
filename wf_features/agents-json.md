@@ -58,15 +58,16 @@ Each session contains:
 | `createdAt`, `updatedAt`, `recencyAt` | Root Unix timestamps in seconds; recency can be null. |
 | `gitInfo` | Nullable recorded Git metadata, including branch. |
 | `project` | Dashboard group `key` (two strings) and display `heading`. Local worktree grouping follows the feature setting; otherwise the key is `[cwd, ""]` and heading is cwd. |
-| `status` | Exclusive dashboard group: `needsInput`, `working`, `ready`, or `finished`, in that priority order across the family. |
+| `status` | Exclusive dashboard group: `needsInput`, `unread`, `working`, `ready`, or `finished`, in that display priority order. Unread applies only when the root is unread and no family member is active. |
 | `rootStatus` | Root runtime status object, including active flags; distinguishes the root's state from descendant activity. |
 | `loaded` | At least one family member is loaded. |
 | `working` | At least one member is active without approval or user-input blockers. |
-| `attention` | Unique reasons across the family, in order: `approval`, `userInput`, `error`. |
+| `unread` | Root persistent acknowledgement flag, including while work is active. |
+| `attention` | Unique reasons across the family, in order: `approval`, `userInput`, `error`, `unread`. Unread is included only for the stopped unread group. |
 
 Working and attention are independent: one working child and one blocked child
 contribute to both counts. `ready` means there is an idle member with no higher
-priority status; `finished` means every observed member is unloaded.
+priority status; `finished` means every observed member is unloaded and the root is acknowledged.
 
 These fields let consumers render an analogous top-level list with title/search,
 project headings and counts, status labels and symbols, and ordering. To reproduce

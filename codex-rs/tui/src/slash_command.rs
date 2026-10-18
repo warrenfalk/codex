@@ -31,6 +31,8 @@ pub enum SlashCommand {
     Rename,
     New,
     Archive,
+    Ack,
+    Unread,
     Delete,
     Resume,
     Fork,
@@ -107,6 +109,8 @@ impl SlashCommand {
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
             SlashCommand::Archive => "archive the chat: /archive [new|exit]",
+            SlashCommand::Ack => "acknowledge this session (ignored while working)",
+            SlashCommand::Unread => "mark this session unread",
             SlashCommand::Delete => "permanently delete this session",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
@@ -244,6 +248,8 @@ impl SlashCommand {
                 | SlashCommand::Status
                 | SlashCommand::Warnings
                 | SlashCommand::DebugConfig
+                | SlashCommand::Ack
+                | SlashCommand::Unread
                 | SlashCommand::Pwd
                 | SlashCommand::Rollout
                 | SlashCommand::Copy
@@ -279,6 +285,8 @@ impl SlashCommand {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
+            | SlashCommand::Ack
+            | SlashCommand::Unread
             | SlashCommand::Resume
             | SlashCommand::Model
             | SlashCommand::Daybreak

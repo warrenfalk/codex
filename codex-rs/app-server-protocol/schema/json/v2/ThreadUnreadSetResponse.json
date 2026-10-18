@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "unread": {
+      "description": "Authoritative unread state after applying or ignoring the request.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "unread"
+  ],
+  "title": "ThreadUnreadSetResponse",
+  "type": "object"
+}

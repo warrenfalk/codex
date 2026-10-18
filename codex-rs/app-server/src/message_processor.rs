@@ -1473,6 +1473,9 @@ impl MessageProcessor {
             ClientRequest::ThreadMetadataUpdate { params, .. } => {
                 self.thread_processor.thread_metadata_update(params).await
             }
+            ClientRequest::ThreadUnreadSet { params, .. } => {
+                self.thread_processor.thread_unread_set(params).await
+            }
             ClientRequest::ThreadAttachmentAdd { params, .. } => {
                 self.thread_processor
                     .thread_attachment_add(request_id.clone(), params)

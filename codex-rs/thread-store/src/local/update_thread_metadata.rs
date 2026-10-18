@@ -637,6 +637,15 @@ async fn apply_metadata_update(
                     ),
                 });
             }
+            if let Some(unread) = patch.unread
+                && !state_db.set_thread_unread(thread_id, unread).await.map_err(|err| ThreadStoreError::Internal {
+                    message: format!("failed to update unread state for {thread_id}: {err}"),
+                })?
+            {
+                return Err(ThreadStoreError::Internal {
+                    message: format!("thread metadata unavailable before unread update: {thread_id}"),
+                });
+            }
             Ok(())
         }
         .await
@@ -756,6 +765,7 @@ fn sqlite_write_failure_should_block(patch: &ThreadMetadataPatch) -> bool {
     // require SQLite because those preferences only exist in the state database.
     patch.project_id.is_some()
         || patch.daybreak_enabled.is_some()
+        || patch.unread.is_some()
         || (patch.git_info.is_some() && !has_observed_metadata_facts(patch))
 }
 

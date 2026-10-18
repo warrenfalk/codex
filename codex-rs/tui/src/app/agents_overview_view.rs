@@ -31,6 +31,8 @@ use crate::keymap::ListAction;
 use crate::keymap::ListKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::render::renderable::Renderable;
+use crate::style::StatusTone;
+use crate::style::status_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
@@ -67,6 +69,7 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum AgentsOverviewGroup {
     NeedsYou,
+    Unread,
     Working,
     Ready,
     Finished,
@@ -91,6 +94,7 @@ impl AgentsOverviewGroup {
     fn label(self) -> &'static str {
         match self {
             Self::NeedsYou => "Needs input",
+            Self::Unread => "Unread",
             Self::Working => "Working",
             Self::Ready => "Ready",
             Self::Finished => "Inactive",
@@ -415,6 +419,10 @@ impl AgentsOverviewView {
                 ("Error", "!".red())
             }
             AgentsOverviewGroup::NeedsYou => ("Needs input", "●".red()),
+            AgentsOverviewGroup::Unread => (
+                "Unread",
+                Span::styled("●", status_style(StatusTone::Attention)),
+            ),
             AgentsOverviewGroup::Working => ("Working", "●".green()),
             AgentsOverviewGroup::Ready => ("Ready", "○".cyan()),
             AgentsOverviewGroup::Finished => ("Inactive", "○".dim()),

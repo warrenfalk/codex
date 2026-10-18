@@ -219,7 +219,10 @@ async fn live_center_stable_order_preserves_filters_and_pins() {
     threads[1].updated_at += 200;
     view = app.agents_overview_view(threads.clone(), /*selected_thread_id*/ None);
     view.handle_key_event(KeyCode::Tab.into());
+    assert!(rendered_titles(&view).is_empty());
+    view.handle_key_event(KeyCode::Tab.into());
     assert_eq!(rendered_titles(&view), vec!["Alpha", "Bravo", "Charlie"]);
+    view.handle_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     view.handle_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     view.handle_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     app.agents_overview.pinned_thread_ids = Some(vec![ids[2], ids[0]]);
@@ -447,7 +450,7 @@ async fn live_center_rename_retains_target_when_status_leaves_filter() -> Result
         let mut view = app.agents_overview_view(threads.clone(), Some(id));
         // Reuse the Ready tab after the first iteration.
         if key == KeyCode::Esc {
-            for _ in 0..3 {
+            for _ in 0..4 {
                 view.handle_key_event(KeyCode::Tab.into());
             }
         }

@@ -155,6 +155,8 @@ pub(crate) async fn apply_bespoke_event_handling(
     } = event;
     match msg {
         EventMsg::TurnStarted(payload) => {
+            let unread_lock = thread_state.lock().await.unread_lock.clone();
+            let _unread_guard = unread_lock.lock_owned().await;
             // While not technically necessary as it was already done on TurnComplete, be extra cautios and abort any pending server requests.
             outgoing.abort_pending_server_requests().await;
             thread_watch_manager
@@ -1090,6 +1092,31 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         EventMsg::ViewImageToolCall(_) => {}
         EventMsg::ItemStarted(event) => {
+            if matches!(&event.item, CoreTurnItem::UserMessage(_))
+                && !conversation.config_snapshot().await.ephemeral
+            {
+                let unread_lock = thread_state.lock().await.unread_lock.clone();
+                let _unread_guard = unread_lock.lock_owned().await;
+                match crate::thread_unread::mark_thread_input_unread(
+                    &conversation,
+                    conversation_id,
+                    &event_turn_id,
+                )
+                .await
+                {
+                    Ok(Some(state)) => {
+                        for notification in
+                            crate::thread_unread::receipt_notifications(conversation_id, state)
+                        {
+                            outgoing.send_global_server_notification(notification).await;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::error!(?error, "failed to mark accepted user input unread")
+                    }
+                }
+            }
             let should_emit = match &event.item {
                 // Approval and guardian flows can emit the command start notification before core
                 // emits the canonical item. Reuse the same set to suppress that duplicate.

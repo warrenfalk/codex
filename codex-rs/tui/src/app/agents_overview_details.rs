@@ -149,7 +149,9 @@ impl App {
                             .and_then(|activity| activity.reasoning.as_ref())
                             .is_some_and(|reasoning| reasoning.header.is_some())
                 }
-                AgentsOverviewGroup::Ready | AgentsOverviewGroup::Finished => false,
+                AgentsOverviewGroup::Unread
+                | AgentsOverviewGroup::Ready
+                | AgentsOverviewGroup::Finished => false,
             });
             (group, !has_detail)
         };

@@ -75,6 +75,7 @@ pub(super) async fn read_thread(
             }
             rollout_thread.project_id = thread.project_id;
             rollout_thread.daybreak_enabled = thread.daybreak_enabled;
+            rollout_thread.unread = thread.unread;
             rollout_thread.model = thread.model;
             rollout_thread.reasoning_effort = thread.reasoning_effort;
             rollout_thread.git_info = thread.git_info;
@@ -103,6 +104,7 @@ pub(super) async fn read_thread(
 
     let mut thread = read_thread_from_rollout_path(store, path).await?;
     thread.daybreak_enabled = daybreak_enabled;
+    super::helpers::resolve_thread_unread(store, std::slice::from_mut(&mut thread)).await;
     if let Some((model, reasoning_effort)) = persisted_model_settings {
         thread.model = model;
         thread.reasoning_effort = reasoning_effort;
@@ -189,6 +191,7 @@ pub(super) async fn read_thread_by_rollout_path(
     }
     reject_paginated_history(&thread, include_history)?;
     attach_history_if_requested(&mut thread, include_history).await?;
+    super::helpers::resolve_thread_unread(store, std::slice::from_mut(&mut thread)).await;
     Ok(thread)
 }
 
@@ -373,6 +376,7 @@ pub(super) async fn stored_thread_from_sqlite_metadata(
     thread.forked_from_id = forked_from_id;
     thread.history_mode = history_mode;
     thread.name = name;
+    super::helpers::resolve_thread_unread(store, std::slice::from_mut(&mut thread)).await;
     Ok(thread)
 }
 
@@ -417,6 +421,7 @@ pub(super) fn stored_thread_from_state_metadata(
         section_entered_at: metadata.section_entered_at,
         project_id: metadata.project_id,
         daybreak_enabled: metadata.daybreak_enabled,
+        unread: false,
         cwd: metadata.cwd,
         cli_version: metadata.cli_version,
         originator: metadata.originator,
@@ -524,6 +529,7 @@ fn stored_thread_from_meta_line(
         section_entered_at: None,
         project_id: None,
         daybreak_enabled: None,
+        unread: false,
         cwd: meta_line.meta.cwd,
         cli_version: meta_line.meta.cli_version,
         originator: (!meta_line.meta.originator.is_empty()).then_some(meta_line.meta.originator),

@@ -4,7 +4,7 @@ assertion_line: 328
 expression: "screen(&view, width, height)"
 ---
   Agent command center  Group: Project  g
-   All 3   Needs you 1   Working 0   Ready 1   Inactive 1                          tab/⇧tab filter
+   All 3   Needs you 1   Unread 0   Working 0   Ready 1   Inactive 1               tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
   Task shortcuts
 

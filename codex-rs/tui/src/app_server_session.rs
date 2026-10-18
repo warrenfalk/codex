@@ -17,6 +17,7 @@ mod rollout_history;
 mod side_conversation;
 mod startup_launch;
 mod thread_list;
+mod thread_unread;
 mod web_search;
 
 #[cfg(test)]
@@ -4215,6 +4216,7 @@ mod tests {
                 section_entered_at: None,
                 project_id: None,
                 daybreak_enabled: None,
+                unread: false,
                 history_mode: Default::default(),
                 model_provider: "openai".to_string(),
                 model: None,

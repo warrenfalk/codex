@@ -624,6 +624,7 @@ fn sample_thread_archive_request() -> ClientRequest {
 
 fn sample_thread(thread_id: &str) -> Thread {
     Thread {
+        unread: false,
         originator: None,
         environments: None,
         id: thread_id.to_string(),

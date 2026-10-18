@@ -211,6 +211,7 @@ impl App {
         if matches!(self.app_server_target, AppServerTarget::Embedded) {
             return false;
         }
+        self.pending_focus_ack = None;
         if !self.reconnect.offline {
             #[cfg(target_os = "windows")]
             if self.windows_sandbox_setup_is_local()

@@ -6006,6 +6006,11 @@
           },
           "type": "array"
         },
+        "unread": {
+          "default": false,
+          "description": "Persistent acknowledgement state. New user prompts set this even while the thread is active. Runtime stops and turn completion do not change it.",
+          "type": "boolean"
+        },
         "updatedAt": {
           "description": "Unix timestamp (in seconds) when the thread was last updated.",
           "format": "int64",
@@ -8080,6 +8085,21 @@
       ],
       "type": "object"
     },
+    "ThreadUnreadChangedNotification": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        },
+        "unread": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "threadId",
+        "unread"
+      ],
+      "type": "object"
+    },
     "ThreadUnreadPosition": {
       "oneOf": [
         {
@@ -8978,6 +8998,26 @@
         "params"
       ],
       "title": "Thread/readState/changedNotification",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "method": {
+          "enum": [
+            "thread/unread/changed"
+          ],
+          "title": "Thread/unread/changedNotificationMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadUnreadChangedNotification"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "title": "Thread/unread/changedNotification",
       "type": "object"
     },
     {
