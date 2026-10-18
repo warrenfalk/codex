@@ -115,7 +115,9 @@ async fn worktree_start_and_fork_use_host_pool_and_preserve_legacy_resume() -> a
     legacy_manager.bind_thread(&legacy.root, &legacy_id)?;
     fs::write(source.join("AGENTS.md"), "uncommitted source instructions")?;
     fs::create_dir(source.join(".codex"))?;
-    fs::write(source.join(".codex/config.toml"), "[invalid source config")?;
+    // Main-checkout MCP inheritance parses this file, but unrelated settings
+    // must stay excluded even when they would fail config deserialization.
+    fs::write(source.join(".codex/config.toml"), "model = 42\n")?;
 
     let launcher = tempfile::tempdir()?;
     fs::create_dir(launcher.path().join("extra"))?;
