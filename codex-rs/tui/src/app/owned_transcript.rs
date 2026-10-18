@@ -685,7 +685,7 @@ impl App {
         ) {
             self.transcript_view.show_copy_feedback(&result, characters);
         } else if let ViewAction::OpenLink(url) = action {
-            self.open_url_in_browser(url);
+            super::desktop_links::open(url, self.app_event_tx.clone());
         }
         self.request_owned_history(tui, app_server);
         tui.frame_requester().schedule_frame();
