@@ -5105,47 +5105,23 @@ fn agent_picker_item_name_snapshot() {
 }
 
 #[tokio::test]
-async fn side_fork_config_is_ephemeral_and_appends_developer_guardrails() {
+async fn side_fork_config_persists_and_preserves_parent_policy() {
     let app = make_test_app().await;
     let original_approval_policy = app.config.permissions.approval_policy.value();
     let original_sandbox_policy = app.config.legacy_sandbox_policy();
 
     let fork_config = app.side_fork_config();
 
-    assert!(fork_config.ephemeral);
+    assert!(!fork_config.ephemeral);
     assert_eq!(
         fork_config.permissions.approval_policy.value(),
         original_approval_policy
     );
     assert_eq!(fork_config.legacy_sandbox_policy(), original_sandbox_policy);
-    let developer_instructions = fork_config
-        .developer_instructions
-        .as_deref()
-        .expect("side developer instructions");
-    assert!(
-        developer_instructions.contains("You are in a side conversation, not the main thread.")
+    assert_eq!(
+        fork_config.developer_instructions,
+        app.chat_widget.config_ref().developer_instructions
     );
-    assert!(
-        developer_instructions
-            .contains("inherited fork history is provided only as reference context")
-    );
-    assert!(
-        developer_instructions.contains(
-            "Only instructions submitted after the side-conversation boundary are active"
-        )
-    );
-    assert!(developer_instructions.contains("Do not continue, execute, or complete any task"));
-    assert!(
-        developer_instructions
-            .contains("External tools may be available according to this thread's current")
-    );
-    assert!(
-        developer_instructions
-            .contains("Any MCP or external tool calls or outputs visible in the inherited")
-    );
-    assert!(developer_instructions.contains("non-mutating inspection"));
-    assert!(developer_instructions.contains("Do not modify files"));
-    assert!(developer_instructions.contains("Do not request escalated permissions"));
     assert!(app.transcript_cells.is_empty());
 }
 
@@ -6034,35 +6010,6 @@ async fn side_restore_user_message_puts_inline_question_back_in_composer() {
 }
 
 #[tokio::test]
-async fn side_discard_selection_only_closes_the_active_side() {
-    let mut app = make_test_app().await;
-    let parent_thread_id = ThreadId::new();
-    let side_thread_id = ThreadId::new();
-    app.active_thread_id = Some(side_thread_id);
-    app.side_threads
-        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
-
-    assert_eq!(
-        app.side_thread_to_discard_after_switch(side_thread_id),
-        None
-    );
-    assert_eq!(
-        app.side_thread_to_discard_after_switch(parent_thread_id),
-        Some(side_thread_id)
-    );
-
-    app.active_thread_id = Some(parent_thread_id);
-    assert_eq!(
-        app.side_thread_to_discard_after_switch(ThreadId::new()),
-        None
-    );
-    assert_eq!(
-        app.side_thread_to_discard_after_switch(side_thread_id),
-        None
-    );
-}
-
-#[tokio::test]
 async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
     Box::pin(async {
         let mut app = make_test_app().await;
@@ -6130,12 +6077,16 @@ async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Resu
 }
 
 #[tokio::test]
-async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -> Result<()> {
+async fn side_cleanup_removes_local_state_and_ignores_late_events() -> Result<()> {
     let (mut app, mut events, _ops) = make_test_app_with_channels().await;
     let mut app_server =
         crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
     let parent_thread_id = ThreadId::new();
-    let side_thread_id = ThreadId::new();
+    let side_thread_id = app_server
+        .start_thread(&app.side_fork_config())
+        .await?
+        .session
+        .thread_id;
     app.active_thread_id = Some(parent_thread_id);
     app.side_threads
         .insert(side_thread_id, SideThreadState::new(parent_thread_id));
@@ -6154,8 +6105,10 @@ async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -
             tokio::spawn(std::future::pending::<()>()),
         ),
     );
-    app.discard_side_thread_in_background(&mut app_server, side_thread_id)
-        .await;
+    assert!(
+        app.discard_side_thread(&mut app_server, side_thread_id)
+            .await
+    );
 
     assert_matches!(
         events.try_recv(),

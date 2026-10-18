@@ -14,6 +14,7 @@ pub(crate) mod provider_selection;
 mod provider_selection_tests;
 mod realtime;
 mod rollout_history;
+mod side_conversation;
 mod startup_launch;
 mod thread_list;
 mod web_search;
@@ -330,6 +331,7 @@ pub(crate) struct AppServerSession {
     next_request_id: i64,
     history_pagination: HashMap<ThreadId, history::ThreadHistoryPagination>,
     task_tool_threads: HashSet<ThreadId>,
+    pub(crate) side_conversation_threads: HashSet<ThreadId>,
     task_tool_capabilities_dir: Option<AbsolutePathBuf>,
     task_search_generation: Arc<AtomicU64>,
     remote_cwd_override: Option<PathBuf>,
@@ -438,6 +440,7 @@ impl AppServerSession {
             next_request_id: 1,
             history_pagination: HashMap::new(),
             task_tool_threads: HashSet::new(),
+            side_conversation_threads: HashSet::new(),
             task_tool_capabilities_dir: None,
             task_search_generation: Arc::new(AtomicU64::new(0)),
             remote_cwd_override: None,
@@ -1002,28 +1005,6 @@ impl AppServerSession {
         .await
     }
 
-    pub(crate) async fn fork_side_thread(
-        &mut self,
-        local_settings: &LocalSettings,
-        config: Config,
-        thread_id: ThreadId,
-        selected_profile: Option<&PermissionProfileSelection>,
-    ) -> Result<AppServerStartedThread> {
-        self.fork_thread_at_with_presentation(
-            local_settings,
-            config,
-            thread_id,
-            /*last_turn_id*/ None,
-            /*before_turn_id*/ None,
-            ForkGoalContinuation::StartIfIdle,
-            ForkPresentation::SideConversation,
-            selected_profile,
-            ForkPermissionMode::InheritSaved,
-            ForkConfigSource::Session,
-        )
-        .await
-    }
-
     #[expect(
         clippy::too_many_arguments,
         reason = "keep local preferences separate while the legacy Config parameter is still required"
@@ -1467,6 +1448,7 @@ impl AppServerSession {
         let request_id = self.next_request_id();
         let (sandbox_policy, permissions) =
             turn_permissions_overrides(permissions_override, cwd.as_path())?;
+        let additional_context = self.side_turn_context(thread_id, &client_user_message_id);
         self.client
             .request_typed(ClientRequest::TurnStart {
                 request_id,
@@ -1480,7 +1462,7 @@ impl AppServerSession {
                     input: items,
                     tool_output: None,
                     responsesapi_client_metadata: None,
-                    additional_context: None,
+                    additional_context,
                     environments: None,
                     cwd: Some(cwd),
                     runtime_workspace_roots: Some(workspace_roots.to_vec()),

@@ -156,6 +156,7 @@ pub(crate) enum SideConversationCloseChoice {
     Cancel,
     Summarize,
     SummarizeForMe,
+    KeepAsFork,
     Leave,
 }
 

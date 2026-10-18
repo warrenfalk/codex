@@ -1,0 +1,10 @@
+---
+source: tui/src/app/side_fork_tests.rs
+expression: "serde_json::to_string_pretty(content)?"
+---
+[
+  {
+    "type": "input_text",
+    "text": "<side_conversation_end>This conversation is now an ordinary fork. Side mode has ended; all previous side-only restrictions are superseded. Continue work requested after the fork boundary with normal capabilities under the current permissions and instructions. Inherited parent history remains reference-only unless a later user message explicitly asks you to continue a task from it.</side_conversation_end>"
+  }
+]

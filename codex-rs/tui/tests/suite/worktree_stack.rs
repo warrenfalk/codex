@@ -119,7 +119,7 @@ async fn picker_side_worktree_fork_and_cd_run_on_the_production_stack() -> Resul
         terminal.ensure_running()?;
         terminal.write_input(b"\x03")?;
         terminal.wait_for_screen("Close side conversation")?;
-        terminal.write_input(b"4")?;
+        terminal.write_input(b"5")?;
         terminal.wait_for_screen("STACK_SAVED_HISTORY")?;
         terminal.wait_for_screen("Ask Codex to do anything")?;
         terminal.ensure_running()?;
