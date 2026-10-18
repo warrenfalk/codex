@@ -7,6 +7,7 @@ mod managed_requirements;
 mod project_discovery;
 #[cfg(test)]
 pub(crate) mod tests;
+mod worktree_mcp;
 
 #[cfg(test)]
 #[path = "projectless_directory_tests.rs"]
@@ -1780,6 +1781,7 @@ struct DiscoveredProjectLayer {
     disabled_reason: Option<String>,
     hooks_config_folder_override: Option<AbsolutePathBuf>,
     load_root_checkout_hooks: bool,
+    mcp_only: bool,
 }
 
 struct DiscoveredProjectLayers {
@@ -1825,12 +1827,14 @@ async fn load_project_layers(
         } else {
             config
         };
-        layers.push(project_layer_entry(
+        let mut entry = project_layer_entry(
             &layer.dot_codex_folder,
             config,
             layer.disabled_reason,
             layer.hooks_config_folder_override,
-        ));
+        );
+        entry.mcp_only = layer.mcp_only;
+        layers.push(entry);
     }
 
     Ok(LoadedProjectLayers {
@@ -1867,7 +1871,7 @@ async fn discover_project_layers(
 
     let mut layers = Vec::new();
     let mut startup_warnings = Vec::new();
-    for dir in dirs {
+    for dir in &dirs {
         let dot_codex_abs = dir.join(".codex");
         let dot_codex_uri = PathUri::from_abs_path(&dot_codex_abs);
         if !fs
@@ -1879,9 +1883,9 @@ async fn discover_project_layers(
             continue;
         }
 
-        let decision = trust_context.decision_for_dir(&dir);
+        let decision = trust_context.decision_for_dir(dir);
         let disabled_reason = trust_context.disabled_reason_for_decision(&decision);
-        let hooks_config_folder_override = trust_context.root_checkout_hooks_folder_for_dir(&dir);
+        let hooks_config_folder_override = trust_context.root_checkout_hooks_folder_for_dir(dir);
         let dot_codex_normalized =
             normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
         if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
@@ -1912,16 +1916,25 @@ async fn discover_project_layers(
                             disabled_reason,
                             hooks_config_folder_override,
                             load_root_checkout_hooks: false,
+                            mcp_only: false,
                         });
                         continue;
                     }
                 };
                 let mut config = config;
                 if disabled_reason.is_none() && strict_config {
+                    let mut validation_config = config.clone();
+                    // Partial MCP overrides in a linked worktree are checked
+                    // with their inherited defaults after discovery.
+                    if hooks_config_folder_override.is_some()
+                        && let Some(table) = validation_config.as_table_mut()
+                    {
+                        table.remove("mcp_servers");
+                    }
                     validate_config_toml_strictly(
                         config_file.as_path(),
                         &contents,
-                        &config,
+                        &validation_config,
                         dot_codex_abs.as_path(),
                     )?;
                 }
@@ -1942,6 +1955,7 @@ async fn discover_project_layers(
                     disabled_reason,
                     hooks_config_folder_override,
                     load_root_checkout_hooks: true,
+                    mcp_only: false,
                 });
             }
             Err(err) => {
@@ -1955,6 +1969,7 @@ async fn discover_project_layers(
                         disabled_reason,
                         hooks_config_folder_override,
                         load_root_checkout_hooks: true,
+                        mcp_only: false,
                     });
                 } else {
                     let config_file_display = config_file.as_path().display();
@@ -1967,6 +1982,15 @@ async fn discover_project_layers(
         }
     }
 
+    let layers = worktree_mcp::inherit_main_checkout_mcp(
+        fs,
+        &dirs,
+        layers,
+        trust_context,
+        &codex_home_abs,
+        strict_config,
+    )
+    .await?;
     Ok(DiscoveredProjectLayers {
         layers,
         startup_warnings,
