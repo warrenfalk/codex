@@ -330,6 +330,7 @@ use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod model_command;
 mod model_popup_state;
 mod model_popups;
+mod notes;
 mod notifications;
 pub(crate) mod quick_dials;
 mod session_model_selection;
@@ -540,6 +541,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     transcript: TranscriptState,
+    pub(crate) notes: crate::notes::NotesState,
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
     pub(crate) config_panel_tui: codex_config::types::Tui,
