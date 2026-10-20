@@ -140,7 +140,21 @@ impl ChatWidget {
             return (false, None);
         }
         self.empty_state_animation.borrow_mut().dismiss();
-        if self.input_queue.rate_limit_recovery_pending || self.pending_image_submission.is_some() {
+        let attaches_project = user_message.mention_bindings.iter().any(|binding| {
+            crate::project_mentions::project_path(&binding.path).is_some_and(|path| {
+                !self
+                    .config
+                    .permissions
+                    .user_visible_workspace_roots()
+                    .contains(&path)
+            })
+        });
+        if self.input_queue.rate_limit_recovery_pending
+            || self.pending_image_submission.is_some()
+            || attaches_project
+                && (self.turn_lifecycle.agent_turn_running
+                    || self.input_queue.user_turn_pending_start)
+        {
             let model_prompt = source == UserMessageSource::Prompt
                 && (shell_escape_policy == ShellEscapePolicy::Disallow
                     || !user_message.text.starts_with('!'));
@@ -422,7 +436,14 @@ impl ChatWidget {
         }
 
         self.maybe_apply_ide_context(&mut items);
+        items.extend(mention_bindings.iter().filter_map(|binding| {
+            crate::project_mentions::project_path(&binding.path).map(|_| UserInput::Mention {
+                name: binding.mention.clone(),
+                path: binding.path.clone(),
+            })
+        }));
         crate::task_mentions::apply_task_references(&mut items, &mention_bindings, self.thread_id);
+        crate::project_references::encode(&mut items, &mention_bindings);
 
         let collaboration_mode = if self.collaboration_modes_enabled() {
             self.active_collaboration_mask

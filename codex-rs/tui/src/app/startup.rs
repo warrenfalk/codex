@@ -951,6 +951,7 @@ See the Codex keymap documentation for supported actions and examples."
             status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: terminal_title_invalid_items_warned.clone(),
             skill_load_warnings: SkillLoadWarningState::default(),
+            project_search_task: None,
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             feedback: feedback.clone(),

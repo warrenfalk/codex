@@ -73,6 +73,45 @@ fn live_picker_frame_snapshots() {
 }
 
 #[test]
+fn project_picker_explains_session_attachment_and_disambiguates_directories() {
+    let roots = ["/work/first/shared", "/work/second/shared"]
+        .map(|path| codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(path).unwrap());
+    let mut candidates = super::super::projects::project_candidates(&roots);
+    for (candidate, path) in candidates
+        .iter_mut()
+        .zip(["/work/first/shared", "/work/second/shared"])
+    {
+        candidate.description = Some(format!("Attach for session: {path}"));
+    }
+    let rows = super::super::filter::filtered_candidates(
+        &candidates,
+        &[],
+        "",
+        SearchMode::Projects,
+        /*show_file_matches*/ false,
+    );
+    let mut buffer = Buffer::empty(Rect::new(
+        /*x*/ 0,
+        /*y*/ 0,
+        /*width*/ 100,
+        POPUP_HEIGHT,
+    ));
+    render_popup(
+        buffer.area,
+        &mut buffer,
+        &rows,
+        &ScrollState {
+            selected_idx: Some(0),
+            scroll_top: 0,
+        },
+        "no projects",
+        SearchMode::Projects,
+        "",
+    );
+    insta::assert_snapshot!("project_picker", text(&buffer));
+}
+
+#[test]
 fn selection_covers_the_row_and_empty_filter_clears_previous_results() {
     let mut buffer = Buffer::empty(Rect::new(
         /*x*/ 0,

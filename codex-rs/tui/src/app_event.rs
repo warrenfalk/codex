@@ -776,6 +776,14 @@ pub(crate) enum AppEvent {
     /// is at most one in-flight search.
     StartFileSearch(String),
 
+    /// Discover projects and complete directory paths on the connected server.
+    StartProjectSearch(String),
+    ProjectSearchResult {
+        thread_id: ThreadId,
+        query: String,
+        result: Result<Vec<codex_utils_absolute_path::AbsolutePathBuf>, String>,
+    },
+
     /// Result of a completed asynchronous file search. The `query` echoes the
     /// original search term so the UI can decide whether the results are
     /// still relevant.

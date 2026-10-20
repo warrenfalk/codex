@@ -1,0 +1,21 @@
+---
+source: tui/src/bottom_pane/mentions_v2/render_tests.rs
+expression: text(&buffer)
+---
+  Mentions
+  Attach directory for this session; profile rules apply
+
+   All Results   Filesystem Only   Plugins   Projects
+
+  Type to search mentions
+
+› shared                     Attach for session: /work/first/shared                          Project
+  shared                     Attach for session: /work/second/shared                         Project
+  Choose another directory…  Type a directory path                                           Project
+
+
+
+
+
+
+  enter/tab insert · esc close · ↑/↓ select · ←/→ filter

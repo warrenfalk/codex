@@ -1614,6 +1614,25 @@ impl App {
                 );
                 self.skill_load_warnings.startup_complete = true;
             }
+            AppEvent::StartProjectSearch(query) => {
+                if let Some(thread_id) = self.active_thread_id {
+                    if let Some(task) = self.project_search_task.take() {
+                        task.abort();
+                    }
+                    self.project_search_task = Some(crate::project_mentions::spawn_search(
+                        app_server.request_handle(),
+                        thread_id,
+                        query,
+                        self.chat_widget.config_ref().cwd.clone(),
+                        self.app_event_tx.clone(),
+                    ));
+                }
+            }
+            AppEvent::ProjectSearchResult { thread_id, query, result } => {
+                if self.active_thread_id == Some(thread_id) {
+                    self.chat_widget.on_project_search_result(&query, result);
+                }
+            }
             AppEvent::StartFileSearch(query) => {
                 self.file_search.on_user_query(query.clone());
                 if let Some(thread_id) = self.active_thread_id

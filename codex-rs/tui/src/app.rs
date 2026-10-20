@@ -270,6 +270,7 @@ mod resize_reflow;
 mod resume_config;
 mod right_click_paste;
 pub(crate) use right_click_paste::PasteEnvironment;
+mod project_mentions;
 mod safety_buffering;
 mod server_version_notice;
 mod session_lifecycle;
@@ -609,6 +610,7 @@ pub(crate) struct App {
     terminal_title_invalid_items_warned: Arc<AtomicBool>,
     // Tracks active skill-load warnings so refreshes do not duplicate history cells.
     skill_load_warnings: SkillLoadWarningState,
+    project_search_task: Option<tokio::task::JoinHandle<()>>,
 
     // Esc-backtracking state grouped
     pub(crate) backtrack: crate::app_backtrack::BacktrackState,

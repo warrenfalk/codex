@@ -22,6 +22,18 @@ pub(super) fn filtered_candidates(
         if !search_mode.accepts(candidate.mention_type) {
             continue;
         }
+        if matches!(candidate.selection, Selection::BrowseProjects) {
+            if search_mode == SearchMode::Projects {
+                out.push(candidate.to_result(/*match_indices*/ None, /*score*/ 0));
+            }
+            continue;
+        }
+        if candidate.mention_type == MentionType::Project
+            && crate::project_mentions::is_path_query(filter)
+        {
+            out.push(candidate.to_result(/*match_indices*/ None, /*score*/ 0));
+            continue;
+        }
         if filter.is_empty() {
             out.push(candidate.to_result(/*match_indices*/ None, /*score*/ 0));
             continue;
@@ -65,9 +77,14 @@ fn sort_rows(rows: &mut [SearchResult], filter: &str) {
         MentionType::Skill => 1,
         MentionType::Task => 2,
         MentionType::File | MentionType::Directory => 3,
+        MentionType::Project => 4,
     };
 
     rows.sort_by(|a, b| {
+        if a.mention_type == MentionType::Project && b.mention_type == MentionType::Project {
+            return matches!(a.selection, Selection::BrowseProjects)
+                .cmp(&matches!(b.selection, Selection::BrowseProjects));
+        }
         if a.mention_type == MentionType::Task && b.mention_type == MentionType::Task {
             return std::cmp::Ordering::Equal;
         }

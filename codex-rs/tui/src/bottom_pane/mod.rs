@@ -514,6 +514,14 @@ impl BottomPane {
         self.composer.task_mentions_enabled()
     }
 
+    pub(crate) fn on_project_search_result(
+        &mut self,
+        query: &str,
+        result: Result<Vec<codex_utils_absolute_path::AbsolutePathBuf>, String>,
+    ) {
+        self.composer.on_project_search_result(query, result);
+    }
+
     pub(crate) fn on_task_search_result(
         &mut self,
         query: &str,

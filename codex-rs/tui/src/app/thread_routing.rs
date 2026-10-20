@@ -749,6 +749,20 @@ impl App {
             } => {
                 let mut should_start_turn = true;
                 if let Some(turn_id) = self.active_turn_id_for_thread(thread_id).await {
+                    if crate::project_mentions::selected_projects(items)
+                        .iter()
+                        .any(|path| {
+                            !self
+                                .chat_widget
+                                .config_ref()
+                                .permissions
+                                .user_visible_workspace_roots()
+                                .contains(path)
+                        })
+                    {
+                        self.chat_widget.enqueue_rejected_steer();
+                        return Ok(true);
+                    }
                     let mut steer_turn_id = turn_id;
                     let mut retried_after_turn_mismatch = false;
                     loop {
@@ -895,6 +909,28 @@ impl App {
                         explicit_profile
                             .and_then(RuntimePermissionProfileOverride::turn_permission_profile),
                     );
+                    let mut workspace_roots =
+                        config.permissions.user_visible_workspace_roots().to_vec();
+                    let added_roots: Vec<_> = crate::project_mentions::selected_projects(items)
+                        .into_iter()
+                        .filter(|path| !workspace_roots.contains(path))
+                        .collect();
+                    if let Err(error) = crate::project_mentions::validate_projects(
+                        &app_server.request_handle(),
+                        &added_roots,
+                    )
+                    .await
+                    {
+                        let message = format!("Could not attach project: {error}");
+                        if !self
+                            .chat_widget
+                            .handle_turn_start_rejection(message.clone())
+                        {
+                            self.chat_widget.add_error_message(message);
+                        }
+                        return Ok(true);
+                    }
+                    workspace_roots.extend(added_roots.iter().cloned());
                     let response = app_server
                         .turn_start(
                             thread_id,
@@ -904,7 +940,7 @@ impl App {
                             turn_approval_policy,
                             turn_approvals_reviewer,
                             permissions_override,
-                            config.permissions.user_visible_workspace_roots(),
+                            &workspace_roots,
                             model.to_string(),
                             effort.clone(),
                             *summary,
@@ -914,6 +950,10 @@ impl App {
                             cyber_access_program.map(Into::into),
                         )
                         .await?;
+                    if !added_roots.is_empty() {
+                        self.record_project_roots(thread_id, workspace_roots, &added_roots)
+                            .await;
+                    }
                     if self.active_thread_id == Some(thread_id)
                         && self.chat_widget.thread_id() == Some(thread_id)
                     {
