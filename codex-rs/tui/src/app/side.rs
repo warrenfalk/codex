@@ -12,7 +12,6 @@ use crate::chatwidget::InterruptedTurnNoticeMode;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 
-const SIDE_RENAME_BLOCK_MESSAGE: &str = "Keep this side conversation as a fork before renaming it.";
 const SIDE_MAIN_THREAD_UNAVAILABLE_MESSAGE: &str =
     "'/side' is unavailable until the main thread is ready.";
 const SIDE_NO_STARTED_CONVERSATION_MESSAGE: &str = concat!(
@@ -207,7 +206,6 @@ impl App {
         let clear_side_ui = |chat_widget: &mut crate::chatwidget::ChatWidget| {
             chat_widget.set_side_conversation_context_label(/*label*/ None);
             chat_widget.set_side_conversation_active(/*active*/ false);
-            chat_widget.clear_thread_rename_block();
             chat_widget.set_interrupted_turn_notice_mode(InterruptedTurnNoticeMode::Default);
         };
         let Some(active_thread_id) = self.current_displayed_thread_id() else {
@@ -238,8 +236,6 @@ impl App {
             return;
         };
 
-        self.chat_widget
-            .set_thread_rename_block_message(SIDE_RENAME_BLOCK_MESSAGE);
         self.chat_widget
             .set_side_conversation_active(/*active*/ true);
         self.chat_widget

@@ -249,8 +249,13 @@ impl CommandPopup {
                     description: Some(description),
                     wrap_indent: None,
                     is_disabled: unavailable,
-                    disabled_reason: unavailable
-                        .then(|| "not available in a side conversation".to_string()),
+                    disabled_reason: unavailable.then(|| {
+                        if matches!(item, CommandItem::Builtin(SlashCommand::Fork)) {
+                            "Use /rename to keep this side conversation as a fork".to_string()
+                        } else {
+                            "not available in a side conversation".to_string()
+                        }
+                    }),
                 }
             })
             .collect()
@@ -368,6 +373,18 @@ mod tests {
         let mut buf = Buffer::empty(area);
         popup.render_ref(area, &mut buf);
         insta::assert_snapshot!("side_conversation_unavailable_command", format!("{buf:?}"));
+
+        popup.on_composer_text_change("/fork".to_string());
+        assert_eq!(popup.selected_item(), None);
+        let area = Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            width,
+            popup.calculate_required_height(width),
+        );
+        let mut buf = Buffer::empty(area);
+        popup.render_ref(area, &mut buf);
+        insta::assert_snapshot!("side_fork_rename_guidance", format!("{buf:?}"));
         popup.on_composer_text_change("/a".to_string());
         popup.move_up();
         assert!(popup.selected_item().is_some());

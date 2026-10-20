@@ -11,19 +11,28 @@ message explicitly asks to continue it.
 
 At creation, its saved name is `(Side) <parent name>`, using the parent's current name once.
 An unnamed parent (or unavailable parent name) uses `(Side) <side thread UUID>` instead.
-Later parent renames and automatic title generation do not replace this name. Keeping or recovering
+Later parent renames and automatic title generation do not replace this name. Recovering
 the fork retains the prefix; users can rename it normally afterward. A naming failure must not
 prevent access to the already-created fork.
 
 The idle side-conversation close menu includes **Keep as a fork**, alongside Cancel, Summarize,
-Summarize for me, and Leave. Cancel remains the default. Keep as a fork retains the same thread
-and its history and lets the user continue in it as a normal fork. It does not copy the conversation,
-start inference, or modify the parent. Side-only command restrictions and temporary model
-instructions end when the conversation is kept or opened as an ordinary fork.
+Summarize for me, and Leave. Cancel remains the default. Keep as a fork prompts for a new,
+nonempty fork name, then retains the same thread and its history and returns to the previous
+conversation. Canceling the name prompt leaves the side conversation open and unchanged.
+
+Inside a side conversation, `/rename` opens the normal naming flow; `/rename <name>` also works.
+Successfully naming the side conversation promotes it to a normal fork and continues in place.
+Canceling the naming flow leaves it in side mode. `/fork` remains disabled in side conversations
+and explains: "Use /rename to keep this side conversation as a fork."
+
+Neither promotion path copies the conversation, starts a conversation turn, or modifies the parent.
+Side-only command restrictions and temporary model instructions end when the conversation is
+kept or opened as an ordinary fork.
 Keeping appends a durable instruction explicitly ending side mode before restoring normal
 capabilities. It preserves existing history in place, including the boundary and prior side turns,
-without starting inference. If saving this transition fails, the conversation stays open in side
-mode and reports the failure.
+without starting inference. If saving the name or this transition fails, the conversation stays
+open in side mode and reports the failure. A name saved before a transition failure may remain,
+but the conversation must not be promoted or navigated away from on that failure.
 
 Leave returns to the parent and permanently deletes the side conversation. Both summary choices
 save their result to the parent before deleting the side conversation. Summary generation or
@@ -40,8 +49,10 @@ tasks from inherited history. Compaction input is unchanged: keeping does not re
 history to retire the boundary or side restrictions, preserving the existing inference prefix.
 
 Validation must cover both close-menu widths and keyboard selection, persisted parent lineage,
-side history surviving a fresh server/client attachment, keeping the same thread with normal
-commands restored, scoped side instructions ending on keep/recovery, explicit deletion without
+side history surviving a fresh server/client attachment, both promotion paths keeping the same
+thread with normal commands restored, close-menu naming and return to the parent, `/rename`
+promotion in place with and without an inline name, canceling either naming flow without promotion,
+`/fork` guidance, scoped side instructions ending on keep/recovery, explicit deletion without
 changing the parent, and failure paths retaining the fork.
 Also cover named and unnamed parents, names surviving recovery and later parent renames, and
 ordinary user renaming after keeping the fork.

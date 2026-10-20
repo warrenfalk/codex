@@ -236,7 +236,6 @@ impl ChatWidget {
             thread_id: None,
             dismissed_prompt_command_warning: None,
             thread_name: None,
-            thread_rename_block_message: None,
             active_side_conversation: false,
             blocks_direct_input: false,
             external_writer_view: false,

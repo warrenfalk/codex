@@ -3,6 +3,71 @@ use crate::app::test_support::make_test_app;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn close_keep_names_fork_and_returns_to_parent() -> Result<()> {
+    let mut app = make_test_app().await;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let parent = server.start_thread(&app.config).await?;
+    let parent_id = parent.session.thread_id;
+    let side = server.start_thread(&app.side_fork_config()).await?;
+    let side_id = side.session.thread_id;
+    app.ensure_thread_channel(parent_id)
+        .store
+        .lock()
+        .await
+        .set_session(parent.session, Vec::new());
+    app.ensure_thread_channel(side_id)
+        .store
+        .lock()
+        .await
+        .set_session(side.session, Vec::new());
+    app.primary_thread_id = Some(parent_id);
+    app.active_thread_id = Some(side_id);
+    app.side_threads
+        .insert(side_id, SideThreadState::new(parent_id));
+    server.side_conversation_threads.insert(side_id);
+    app.sync_side_thread_ui();
+    let mut parent_before = server
+        .thread_read(parent_id, /*include_turns*/ false)
+        .await?;
+
+    Box::pin(app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::KeepSideForkAndReturn {
+            thread_id: side_id,
+            name: "Saved pilot".into(),
+        },
+    ))
+    .await?;
+
+    assert_eq!(app.active_thread_id, Some(parent_id));
+    assert_eq!(app.primary_thread_id, Some(parent_id));
+    assert!(!app.chat_widget.side_conversation_active());
+    assert!(app.side_threads.is_empty());
+    assert!(server.side_conversation_threads.is_empty());
+    assert_eq!(
+        server
+            .thread_read(side_id, /*include_turns*/ false)
+            .await?
+            .name
+            .as_deref(),
+        Some("Saved pilot")
+    );
+    let parent_after = server
+        .thread_read(parent_id, /*include_turns*/ false)
+        .await?;
+    // Creation timestamps settle asynchronously. Navigation must preserve all other parent
+    // metadata and capabilities, regardless of which timestamp source the two reads observe.
+    parent_before.created_at = parent_after.created_at;
+    parent_before.updated_at = parent_after.updated_at;
+    parent_before.recency_at = parent_after.recency_at;
+    assert_eq!(parent_after, parent_before);
+    server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn keep_side_fork_preserves_thread_and_restores_normal_commands() -> Result<()> {
     let mut app = make_test_app().await;
     let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
@@ -21,7 +86,11 @@ async fn keep_side_fork_preserves_thread_and_restores_normal_commands() -> Resul
     app.sync_side_thread_ui();
     assert!(app.chat_widget.side_conversation_active());
 
-    app.keep_side_conversation_as_fork(&mut server).await?;
+    app.submit_active_thread_op(
+        &mut server,
+        AppCommand::set_thread_name("Pilot graduated".into()),
+    )
+    .await?;
 
     assert_eq!(app.active_thread_id, Some(thread_id));
     assert_eq!(app.primary_thread_id, Some(thread_id));
@@ -42,6 +111,7 @@ async fn keep_side_fork_preserves_thread_and_restores_normal_commands() -> Resul
         .thread_read(thread_id, /*include_turns*/ false)
         .await?;
     assert_eq!(saved_thread.id, thread_id.to_string());
+    assert_eq!(saved_thread.name.as_deref(), Some("Pilot graduated"));
     server.shutdown().await?;
     let saved = std::fs::read_to_string(saved_thread.path.expect("persisted fork path"))?;
     let messages: Vec<_> = saved
@@ -113,7 +183,14 @@ async fn keep_side_fork_retains_side_mode_when_transition_save_fails() -> Result
     server.side_conversation_threads.insert(side_id);
     app.sync_side_thread_ui();
 
-    app.keep_side_conversation_as_fork(&mut server).await?;
+    assert!(
+        !app.keep_side_conversation_as_fork(
+            &mut server,
+            "Keep me".into(),
+            SideForkDestination::Continue
+        )
+        .await?
+    );
 
     assert!(app.chat_widget.side_conversation_active());
     assert_eq!(app.active_side_parent_thread_id(), Some(parent_id));
@@ -167,7 +244,16 @@ async fn keep_side_fork_retains_side_mode_when_server_read_fails() -> Result<()>
     server.side_conversation_threads.insert(side_id);
     app.sync_side_thread_ui();
 
-    app.keep_side_conversation_as_fork(&mut server).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    Box::pin(app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::KeepSideForkAndReturn {
+            thread_id: side_id,
+            name: "Keep me".into(),
+        },
+    ))
+    .await?;
 
     assert!(app.chat_widget.side_conversation_active());
     assert_eq!(app.active_thread_id, Some(side_id));

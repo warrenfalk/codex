@@ -47,7 +47,7 @@ impl App {
         match choice {
             SideConversationCloseChoice::Cancel => {}
             SideConversationCloseChoice::KeepAsFork => {
-                self.keep_side_conversation_as_fork(app_server).await?;
+                self.chat_widget.open_keep_side_fork_name_prompt();
             }
             SideConversationCloseChoice::Leave => {
                 if self.pending_side_summary.is_some() {

@@ -982,6 +982,17 @@ impl App {
             }
             AppCommand::SetThreadName { name } => {
                 let name = name.to_string();
+                if self.current_displayed_thread_id() == Some(thread_id)
+                    && self.active_side_parent_thread_id().is_some()
+                {
+                    self.keep_side_conversation_as_fork(
+                        app_server,
+                        name,
+                        crate::app_event::SideForkDestination::Continue,
+                    )
+                    .await?;
+                    return Ok(true);
+                }
                 app_server.thread_set_name(thread_id, name.clone()).await?;
                 self.chat_widget.expect_manual_thread_name(thread_id, name);
                 self.cancel_thread_title_generation(thread_id);

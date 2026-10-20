@@ -693,7 +693,6 @@ pub(crate) struct ChatWidget {
     /// Bare prompt slash-command warning dismissed for the current exact command draft.
     dismissed_prompt_command_warning: Option<SlashCommand>,
     thread_name: Option<String>,
-    thread_rename_block_message: Option<String>,
     active_side_conversation: bool,
     blocks_direct_input: bool,
     external_writer_view: bool,
@@ -1494,14 +1493,6 @@ impl ChatWidget {
 
     pub(crate) fn set_pending_thread_approvals(&mut self, threads: Vec<String>) {
         self.bottom_pane.set_pending_thread_approvals(threads);
-    }
-
-    pub(crate) fn clear_thread_rename_block(&mut self) {
-        self.thread_rename_block_message = None;
-    }
-
-    pub(crate) fn set_thread_rename_block_message(&mut self, message: impl Into<String>) {
-        self.thread_rename_block_message = Some(message.into());
     }
 
     pub(crate) fn set_interrupted_turn_notice_mode(&mut self, mode: InterruptedTurnNoticeMode) {
