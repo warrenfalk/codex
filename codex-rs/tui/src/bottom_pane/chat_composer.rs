@@ -821,6 +821,8 @@ impl ChatComposer {
                     .primary_hint(KeymapContext::Global, "find_transcript"),
                 focus_activity_key: default_keymap
                     .primary_hint(KeymapContext::Global, "focus_activity"),
+                toggle_unread_key: default_keymap
+                    .primary_hint(KeymapContext::Global, "toggle_unread"),
                 insert_newline_key: footer_insert_newline_key(
                     &default_keymap.editor.insert_newline,
                     use_shift_enter_hint,
@@ -1110,6 +1112,7 @@ impl ChatComposer {
             keymap.primary_hint(KeymapContext::Global, "find_transcript");
         self.footer.focus_activity_key =
             keymap.primary_hint(KeymapContext::Global, "focus_activity");
+        self.footer.toggle_unread_key = keymap.primary_hint(KeymapContext::Global, "toggle_unread");
         self.footer.insert_newline_key =
             match keymap.primary_hint(KeymapContext::Editor, "insert_newline") {
                 hint @ Some(ShortcutHint::Chord { .. }) => hint,

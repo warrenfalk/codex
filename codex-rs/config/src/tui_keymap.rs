@@ -166,6 +166,8 @@ pub struct TuiGlobalKeymap {
     pub toggle_side_conversation: Option<KeybindingsSpec>,
     /// Toggle clean scrollback mode for hiding committed tool/status noise.
     pub toggle_clean_scrollback: Option<KeybindingsSpec>,
+    /// Toggle the displayed thread's unread acknowledgement state.
+    pub toggle_unread: Option<KeybindingsSpec>,
 }
 
 /// Chat context keybindings.

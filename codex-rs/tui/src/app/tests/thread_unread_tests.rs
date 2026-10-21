@@ -8,6 +8,11 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadStatusChangedNotification;
 use codex_app_server_protocol::ThreadUnreadChangedNotification;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::TuiKeymap;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 
 async fn start_unread_session(app: &mut App, server: &mut AppServerSession) -> Result<ThreadId> {
@@ -138,7 +143,224 @@ async fn focus_acknowledgement_is_cancelled_by_thread_switch_overview_and_suspen
 }
 
 #[tokio::test]
-async fn ignored_focus_acknowledgement_is_not_retried_after_work_stops() -> Result<()> {
+async fn unread_shortcut_preserves_drafts_and_supports_runtime_remapping() -> Result<()> {
+    let mut app = make_test_app().await;
+    let (mut server, requests, proxy) = start_recording_remote_app_server(&app.config).await?;
+    let thread_id = start_unread_session(&mut app, &mut server).await?;
+    app.chat_widget.local_settings.tui.status_line = Some(Vec::new());
+    app.chat_widget.refresh_status_line();
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Paste("Draft to finish later".into()),
+    )
+    .await?;
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Key(KeyCode::Char('!').into()),
+    )
+    .await?;
+    // The composer buffers plain typing briefly to distinguish it from a paste burst.
+    tokio::time::pause();
+    tokio::time::advance(crate::bottom_pane::ChatComposer::recommended_paste_flush_delay()).await;
+    tokio::time::resume();
+    app.chat_widget
+        .handle_paste_burst_tick(tui.frame_requester());
+    assert!(
+        server
+            .thread_read(thread_id, /*include_turns*/ false)
+            .await?
+            .unread
+    );
+    let draft = app.chat_widget.composer_text_with_pending();
+    assert_eq!(draft, "Draft to finish later!");
+
+    // A queued notification can leave the local flag stale. Toggle the server's stored flag.
+    app.agents_overview
+        .threads
+        .get_mut(&thread_id)
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .unread = false;
+    for unread in [false, true] {
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT)),
+        )
+        .await?;
+        for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+            app.handle_tui_event(
+                &mut tui,
+                &mut server,
+                TuiEvent::Key(KeyEvent::new_with_kind(
+                    KeyCode::Char('m'),
+                    KeyModifiers::ALT,
+                    kind,
+                )),
+            )
+            .await?;
+        }
+        assert_eq!(
+            (
+                server
+                    .thread_read(thread_id, /*include_turns*/ false)
+                    .await?
+                    .unread,
+                app.chat_widget.composer_text_with_pending()
+            ),
+            (unread, draft.clone())
+        );
+    }
+    insta::assert_snapshot!(
+        "unread_shortcut_preserves_draft",
+        render_bottom_popup(&app.chat_widget, /*width*/ 65)
+    );
+
+    for (configured, keys, unread) in [
+        ("'f12'", vec![KeyCode::F(12).into()], false),
+        (
+            "'ctrl-x u'",
+            vec![
+                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+                KeyCode::Char('u').into(),
+            ],
+            true,
+        ),
+        (
+            "[]",
+            vec![KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT)],
+            true,
+        ),
+    ] {
+        let config: TuiKeymap = toml::from_str(&format!("[global]\ntoggle_unread = {configured}"))?;
+        app.keymap = RuntimeKeymap::from_config(&config).expect("valid unread shortcut");
+        app.chat_widget.apply_keymap_update(config, &app.keymap);
+        for key in keys {
+            app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(key))
+                .await?;
+        }
+        assert_eq!(
+            (
+                server
+                    .thread_read(thread_id, /*include_turns*/ false)
+                    .await?
+                    .unread,
+                app.chat_widget.composer_text_with_pending()
+            ),
+            (unread, draft.clone())
+        );
+    }
+    assert_eq!(
+        recorded_params(&requests, "thread/unread/set"),
+        vec![
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+        ]
+    );
+    for method in ["turn/start", "turn/steer"] {
+        assert_eq!(
+            recorded_params(&requests, method),
+            Vec::<serde_json::Value>::new()
+        );
+    }
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicitly_marking_unread_cancels_pending_focus_acknowledgement() -> Result<()> {
+    let mut app = make_test_app().await;
+    let (mut server, requests, proxy) = start_recording_remote_app_server(&app.config).await?;
+    let thread_id = start_unread_session(&mut app, &mut server).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    for shortcut in [true, false] {
+        app.set_thread_unread(&mut server, thread_id, /*unread*/ false)
+            .await;
+        app.handle_unread_focus(&tui, &mut server, &TuiEvent::FocusGained)
+            .await;
+        assert!(app.pending_focus_ack.is_some());
+        if shortcut {
+            app.handle_tui_event(
+                &mut tui,
+                &mut server,
+                TuiEvent::Key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT)),
+            )
+            .await?;
+        } else {
+            app.handle_event(
+                &mut tui,
+                &mut server,
+                AppEvent::SetThreadUnread {
+                    thread_id,
+                    unread: true,
+                },
+            )
+            .await?;
+        }
+        assert!(app.pending_focus_ack.is_none());
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(/*secs*/ 2)).await;
+        tokio::time::resume();
+        app.handle_unread_focus(&tui, &mut server, &TuiEvent::Draw)
+            .await;
+        assert!(
+            server
+                .thread_read(thread_id, /*include_turns*/ false)
+                .await?
+                .unread
+        );
+    }
+    assert_eq!(
+        recorded_params(&requests, "thread/unread/set"),
+        vec![
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
+        ]
+    );
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn unread_shortcut_has_no_effect_without_a_session_or_in_a_side_conversation() -> Result<()> {
+    let mut app = make_test_app().await;
+    let (mut server, requests, proxy) = start_recording_remote_app_server(&app.config).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let toggle = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT);
+    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(toggle))
+        .await?;
+    assert_eq!(
+        recorded_params(&requests, "thread/unread/set"),
+        Vec::<serde_json::Value>::new()
+    );
+    let thread_id = start_unread_session(&mut app, &mut server).await?;
+    app.chat_widget
+        .set_side_conversation_active(/*active*/ true);
+    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(toggle))
+        .await?;
+    assert_eq!(
+        recorded_params(&requests, "thread/unread/set"),
+        vec![serde_json::json!({"threadId": thread_id.to_string(), "unread": true})]
+    );
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ignored_acknowledgements_are_not_retried_after_work_stops() -> Result<()> {
     use codex_model_provider_info::ModelProviderInfo;
     use core_test_support::responses;
     use core_test_support::streaming_sse::StreamingSseChunk;
@@ -208,7 +430,7 @@ stream_max_retries = 0
         )
         .await?;
     model_server.wait_for_request_count(/*count*/ 1).await;
-    let tui = crate::tui::test_support::make_test_tui()?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
     tokio::time::pause();
     app.handle_unread_focus(&tui, &mut server, &TuiEvent::FocusGained)
         .await;
@@ -216,6 +438,27 @@ stream_max_retries = 0
     tokio::time::resume();
     app.handle_unread_focus(&tui, &mut server, &TuiEvent::Draw)
         .await;
+    assert!(
+        server
+            .thread_read(thread_id, /*include_turns*/ false)
+            .await?
+            .unread
+    );
+    app.track_agents_overview_notification(&ServerNotification::ThreadStatusChanged(
+        ThreadStatusChangedNotification {
+            thread_id: thread_id.to_string(),
+            status: ThreadStatus::Active {
+                active_flags: Vec::new(),
+            },
+        },
+    ));
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 65).contains("unread"));
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT)),
+    )
+    .await?;
     assert!(
         server
             .thread_read(thread_id, /*include_turns*/ false)
@@ -242,10 +485,23 @@ stream_max_retries = 0
         vec![
             serde_json::json!({"threadId": thread_id.to_string(), "unread": true}),
             serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
+            serde_json::json!({"threadId": thread_id.to_string(), "unread": false}),
         ]
     );
     assert!(
         server
+            .thread_read(thread_id, /*include_turns*/ false)
+            .await?
+            .unread
+    );
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT)),
+    )
+    .await?;
+    assert!(
+        !server
             .thread_read(thread_id, /*include_turns*/ false)
             .await?
             .unread

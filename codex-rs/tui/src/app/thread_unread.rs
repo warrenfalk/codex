@@ -1,4 +1,4 @@
-//! One-shot acknowledgement after sustained terminal focus and the stopped-session indicator.
+//! Explicit unread toggling, one-shot focus acknowledgement, and the stopped-session indicator.
 
 use super::App;
 use super::agents_overview::AGENTS_OVERVIEW_VIEW_ID;
@@ -131,6 +131,13 @@ impl App {
         thread_id: ThreadId,
         unread: bool,
     ) {
+        if unread
+            && self
+                .pending_focus_ack
+                .is_some_and(|(pending, _)| pending == thread_id)
+        {
+            self.pending_focus_ack = None;
+        }
         match app_server.thread_unread_set(thread_id, unread).await {
             Ok(current) => {
                 if let Some(thread) = self
@@ -155,6 +162,33 @@ impl App {
             Err(err) => self
                 .chat_widget
                 .add_error_message(format!("Failed to update unread state: {err}")),
+        }
+    }
+
+    pub(super) async fn toggle_thread_unread(&mut self, app_server: &mut AppServerSession) {
+        if self.chat_widget.side_conversation_active() {
+            return;
+        }
+        let Some(thread_id) = self.current_displayed_thread_id() else {
+            return;
+        };
+        // Read the stored flag: the stopped-session indicator is hidden while work is active,
+        // and a notification updating our metadata may still be waiting to be processed.
+        match app_server
+            .thread_read(thread_id, /*include_turns*/ false)
+            .await
+        {
+            Ok(thread) => {
+                if thread.ephemeral {
+                    return;
+                }
+                let unread = !thread.unread;
+                self.agents_overview.threads.insert(thread_id, Some(thread));
+                self.set_thread_unread(app_server, thread_id, unread).await;
+            }
+            Err(err) => self
+                .chat_widget
+                .add_error_message(format!("Failed to read unread state: {err}")),
         }
     }
 }

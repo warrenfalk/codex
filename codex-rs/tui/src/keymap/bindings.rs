@@ -283,6 +283,7 @@ define_runtime_action_bindings! {
         toggle_raw_output,
         toggle_side_conversation,
         toggle_clean_scrollback,
+        toggle_unread,
     ],
     "chat" => Chat, chat, chat [
         toggle_voice,

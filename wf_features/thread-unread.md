@@ -8,6 +8,14 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
 - An accepted user prompt sets the thread unread, including input delivered to an active turn.
 - `/unread` explicitly sets unread without sending a prompt or starting work.
 - `/ack` acknowledges the thread without sending a prompt or starting work.
+- Alt+M toggles the displayed session's stored unread flag without changing or submitting
+  the composer draft. The shortcut is configurable as `tui.keymap.global.toggle_unread`,
+  including key chords and explicit unbinding, and appears in `/keymap` and shortcut help.
+  Its default yields to existing configured bindings and chord prefixes. It has no effect
+  before a session exists or in an ephemeral side conversation. Holding the key does not
+  toggle repeatedly or retry an ignored acknowledgement.
+- Editing, pasting, and restoring draft text leave unread unchanged. Submitting a prompt
+  still sets unread even if the previous output was acknowledged while composing the reply.
 - Every acknowledgement is ignored while the thread has an active turn, including waits for
   permission or user input, or while a descendant is active. The server enforces this for every client. Ignored attempts are
   discarded; they are not retried or applied when work stops.
@@ -18,6 +26,8 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
   one continuous second of focus. Losing focus, suspending, disconnecting, switching to another
   session, or showing the agent list before the delay expires prevents that attempt. An attempt ignored
   during active work is not retried when work stops or while focus remains unchanged.
+- Explicitly marking the displayed session unread, through the shortcut or `/unread`,
+  cancels its pending focus acknowledgement so the timer cannot undo that choice.
 - The displayed session shows `unread` in bright blue above the input while its unread flag is
   set and neither it nor a descendant has active work. The indicator disappears on acknowledgement
   or when work starts. It shares the notes-to-self reminder row, preceding the magenta notes
@@ -67,3 +77,7 @@ Unread records an outstanding acknowledgement; it can stay set while an agent is
   the bright blue stopped-session indicator above the input, coexistence with notes, and the JSON
   output. Slash commands never submit agent input. Focus tests cover the one-second delay,
   cancellation, and the absence of automatic retries after a working-session acknowledgement is ignored.
+- Shortcut tests cover both toggle directions, preserved drafts, ignored acknowledgement
+  during active work, explicit unread cancelling a pending focus acknowledgement, remapping,
+  key chords, unbinding, conflicts, and existing configured shortcuts retaining priority.
+  Shortcut-help snapshots show the resolved binding.
