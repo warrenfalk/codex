@@ -140,6 +140,7 @@ mod notification_media;
 mod otel_reloader;
 mod outgoing_message;
 mod plugin_config_reload;
+mod request_future;
 mod request_processors;
 mod request_serialization;
 mod server_request_error;

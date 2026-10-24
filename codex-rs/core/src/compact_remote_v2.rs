@@ -296,7 +296,11 @@ async fn run_remote_compaction_request_v2(
             let settings = &step_context.settings;
             let cancellation = crate::session::async_compaction::shutdown_cancellation(sess).await;
             let effort = sess
-                .reasoning_effort_for_request(settings, RequestEffortUsage::Compaction)
+                .reasoning_effort_for_request(
+                    settings,
+                    turn_context.provider.info(),
+                    RequestEffortUsage::Compaction,
+                )
                 .await;
             let trace = InferenceTraceContext::disabled();
             // Replay the routing token without letting this request change foreground routing.
@@ -334,8 +338,12 @@ async fn run_remote_compaction_request_v2(
                 prompt,
                 &settings.model_info,
                 &turn_context.session_telemetry,
-                sess.reasoning_effort_for_request(settings, RequestEffortUsage::Compaction)
-                    .await,
+                sess.reasoning_effort_for_request(
+                    settings,
+                    turn_context.provider.info(),
+                    RequestEffortUsage::Compaction,
+                )
+                .await,
                 settings.reasoning_summary,
                 step_context.settings.service_tier.clone(),
                 responses_metadata,

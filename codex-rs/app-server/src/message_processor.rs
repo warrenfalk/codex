@@ -26,6 +26,7 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::RequestContext;
 use crate::plugin_config_reload;
 use crate::plugin_config_reload::PluginStartupConfig;
+use crate::request_future::box_request_future;
 use crate::request_processors::AccountRequestProcessor;
 use crate::request_processors::AppsRequestProcessor;
 use crate::request_processors::CatalogRequestProcessor;
@@ -1371,8 +1372,8 @@ impl MessageProcessor {
                 .map(|response| Some(response.into())),
             ClientRequest::EventFirehose { .. } => Ok(Some(EventFirehoseResponse {}.into())),
             ClientRequest::ThreadStart { params, .. } => {
-                self.thread_processor
-                    .thread_start(
+                box_request_future(|| {
+                    self.thread_processor.thread_start(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
@@ -1380,7 +1381,8 @@ impl MessageProcessor {
                         client_mcp_extensions.clone(),
                         request_context,
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadUnsubscribe { params, .. } => {
                 let thread_id = params.thread_id.clone();
@@ -1394,26 +1396,28 @@ impl MessageProcessor {
                 Ok(response)
             }
             ClientRequest::ThreadResume { params, .. } => {
-                self.thread_processor
-                    .thread_resume(
+                box_request_future(|| {
+                    self.thread_processor.thread_resume(
                         ThreadResumeTarget::Client(request_id.clone()),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                         client_mcp_extensions.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadFork { params, .. } => {
-                self.thread_processor
-                    .thread_fork(
+                box_request_future(|| {
+                    self.thread_processor.thread_fork(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                         client_mcp_extensions.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadSample { params, .. } => self
                 .thread_processor
@@ -1534,9 +1538,11 @@ impl MessageProcessor {
                 self.thread_processor.thread_section_delete(params).await
             }
             ClientRequest::ThreadSettingsUpdate { params, .. } => {
-                self.turn_processor
-                    .thread_settings_update(&request_id, params)
-                    .await
+                box_request_future(|| {
+                    self.turn_processor
+                        .thread_settings_update(&request_id, params)
+                })
+                .await
             }
             ClientRequest::ThreadMemoryModeSet { params, .. } => {
                 self.thread_processor.thread_memory_mode_set(params).await
@@ -1575,14 +1581,15 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::ThreadRevert { params, .. } => {
-                self.thread_processor
-                    .thread_revert(
+                box_request_future(|| {
+                    self.thread_processor.thread_revert(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadList { params, .. } => {
                 self.thread_processor.thread_list(params).await
@@ -1751,24 +1758,26 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::TurnStart { params, .. } => {
-                self.turn_processor
-                    .turn_start(
+                box_request_future(|| {
+                    self.turn_processor.turn_start(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::TurnStartModelOnly { params, .. } => {
-                self.turn_processor
-                    .turn_start_model_only(
+                box_request_future(|| {
+                    self.turn_processor.turn_start_model_only(
                         request_id.clone(),
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
                     )
-                    .await
+                })
+                .await
             }
             ClientRequest::ThreadInjectItems { params, .. } => {
                 self.turn_processor

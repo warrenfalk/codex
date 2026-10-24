@@ -578,9 +578,10 @@ async fn world_state_extension_metrics_follow_turn_model_switch() {
         "gpt-5.4"
     };
     let turn_context = Arc::new(
-        turn_context
-            .with_model(next_model.to_string(), &session.services.models_manager)
-            .await,
+        session
+            .turn_context_with_model(&turn_context, next_model.to_string())
+            .await
+            .expect("test model provider should resolve"),
     );
     let mut builder = codex_extension_api::ExtensionRegistryBuilder::<crate::config::Config>::new();
     builder.prompt_contributor(Arc::new(WorldStateMetricsRecorder));
@@ -4792,9 +4793,10 @@ async fn turn_context_with_model_updates_model_fields() {
         &codex_features::Features::with_defaults(),
     ));
     turn_context.next_step_settings.store(Arc::clone(&current));
-    let updated = turn_context
-        .with_model("gpt-5.5".to_string(), &session.services.models_manager)
-        .await;
+    let updated = session
+        .turn_context_with_model(&turn_context, "gpt-5.5".to_string())
+        .await
+        .expect("test model provider should resolve");
     let expected_model_info = session
         .services
         .models_manager
@@ -6931,6 +6933,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         git_root_discovery: Arc::default(),
+        inference_profiles: Arc::new(codex_inference_profiles::InferenceProfileRuntime::default()),
         tool_approvals: Mutex::new(ApprovalStore::default()),
         granted_permissions_by_environment_id: Arc::default(),
         runtime_handle: tokio::runtime::Handle::current(),
@@ -7061,7 +7064,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         Arc::clone(&session.services.granted_permissions_by_environment_id),
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
-        session_configuration.provider.clone(),
+        Arc::clone(&session_configuration.provider),
         &session_configuration,
         config.multi_agent_version_from_features(),
         per_turn_config,
@@ -9298,6 +9301,7 @@ where
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         git_root_discovery: Arc::default(),
+        inference_profiles: Arc::new(codex_inference_profiles::InferenceProfileRuntime::default()),
         tool_approvals: Mutex::new(ApprovalStore::default()),
         granted_permissions_by_environment_id: Arc::default(),
         runtime_handle: tokio::runtime::Handle::current(),
@@ -9428,7 +9432,7 @@ where
         Arc::clone(&session.services.granted_permissions_by_environment_id),
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
-        session_configuration.provider.clone(),
+        Arc::clone(&session_configuration.provider),
         &session_configuration,
         config.multi_agent_version_from_features(),
         per_turn_config,
@@ -10401,12 +10405,13 @@ async fn spawn_task_does_not_update_previous_turn_settings_for_non_run_turn_task
 async fn record_context_updates_emits_environment_item_for_network_changes() {
     let (session, previous_context) = make_session_and_context().await;
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
 
     let mut config = (*current_context.config).clone();
     let mut requirements = config.config_layer_stack.requirements().clone();
@@ -10457,12 +10462,13 @@ async fn record_context_updates_emits_environment_item_for_network_changes() {
 async fn record_context_updates_emits_environment_item_for_cwd_changes() {
     let (session, previous_context) = make_session_and_context().await;
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
     let cwd = test_path_buf("/new-repo").abs();
     let environment = current_context
         .initial_environments
@@ -10520,12 +10526,13 @@ async fn record_context_updates_use_environment_permission_profile_and_workspace
     previous_context.initial_environments.environments[0] =
         TurnEnvironmentState::Ready(previous_environment);
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
     let environment = current_context
         .initial_environments
         .primary()
@@ -10578,12 +10585,14 @@ async fn record_context_updates_use_environment_permission_profile_and_workspace
 async fn record_context_updates_emits_environment_item_for_time_changes() {
     let (session, previous_context) = make_session_and_context().await;
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
+    current_context.current_date = Some("2026-02-27".to_string());
     current_context.timezone = Some("Europe/Berlin".to_string());
 
     let update_items =
@@ -10602,12 +10611,13 @@ async fn record_context_updates_emits_environment_item_for_time_changes() {
 async fn record_context_updates_omits_environment_item_when_disabled() {
     let (session, previous_context) = make_session_and_context().await;
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
     let mut config = (*current_context.config).clone();
     config.include_environment_context = false;
     current_context.config = Arc::new(config);
@@ -10668,12 +10678,13 @@ async fn record_context_update_items(
 async fn record_context_updates_emits_realtime_start_when_session_becomes_live() {
     let (session, previous_context) = make_session_and_context().await;
     let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            previous_context.as_ref(),
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
     current_context.realtime_active = true;
 
     let update_items =
@@ -10692,12 +10703,13 @@ async fn record_context_updates_emits_realtime_start_when_session_becomes_live()
 async fn record_context_updates_emits_realtime_end_when_session_stops_being_live() {
     let (session, mut previous_context) = make_session_and_context().await;
     previous_context.realtime_active = true;
-    let mut current_context = previous_context
-        .with_model(
+    let mut current_context = session
+        .turn_context_with_model(
+            &previous_context,
             previous_context.model_info().slug.clone(),
-            &session.services.models_manager,
         )
-        .await;
+        .await
+        .expect("test model provider should resolve");
     current_context.realtime_active = false;
 
     let update_items =
@@ -11644,9 +11656,10 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     } else {
         "gpt-5.4"
     };
-    let turn_context = previous_context
-        .with_model(next_model.to_string(), &session.services.models_manager)
-        .await;
+    let turn_context = session
+        .turn_context_with_model(&previous_context, next_model.to_string())
+        .await
+        .expect("test model provider should resolve");
     let rollout_path = attach_thread_persistence(&mut session).await;
 
     session
@@ -12127,8 +12140,10 @@ async fn remote_compaction_v2_retains_only_the_selected_step(first_attempt: Firs
         )
         .await;
     let primary_turn = Arc::new(
-        turn.with_model("gpt-5.4".to_string(), &session.services.models_manager)
-            .await,
+        session
+            .turn_context_with_model(&turn, "gpt-5.4".to_string())
+            .await
+            .expect("test model provider should resolve"),
     );
     let primary = session
         .capture_step_context(primary_turn, &CancellationToken::new())
