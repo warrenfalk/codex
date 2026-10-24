@@ -626,6 +626,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadSetNameResponse,
     },
+    ThreadUnreadSet => "thread/unread/set" {
+        params: v2::ThreadUnreadSetParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadUnreadSetResponse,
+    },
     #[experimental("thread/prediction/request")]
     ThreadPredictionRequest => "thread/prediction/request" {
         params: v2::ThreadPredictionRequestParams,
@@ -1994,6 +1999,7 @@ server_notification_definitions! {
     ThreadStatusChanged => "thread/status/changed" (v2::ThreadStatusChangedNotification),
     #[experimental("thread/readState/changed")]
     ThreadReadStateChanged => "thread/readState/changed" (v2::ThreadReadStateChangedNotification),
+    ThreadUnreadChanged => "thread/unread/changed" (v2::ThreadUnreadChangedNotification),
     ThreadProjectEnvStatusChanged => "thread/projectEnv/statusChanged" (v2::ThreadProjectEnvStatusChangedNotification),
     ThreadArchived => "thread/archived" (v2::ThreadArchivedNotification),
     ThreadDeleted => "thread/deleted" (v2::ThreadDeletedNotification),
@@ -3350,6 +3356,7 @@ mod tests {
                     git_info: None,
                     name: None,
                     daybreak_enabled: None,
+                    unread: false,
                     turns: Vec::new(),
                 },
                 model: "gpt-5".to_string(),
@@ -3400,6 +3407,7 @@ mod tests {
                         "status": {
                             "type": "idle"
                         },
+                        "unread": false,
                         "path": null,
                         "cwd": absolute_path_string("tmp"),
                         "cliVersion": "0.0.0",

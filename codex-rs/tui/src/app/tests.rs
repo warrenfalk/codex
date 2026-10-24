@@ -73,6 +73,8 @@ mod permission_selection_tests;
 mod projectless_tests;
 #[path = "tests/quick_dials_tests.rs"]
 mod quick_dials_tests;
+#[path = "tests/thread_unread_tests.rs"]
+mod thread_unread_tests;
 #[path = "tests/unavailable_commands_tests.rs"]
 mod unavailable_commands;
 
@@ -4958,6 +4960,7 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
                 section_entered_at: None,
                 project_id: None,
                 daybreak_enabled: Some(true),
+                unread: false,
                 history_mode: Default::default(),
                 model_provider: "agent-provider".to_string(),
                 model: Some("gpt-agent".to_string()),
@@ -5064,6 +5067,7 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
                 section_entered_at: None,
                 project_id: None,
                 daybreak_enabled: None,
+                unread: false,
                 history_mode: Default::default(),
                 model_provider: "agent-provider".to_string(),
                 model: None,
@@ -5135,6 +5139,7 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
         section_entered_at: None,
         project_id: None,
         daybreak_enabled: None,
+        unread: false,
         history_mode: Default::default(),
         model_provider: "read-provider".to_string(),
         model: Some("server-reported-model".to_string()),
@@ -6712,6 +6717,7 @@ async fn make_test_app() -> Box<App> {
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
+        pending_focus_ack: None,
         _test_codex_home: test_codex_home,
     })
 }
@@ -6843,6 +6849,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
+            pending_focus_ack: None,
             _test_codex_home: test_codex_home,
         }),
         rx,

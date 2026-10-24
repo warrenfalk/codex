@@ -116,6 +116,7 @@ pub(super) async fn list_threads(
         items.retain(|thread| &thread.project_id == project_id);
     }
 
+    super::helpers::resolve_thread_unread(store, &mut items).await;
     Ok(ThreadPage { items, next_cursor })
 }
 
@@ -229,13 +230,14 @@ async fn list_section_threads(
         next_anchor,
         ..
     } = page;
-    let items = metadata_items
+    let mut items = metadata_items
         .into_iter()
         .map(|metadata| {
             let parent_thread_id = parent_thread_ids.get(&metadata.id).copied();
             stored_thread_from_state_metadata(store, metadata, parent_thread_id)
         })
-        .collect();
+        .collect::<Vec<_>>();
+    super::helpers::resolve_thread_unread(store, &mut items).await;
     let next_cursor = next_anchor.and_then(|anchor| {
         anchor.id.map(|thread_id| {
             let position = anchor.ts.timestamp_millis();

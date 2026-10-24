@@ -48,6 +48,7 @@ impl ChatWidget {
         };
         self.bottom_pane.set_placeholder_text(placeholder);
         self.bottom_pane.set_side_conversation_active(active);
+        self.refresh_session_indicators();
         if self.blocks_direct_input && !active {
             self.bottom_pane.set_parent_owned_thread();
         }

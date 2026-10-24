@@ -5051,6 +5051,7 @@
               "toggle_raw_output": null,
               "toggle_shortcuts": null,
               "toggle_side_conversation": null,
+              "toggle_unread": null,
               "toggle_vim_mode": null
             },
             "list": {
@@ -5992,6 +5993,14 @@
           ],
           "description": "Switch between a side conversation and its parent without closing either."
         },
+        "toggle_unread": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/KeybindingsSpec"
+            }
+          ],
+          "description": "Toggle the displayed thread's unread acknowledgement state."
+        },
         "toggle_vim_mode": {
           "allOf": [
             {
@@ -6130,6 +6139,7 @@
             "toggle_raw_output": null,
             "toggle_shortcuts": null,
             "toggle_side_conversation": null,
+            "toggle_unread": null,
             "toggle_vim_mode": null
           }
         },

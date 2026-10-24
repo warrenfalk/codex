@@ -65,6 +65,10 @@ recencyAt: number | null, /**
  * Current runtime status for the thread.
  */
 status: ThreadStatus, /**
+ * Persistent acknowledgement state. New user prompts set this even while the thread is active.
+ * Runtime stops and turn completion do not change it.
+ */
+unread: boolean, /**
  * [UNSTABLE] Path to the thread on disk.
  */
 path: string | null, /**

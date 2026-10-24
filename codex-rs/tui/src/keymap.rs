@@ -50,6 +50,10 @@ mod voice_tests;
 #[path = "keymap/global_find_tests.rs"]
 mod global_find_tests;
 
+#[cfg(test)]
+#[path = "keymap/thread_unread_tests.rs"]
+mod thread_unread_tests;
+
 pub(crate) use bindings::KeymapActionId;
 pub(crate) use bindings::KeymapContext;
 pub(crate) use bindings::bindings_for_action;
@@ -122,6 +126,8 @@ pub(crate) struct AppKeymap {
     pub(crate) toggle_side_conversation: Vec<KeyBinding>,
     /// Toggle clean scrollback mode for hiding committed tool/status noise.
     pub(crate) toggle_clean_scrollback: Vec<KeyBinding>,
+    /// Toggle the displayed thread's unread acknowledgement state.
+    pub(crate) toggle_unread: Vec<KeyBinding>,
 }
 
 /// Chat-level keybindings evaluated at the app event layer.
@@ -713,6 +719,19 @@ impl RuntimeKeymap {
             })
             .collect();
 
+        let toggle_unread_defaults: Vec<_> = defaults
+            .app
+            .toggle_unread
+            .iter()
+            .copied()
+            .filter(|binding| {
+                !configured_context_binding_is_used(keymap, *binding)
+                    && !chords.bindings.iter().any(|chord| {
+                        chord.chord.prefix.normalized_parts() == binding.normalized_parts()
+                    })
+            })
+            .collect();
+
         let app = AppKeymap {
             open_agents: resolve_bindings(
                 keymap.global.open_agents.as_ref(),
@@ -778,6 +797,11 @@ impl RuntimeKeymap {
                 keymap.global.toggle_clean_scrollback.as_ref(),
                 &defaults.app.toggle_clean_scrollback,
                 "tui.keymap.global.toggle_clean_scrollback",
+            )?,
+            toggle_unread: resolve_bindings(
+                keymap.global.toggle_unread.as_ref(),
+                &toggle_unread_defaults,
+                "tui.keymap.global.toggle_unread",
             )?,
         };
 
@@ -1700,6 +1724,7 @@ impl RuntimeKeymap {
                 toggle_raw_output: default_bindings![alt(KeyCode::Char('r'))],
                 toggle_side_conversation: default_bindings![ctrl(KeyCode::Char('/'))],
                 toggle_clean_scrollback: default_bindings![alt(KeyCode::Char('n'))],
+                toggle_unread: default_bindings![alt(KeyCode::Char('m'))],
             },
             chords: Arc::default(),
             chat: ChatKeymap {
@@ -2081,6 +2106,7 @@ impl RuntimeKeymap {
             ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
             ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
             ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
+            ("toggle_unread", self.app.toggle_unread.as_slice()),
             ("toggle_side_conversation", side_toggle_bindings.as_slice()),
             ("chat.open_presets", self.chat.open_presets.as_slice()),
             ("chat.toggle_voice", self.chat.toggle_voice.as_slice()),
@@ -2196,6 +2222,7 @@ impl RuntimeKeymap {
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
+                ("toggle_unread", self.app.toggle_unread.as_slice()),
                 ("toggle_side_conversation", side_toggle_bindings.as_slice()),
                 (
                     "toggle_clean_scrollback",
@@ -2292,6 +2319,7 @@ impl RuntimeKeymap {
                 ("toggle_vim_mode", self.app.toggle_vim_mode.as_slice()),
                 ("toggle_fast_mode", self.app.toggle_fast_mode.as_slice()),
                 ("toggle_raw_output", self.app.toggle_raw_output.as_slice()),
+                ("toggle_unread", self.app.toggle_unread.as_slice()),
                 ("toggle_side_conversation", side_toggle_bindings.as_slice()),
                 (
                     "toggle_clean_scrollback",

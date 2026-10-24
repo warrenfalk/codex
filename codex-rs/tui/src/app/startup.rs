@@ -542,6 +542,7 @@ impl App {
             matches!(&session_selection, SessionSelection::AgentsOverview);
         let mut read_only_thread = false;
         let mut history_notice = None;
+        let acknowledge_resumed = matches!(&session_selection, SessionSelection::Resume(_));
         let (mut chat_widget, initial_started_thread) = match session_selection {
             SessionSelection::StartFresh
             | SessionSelection::Exit
@@ -1030,6 +1031,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
+            pending_focus_ack: None,
             #[cfg(test)]
             _test_codex_home: None,
         };
@@ -1096,6 +1098,10 @@ See the Codex keymap documentation for supported actions and examples."
             {
                 Ok(result) => result?,
                 Err(err) => return shutdown_on_startup_error(app_server, err).await,
+            }
+            if acknowledge_resumed {
+                app.acknowledge_opened_thread(&mut app_server, thread_id)
+                    .await;
             }
             if read_only_thread {
                 app.ensure_thread_channel(thread_id).mark_external_writer();

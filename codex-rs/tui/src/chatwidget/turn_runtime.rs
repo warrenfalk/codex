@@ -44,6 +44,7 @@ impl ChatWidget {
             self.bottom_pane.hide_status_indicator();
         }
         self.refresh_status_surfaces();
+        self.refresh_session_indicators();
     }
 
     pub(super) fn collect_runtime_metrics_delta(&mut self) {

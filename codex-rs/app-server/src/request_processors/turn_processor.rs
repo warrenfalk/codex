@@ -1,5 +1,7 @@
 use super::thread_input::ensure_direct_input_allowed;
 use super::*;
+use crate::thread_unread::mark_thread_input_unread;
+use crate::thread_unread::receipt_notifications;
 use codex_agent_extension::AgentInvocation;
 use codex_agent_extension::AgentRun;
 use codex_agent_extension::AgentRunner;
@@ -721,6 +723,9 @@ impl TurnRequestProcessor {
             .with_responses_metadata(params.responsesapi_client_metadata)
             .with_responses_metadata_patch(params.responsesapi_client_metadata_patch)
             .with_trace(self.request_trace_context(&request_id).await);
+        let unread_state = self.thread_state_manager.thread_state(thread_id).await;
+        let unread_lock = unread_state.lock().await.unread_lock.clone();
+        let unread_guard = unread_lock.lock_owned().await;
         let submission = match execution_mode {
             TurnExecutionMode::Normal => thread.start_or_steer_turn(turn_request).await,
             TurnExecutionMode::ModelOnly => {
@@ -765,6 +770,25 @@ impl TurnRequestProcessor {
                 return Err(error);
             }
         };
+
+        if started {
+            self.thread_watch_manager
+                .note_turn_started(&thread_id.to_string())
+                .await;
+        }
+        if turn_has_input && !thread.config_snapshot().await.ephemeral {
+            // Input is already accepted; a metadata failure must not invite a duplicate prompt.
+            match mark_thread_input_unread(&thread, thread_id, &turn_id).await {
+                Ok(Some(state)) => {
+                    for notification in receipt_notifications(thread_id, state) {
+                        self.outgoing.send_server_notification(notification).await;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::error!(?error, "failed to mark accepted user input unread"),
+            }
+        }
+        drop(unread_guard);
 
         if turn_has_input && started && execution_mode == TurnExecutionMode::Normal {
             let config_snapshot = thread.config_snapshot().await;
@@ -1146,12 +1170,12 @@ impl TurnRequestProcessor {
         request_id: &ConnectionRequestId,
         params: TurnSteerParams,
     ) -> Result<TurnSteerResponse, JSONRPCErrorError> {
-        let (_, thread) = self
-            .load_thread(&params.thread_id)
-            .await
-            .inspect_err(|error| {
-                self.track_error_response(request_id, error, /*error_type*/ None);
-            })?;
+        let (thread_id, thread) =
+            self.load_thread(&params.thread_id)
+                .await
+                .inspect_err(|error| {
+                    self.track_error_response(request_id, error, /*error_type*/ None);
+                })?;
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
         self.config_manager
@@ -1181,6 +1205,9 @@ impl TurnRequestProcessor {
             .collect();
         let additional_context = map_additional_context(params.additional_context);
 
+        let unread_state = self.thread_state_manager.thread_state(thread_id).await;
+        let unread_lock = unread_state.lock().await.unread_lock.clone();
+        let _unread_guard = unread_lock.lock_owned().await;
         let submission = thread
             .steer_turn(
                 TurnInputRequest::new(TurnInput::UserInput {
@@ -1280,6 +1307,18 @@ impl TurnRequestProcessor {
                 return Err(error);
             }
         };
+        if !thread.config_snapshot().await.ephemeral {
+            // Steering is already accepted; report metadata failures without rejecting the input.
+            match mark_thread_input_unread(&thread, thread_id, &turn_id).await {
+                Ok(Some(state)) => {
+                    for notification in receipt_notifications(thread_id, state) {
+                        self.outgoing.send_server_notification(notification).await;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::error!(?error, "failed to mark accepted user input unread"),
+            }
+        }
         Ok(TurnSteerResponse { turn_id })
     }
 

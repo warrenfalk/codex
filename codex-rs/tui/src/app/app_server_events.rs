@@ -295,6 +295,7 @@ impl App {
             &notification,
             ServerNotification::ThreadStarted(_)
                 | ServerNotification::ThreadStatusChanged(_)
+                | ServerNotification::ThreadUnreadChanged(_)
                 | ServerNotification::ThreadSettingsUpdated(_)
                 | ServerNotification::ThreadNameUpdated(_)
                 | ServerNotification::ThreadArchived(_)

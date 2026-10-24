@@ -90,6 +90,7 @@ impl Drop for AgentsOverviewState {
 
 impl App {
     pub(super) fn open_agents_overview(&mut self, app_server: &AppServerSession) {
+        self.pending_focus_ack = None;
         if matches!(self.app_server_target, AppServerTarget::Embedded) {
             let workload_identity_selected = codex_login::is_workload_identity_selected();
             self.chat_widget.show_selection_view(SelectionViewParams {
@@ -273,6 +274,7 @@ impl App {
         {
             self.refresh_changed_agents_overview_threads(app_server);
         }
+        self.sync_thread_unread_indicator();
         self.repaint_agents_overview();
     }
 
@@ -459,6 +461,8 @@ impl App {
                 state.completion = Some(crate::bottom_pane::ViewCompletion::Accepted);
             }
             self.chat_widget.pre_draw_tick();
+            self.acknowledge_opened_thread(app_server, root_thread_id)
+                .await;
             return Ok(AppRunControl::Continue);
         }
         if self.reject_pending_permission_root_switch() {
@@ -902,6 +906,10 @@ impl App {
                 self.chat_widget.maybe_send_next_queued_input();
             }
         }
+        if !is_new_session {
+            self.acknowledge_opened_thread(app_server, root_thread_id)
+                .await;
+        }
         if !read_only && !is_new_session && !self.chat_widget.fork_in_progress {
             self.maybe_prompt_resume_paused_goal_after_resume(app_server, root_thread_id)
                 .await;
@@ -1223,8 +1231,20 @@ fn agents_overview_group(
     thread: &Thread,
     children: &HashMap<String, Vec<&Thread>>,
 ) -> AgentsOverviewGroup {
-    children.get(&thread.id).into_iter().flatten().fold(
-        AgentsOverviewGroup::for_status(&thread.status),
-        |group, child| group.min(agents_overview_group(child, children)),
-    )
+    let mut pending = vec![thread];
+    let mut group = AgentsOverviewGroup::Finished;
+    while let Some(current) = pending.pop() {
+        group = group.min(AgentsOverviewGroup::for_status(&current.status));
+        pending.extend(children.get(&current.id).into_iter().flatten().copied());
+    }
+    if thread.unread
+        && matches!(
+            group,
+            AgentsOverviewGroup::Ready | AgentsOverviewGroup::Finished
+        )
+    {
+        AgentsOverviewGroup::Unread
+    } else {
+        group
+    }
 }

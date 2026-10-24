@@ -579,6 +579,9 @@ impl App {
             AppEvent::ArchiveCurrentThread(mode) => {
                 return self.archive_current_thread(tui, app_server, mode).await;
             }
+            AppEvent::SetThreadUnread { thread_id, unread } => {
+                self.set_thread_unread(app_server, thread_id, unread).await;
+            }
             AppEvent::DeleteCurrentThread => {
                 return self.delete_current_thread(tui, app_server).await;
             }
@@ -865,7 +868,7 @@ impl App {
                 self.chat_widget.notify(Notification::FocusRequested);
             }
             #[cfg(unix)]
-            AppEvent::AgentsFocusRequested(pending) => self.handle_agents_focus(tui, pending).await,
+            AppEvent::AgentsFocusRequested(pending) => self.handle_agents_focus(tui, app_server, pending).await,
             AppEvent::Exit(mode) => {
                 if matches!(mode, ExitMode::ShutdownFirst | ExitMode::ShutdownAfterInterrupt) {
                     self.show_shutdown_feedback(tui)?;

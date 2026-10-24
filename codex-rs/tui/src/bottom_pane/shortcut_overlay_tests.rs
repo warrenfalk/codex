@@ -82,6 +82,10 @@ fn shortcut_overlay_uses_runtime_bindings_and_wsl_paste() {
         completion: key_hint::plain(KeyCode::Char('h')),
     });
     props.key_hints.insert_newline = Some(key_hint::shift(KeyCode::Enter).into());
+    props.key_hints.toggle_unread = Some(ShortcutHint::Chord {
+        prefix: key_hint::ctrl(KeyCode::Char('x')),
+        completion: key_hint::plain(KeyCode::Char('u')),
+    });
     props.key_hints.history_search = None;
     props.key_hints.reasoning_down = None;
     snapshot(

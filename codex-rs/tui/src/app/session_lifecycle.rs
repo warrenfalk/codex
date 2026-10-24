@@ -1366,6 +1366,8 @@ impl App {
             return Ok(AppRunControl::Continue);
         }
         if self.ignore_same_thread_resume(&target_session) {
+            self.acknowledge_opened_thread(app_server, target_session.thread_id)
+                .await;
             self.agents_overview
                 .hidden_threads
                 .remove(&target_session.thread_id);
@@ -1482,6 +1484,8 @@ impl App {
                     }
                 }
                 self.backfill_loaded_subagent_threads(app_server).await;
+                self.acknowledge_opened_thread(app_server, resumed_thread_id)
+                    .await;
                 if matches!(
                     self.runtime_approval_policy_override,
                     Some(RuntimeApprovalPolicyOverride::Restored(_))

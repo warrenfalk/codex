@@ -742,6 +742,13 @@ impl App {
             return true;
         }
 
+        if self.keymap.app.toggle_unread.is_pressed(key_event) {
+            if key_event.kind == KeyEventKind::Press {
+                self.toggle_thread_unread(app_server).await;
+            }
+            return true;
+        }
+
         if self.keymap.app.open_agents.is_pressed(key_event) {
             self.open_agents_overview(app_server);
             return true;

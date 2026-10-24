@@ -687,6 +687,11 @@ pub(crate) enum AppEvent {
 
     /// Archive the current session, then start a fresh chat or exit.
     ArchiveCurrentThread(ArchiveMode),
+    /// Set server-owned acknowledgement state without starting an agent turn.
+    SetThreadUnread {
+        thread_id: ThreadId,
+        unread: bool,
+    },
 
     /// Permanently delete the current active main thread and exit after it succeeds.
     DeleteCurrentThread,

@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "threadId": {
+      "type": "string"
+    },
+    "unread": {
+      "description": "Set unread explicitly, or acknowledge it. Acknowledgement is ignored during an active turn, including a turn waiting for approval or input. Ignored attempts are never deferred.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "threadId",
+    "unread"
+  ],
+  "title": "ThreadUnreadSetParams",
+  "type": "object"
+}
