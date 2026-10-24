@@ -1225,17 +1225,34 @@ fn append_read_only_subpath_args(
     allowed_write_paths: &[PathBuf],
     daemon_directories: &BTreeSet<PathBuf>,
 ) -> Result<()> {
-    if let Some(metadata) = transient_empty_metadata_path(subpath)
+    if let Some(symlink) = first_writable_symlink_component_in_path(subpath, allowed_write_paths) {
+        /*
+         * A read-only carveout under a writable symlink cannot be made reliable
+         * with bwrap path arguments. Binding the symlink's current target would
+         * only protect a startup-time snapshot; the sandboxed process could
+         * replace the writable symlink before it reads through the logical path.
+         */
+        return Err(CodexErr::Fatal(format!(
+            "cannot enforce sandbox read-only path {} because it crosses writable symlink {}",
+            subpath.display(),
+            symlink.display()
+        )));
+    }
+
+    if let Some(metadata) = transient_empty_mount_target(subpath)
         && is_within_allowed_write_paths(subpath, allowed_write_paths)
     {
+        if has_synthetic_mount_target(bwrap_args, subpath) {
+            return Ok(());
+        }
         // Another concurrent bwrap setup can leave an empty mount target at
-        // a missing metadata path. Treat it like the missing case instead of
+        // a missing read-only path. Treat it like the missing case instead of
         // binding that transient host path as the stable source.
         match metadata {
-            EmptyProtectedMetadataPath::File(metadata) => {
+            TransientEmptyMountTarget::File(metadata) => {
                 append_existing_empty_file_bind_data_args(bwrap_args, subpath, &metadata)?;
             }
-            EmptyProtectedMetadataPath::Directory(metadata) => {
+            TransientEmptyMountTarget::Directory(metadata) => {
                 append_existing_empty_directory_args(bwrap_args, subpath, &metadata);
             }
         }
@@ -1245,6 +1262,7 @@ fn append_read_only_subpath_args(
     if !subpath.exists() {
         if let Some(first_missing_component) = find_first_non_existent_component(subpath)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
+            && !has_synthetic_mount_target(bwrap_args, &first_missing_component)
         {
             append_missing_read_only_subpath_args(bwrap_args, &first_missing_component)?;
         }
@@ -1258,6 +1276,13 @@ fn append_read_only_subpath_args(
         append_daemon_socket_masks(&mut bwrap_args.args, subpath, daemon_directories)?;
     }
     Ok(())
+}
+
+fn has_synthetic_mount_target(bwrap_args: &BwrapArgs, path: &Path) -> bool {
+    bwrap_args
+        .synthetic_mount_targets
+        .iter()
+        .any(|target| target.path() == path)
 }
 
 fn append_empty_file_bind_data_args(bwrap_args: &mut BwrapArgs, path: &Path) -> Result<()> {
@@ -1410,23 +1435,19 @@ fn is_within_allowed_write_paths(path: &Path, allowed_write_paths: &[PathBuf]) -
         .any(|root| path.starts_with(root))
 }
 
-enum EmptyProtectedMetadataPath {
+enum TransientEmptyMountTarget {
     File(Metadata),
     Directory(Metadata),
 }
 
-fn transient_empty_metadata_path(path: &Path) -> Option<EmptyProtectedMetadataPath> {
-    if !path.file_name().is_some_and(is_protected_metadata_name) {
-        return None;
-    }
-
+fn transient_empty_mount_target(path: &Path) -> Option<TransientEmptyMountTarget> {
     let metadata = fs::symlink_metadata(path).ok()?;
     if metadata.file_type().is_file() && metadata.len() == 0 {
-        return Some(EmptyProtectedMetadataPath::File(metadata));
+        return Some(TransientEmptyMountTarget::File(metadata));
     }
 
     if metadata.file_type().is_dir() && directory_is_empty(path) {
-        return Some(EmptyProtectedMetadataPath::Directory(metadata));
+        return Some(TransientEmptyMountTarget::Directory(metadata));
     }
 
     None

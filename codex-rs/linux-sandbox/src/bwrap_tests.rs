@@ -1550,3 +1550,167 @@ fn synthetic_mount_target_paths(args: &BwrapArgs) -> Vec<PathBuf> {
         .map(|target| target.path().to_path_buf())
         .collect()
 }
+
+#[test]
+fn collapsed_missing_read_only_subpaths_are_mounted_once() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let dot_git = temp_dir.path().join("workspace/.git");
+    let objects = dot_git.join("objects");
+    std::fs::create_dir_all(&dot_git).expect("create empty .git directory");
+    let mut args = BwrapArgs {
+        args: Vec::new(),
+        preserved_files: Vec::new(),
+        synthetic_mount_targets: Vec::new(),
+    };
+    let allowed_write_paths = vec![dot_git];
+
+    for subpath in [
+        objects.join("info/alternates"),
+        objects.join("info/http-alternates"),
+    ] {
+        append_read_only_subpath_args(&mut args, &subpath, &allowed_write_paths, &BTreeSet::new())
+            .expect("append read-only subpath");
+    }
+
+    assert_eq!(synthetic_mount_target_paths(&args), vec![objects.clone()]);
+    let objects = path_to_string(&objects);
+    assert_eq!(
+        args.args
+            .windows(3)
+            .filter(|window| { window[0] == "--ro-bind-data" && window[2] == objects.as_str() })
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn transient_empty_read_only_file_uses_empty_file_bind_data() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let workspace = temp_dir.path().join("workspace");
+    let config_lock = workspace.join("config.lock");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    File::create(&config_lock).expect("create empty config lock");
+
+    let workspace_root =
+        AbsolutePathBuf::from_absolute_path(&workspace).expect("absolute workspace");
+    let config_lock_root =
+        AbsolutePathBuf::from_absolute_path(&config_lock).expect("absolute config lock");
+    let policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Special {
+                value: FileSystemSpecialPath::Root,
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: workspace_root.into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: config_lock_root.into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+    ]);
+
+    let args = create_filesystem_args(&policy, temp_dir.path(), BwrapOptions::default())
+        .expect("filesystem args");
+    let config_lock_str = path_to_string(&config_lock);
+
+    assert_empty_file_bound_without_perms(&args.args, &config_lock);
+    assert!(
+        !args.args.windows(3).any(|window| {
+            window
+                == [
+                    "--ro-bind",
+                    config_lock_str.as_str(),
+                    config_lock_str.as_str(),
+                ]
+        }),
+        "transient empty read-only file should not be treated as a stable bind source",
+    );
+    let metadata = std::fs::symlink_metadata(&config_lock).expect("stat config lock");
+    let target = args
+        .synthetic_mount_targets
+        .iter()
+        .find(|target| target.path() == config_lock)
+        .expect("synthetic config lock target");
+    assert!(
+        !target.should_remove_after_bwrap(&metadata),
+        "pre-existing empty read-only files must not be cleaned up as synthetic targets",
+    );
+}
+
+#[test]
+fn missing_read_only_descendant_is_deferred_to_nested_writable_root() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let workspace = temp_dir.path().join("workspace");
+    let admin = workspace.join("admin");
+    let private = admin.join("private");
+    let config_worktree = private.join("config.worktree");
+    std::fs::create_dir_all(&private).expect("create private root");
+    let workspace = AbsolutePathBuf::from_absolute_path(&workspace).expect("absolute workspace");
+    let admin = AbsolutePathBuf::from_absolute_path(&admin).expect("absolute admin");
+    let private = AbsolutePathBuf::from_absolute_path(&private).expect("absolute private");
+    let config_worktree =
+        AbsolutePathBuf::from_absolute_path(&config_worktree).expect("absolute config.worktree");
+    let policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: workspace.into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path { path: admin.into() },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: private.clone().into(),
+            },
+            access: FileSystemAccessMode::Write,
+            missing_path_behavior: None,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: config_worktree.clone().into(),
+            },
+            access: FileSystemAccessMode::Read,
+            missing_path_behavior: None,
+        },
+    ]);
+
+    let args = create_filesystem_args(&policy, temp_dir.path(), BwrapOptions::default())
+        .expect("filesystem args");
+    let private_str = path_to_string(private.as_path());
+    let config_worktree_str = path_to_string(config_worktree.as_path());
+    let private_bind_index = args
+        .args
+        .windows(3)
+        .position(|window| window == ["--bind", private_str.as_str(), private_str.as_str()])
+        .expect("private root should be rebound writable");
+    let config_worktree_mount_indices: Vec<usize> = args
+        .args
+        .windows(3)
+        .enumerate()
+        .filter_map(|(index, window)| {
+            (window[0] == "--ro-bind-data" && window[2] == config_worktree_str).then_some(index)
+        })
+        .collect();
+
+    assert_eq!(config_worktree_mount_indices.len(), 1);
+    assert!(
+        private_bind_index < config_worktree_mount_indices[0],
+        "missing read-only descendants must be mounted after their nested writable root: {:#?}",
+        args.args,
+    );
+}

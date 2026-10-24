@@ -4102,8 +4102,15 @@ impl Session {
             settings.model_info.as_ref(),
         );
         let session_telemetry = settings.telemetry(&turn_context.session_telemetry);
-        let environments = environments.or_cancel(cancellation_token).await?;
+        let mut environments = environments.or_cancel(cancellation_token).await?;
         let inherited_environments = inherited_environments.unwrap_or_else(|| environments.clone());
+        // Steps capture fresh environments; apply repository permissions to this exact snapshot.
+        let _ = crate::git_metadata_permissions::apply_git_metadata_permissions_to_environments(
+            &mut environments,
+            &turn_context.config.permissions,
+        )
+        .or_cancel(cancellation_token)
+        .await?;
         // Keep both preparation futures off caller stacks while they are live together.
         let load_agents_md = Box::pin(async {
             let (loaded_agents_md, warnings) = self
