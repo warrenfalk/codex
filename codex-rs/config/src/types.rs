@@ -848,10 +848,17 @@ impl QuickDial {
     }
 }
 
+pub use crate::tts::TtsConfig;
+pub use crate::tts::TtsMode;
+
 /// Collection of settings that are specific to the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct Tui {
+    /// Automatic speech through a local command.
+    #[serde(default)]
+    pub tts: TtsConfig,
+
     #[serde(default, flatten)]
     pub notification_settings: TuiNotificationSettings,
 

@@ -115,6 +115,7 @@ impl ChatWidget {
             }),
             transcript: TranscriptState::new(active_cell),
             notes: crate::notes::NotesState::default(),
+            speech: crate::tts::Speech::default(),
             raw_output_mode: local_settings.tui.raw_output_mode,
             config,
             local_settings,
@@ -306,6 +307,10 @@ impl ChatWidget {
             widget.local_settings.codex_home.as_path(),
             widget.local_settings.history.persistence,
         );
+        widget
+            .speech
+            .set_mode(widget.local_settings.tui.tts.default_mode);
+        widget.bottom_pane.set_tts_mode(widget.speech.mode());
         widget.prefetch_rate_limits();
         if let Some(keymap) = runtime_keymap {
             widget.bottom_pane.set_keymap_bindings(&keymap);
