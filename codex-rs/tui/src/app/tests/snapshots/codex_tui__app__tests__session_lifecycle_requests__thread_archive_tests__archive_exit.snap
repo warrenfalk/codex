@@ -1,0 +1,5 @@
+---
+source: tui/src/app/tests/thread_archive_tests.rs
+expression: output
+---
+Session archived: THREAD_ID
