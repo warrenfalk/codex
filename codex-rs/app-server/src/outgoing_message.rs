@@ -122,6 +122,10 @@ pub(crate) enum OutgoingEnvelope {
         message: OutgoingMessage,
         write_complete_tx: Option<oneshot::Sender<()>>,
     },
+    ToConnections {
+        connection_ids: Vec<ConnectionId>,
+        message: OutgoingMessage,
+    },
     Broadcast {
         message: OutgoingMessage,
     },
@@ -208,9 +212,6 @@ impl ThreadScopedOutgoingMessageSender {
         self.outgoing
             .analytics_events_client
             .track_notification(&notification);
-        if self.connection_ids.is_empty() {
-            return;
-        }
         self.outgoing
             .send_server_notification_to_connections(self.connection_ids.as_slice(), notification)
             .await;
@@ -427,28 +428,16 @@ impl OutgoingMessageSender {
                     .await
             }
             Some(connection_ids) => {
-                let mut send_error = None;
                 for connection_id in connection_ids {
-                    if let Err(err) = self
-                        .sender
-                        .send(OutgoingEnvelope::ToConnection {
-                            connection_id: *connection_id,
-                            message: outgoing_message.clone(),
-                            write_complete_tx: None,
-                        })
-                        .await
-                    {
-                        send_error = Some(err);
-                        break;
-                    } else {
-                        self.analytics_events_client
-                            .track_server_request(connection_id.0, request.clone());
-                    }
+                    self.analytics_events_client
+                        .track_server_request(connection_id.0, request.clone());
                 }
-                match send_error {
-                    Some(err) => Err(err),
-                    None => Ok(()),
-                }
+                self.sender
+                    .send(OutgoingEnvelope::ToConnections {
+                        connection_ids: connection_ids.to_vec(),
+                        message: outgoing_message,
+                    })
+                    .await
             }
         };
 
@@ -765,8 +754,16 @@ impl OutgoingMessageSender {
             self.analytics_events_client
                 .track_notification(&notification);
         }
-        self.send_server_notification_to_connections(&[], notification)
-            .await;
+        tracing::trace!("app-server event: {notification}");
+        if let Err(err) = self
+            .sender
+            .send(OutgoingEnvelope::Broadcast {
+                message: timestamped_server_notification(notification),
+            })
+            .await
+        {
+            warn!("failed to send server notification to client: {err:?}");
+        }
     }
 
     pub(crate) fn try_send_server_notification(&self, notification: ServerNotification) {
@@ -777,6 +774,7 @@ impl OutgoingMessageSender {
         }
     }
 
+    /// Empty recipient sets still reach firehose observers without broadcasting to other clients.
     pub(crate) async fn send_server_notification_to_connections(
         &self,
         connection_ids: &[ConnectionId],
@@ -787,31 +785,15 @@ impl OutgoingMessageSender {
             "app-server event: {notification}"
         );
         let outgoing_message = timestamped_server_notification(notification);
-        if connection_ids.is_empty() {
-            if let Err(err) = self
-                .sender
-                .send(OutgoingEnvelope::Broadcast {
-                    message: outgoing_message,
-                })
-                .await
-            {
-                warn!("failed to send server notification to client: {err:?}");
-            }
-            return;
-        }
-        let messages = std::iter::repeat_n(outgoing_message, connection_ids.len());
-        for (connection_id, message) in connection_ids.iter().zip(messages) {
-            if let Err(err) = self
-                .sender
-                .send(OutgoingEnvelope::ToConnection {
-                    connection_id: *connection_id,
-                    message,
-                    write_complete_tx: None,
-                })
-                .await
-            {
-                warn!("failed to send server notification to client: {err:?}");
-            }
+        if let Err(err) = self
+            .sender
+            .send(OutgoingEnvelope::ToConnections {
+                connection_ids: connection_ids.to_vec(),
+                message: outgoing_message,
+            })
+            .await
+        {
+            warn!("failed to send server notification to client: {err:?}");
         }
     }
 
@@ -915,7 +897,7 @@ fn now_unix_timestamp_ms() -> u64 {
         .unwrap_or_default()
 }
 
-fn timestamped_server_notification(notification: ServerNotification) -> OutgoingMessage {
+pub(crate) fn timestamped_server_notification(notification: ServerNotification) -> OutgoingMessage {
     OutgoingMessage::AppServerNotification(ServerNotificationEnvelope {
         notification,
         emitted_at_ms: Some(now_unix_timestamp_ms().try_into().unwrap_or_default()),
@@ -1368,7 +1350,7 @@ mod tests {
         }
     }
 
-    /// Empty target lists broadcast; explicit targets preserve order, payload, and one timestamp.
+    /// Each targeted logical event preserves recipient order, payload, and one timestamp.
     #[tokio::test]
     async fn send_server_notification_to_connections_reuses_timestamp() {
         for connection_ids in [
@@ -1391,40 +1373,25 @@ mod tests {
                 .send_server_notification_to_connections(&connection_ids, notification)
                 .await;
 
-            let mut timestamps = Vec::new();
-            for index in 0..connection_ids.len().max(1) {
-                let message = match rx.try_recv().expect("notification should be queued") {
-                    OutgoingEnvelope::Broadcast { message } => {
-                        assert!(connection_ids.is_empty());
-                        message
-                    }
-                    OutgoingEnvelope::ToConnection {
-                        connection_id,
-                        message,
-                        write_complete_tx,
-                    } => {
-                        assert_eq!(connection_id, connection_ids[index]);
-                        assert!(write_complete_tx.is_none());
-                        message
-                    }
-                };
-                let OutgoingMessage::AppServerNotification(envelope) = message else {
-                    panic!("expected server notification");
-                };
-                assert_eq!(
-                    serde_json::to_value(&envelope.notification).unwrap(),
-                    expected
-                );
-                timestamps.push(
-                    envelope
-                        .emitted_at_ms
-                        .expect("notification has a timestamp"),
-                );
-            }
+            let OutgoingEnvelope::ToConnections {
+                connection_ids: recipients,
+                message,
+            } = rx.try_recv().expect("notification should be queued")
+            else {
+                panic!("expected one multi-connection server notification");
+            };
+            assert_eq!(recipients, connection_ids);
+            let OutgoingMessage::AppServerNotification(envelope) = message else {
+                panic!("expected app-server notification");
+            };
+            assert_eq!(
+                serde_json::to_value(&envelope.notification).unwrap(),
+                expected
+            );
             assert!(
-                timestamps
-                    .iter()
-                    .all(|timestamp| *timestamp == timestamps[0])
+                envelope
+                    .emitted_at_ms
+                    .is_some_and(|emitted_at_ms| emitted_at_ms > 0)
             );
             assert!(rx.try_recv().is_err());
         }
