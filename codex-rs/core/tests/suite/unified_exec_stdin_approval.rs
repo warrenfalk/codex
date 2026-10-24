@@ -260,7 +260,7 @@ async fn stdin_reviews_escalated_terminal_with_denied_reads_before_delivering_in
 
     let _writes = mount_sse_sequence(harness.server(), vec![
         tool_response("denied", "write_stdin", json!({"session_id":1000,"chars":"printf denied > denied-marker\n"})),
-        tool_response("allowed", "write_stdin", json!({"session_id":1000,"chars":"if test -e denied-marker || cat secret.env; then exit 12; fi; printf approved > approved-marker; exit\n"})),
+        tool_response("allowed", "write_stdin", json!({"session_id":1000,"chars":"if test -e denied-marker; then exit 12; fi; test \"$(cat secret.env)\" = secret || exit 13; printf approved > approved-marker; exit\n"})),
         sse(vec![ev_completed("done")]),
     ]).await;
     codex

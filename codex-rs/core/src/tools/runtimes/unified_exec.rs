@@ -34,7 +34,6 @@ use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::executor_windows_sandbox_selection;
 use crate::tools::sandboxing::managed_network_for_sandbox_permissions;
-use crate::tools::sandboxing::sandbox_permissions_preserving_denied_reads;
 use crate::unified_exec::TerminalPermissions;
 use crate::unified_exec::TerminalSandboxSource;
 use crate::unified_exec::UnifiedExecProcess;
@@ -219,17 +218,8 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
         req: &UnifiedExecRequest,
         ctx: &ToolCtx,
     ) -> Option<NetworkApprovalSpec> {
-        let file_system_sandbox_policy = req
-            .turn_environment
-            .permission_profile()
-            .file_system_sandbox_policy();
-        let sandbox_permissions = sandbox_permissions_preserving_denied_reads(
-            req.sandbox_permissions,
-            &file_system_sandbox_policy,
-        );
         // Explicit full escalation bypasses controller and attachment-owned network proxies.
-        // Denied-read restrictions above can still require a sandboxed launch.
-        if sandbox_permissions.requires_escalated_permissions() {
+        if req.sandbox_permissions.requires_escalated_permissions() {
             return None;
         }
         let network = req.network.clone();
@@ -272,14 +262,9 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             .shell
             .as_ref()
             .unwrap_or(session_shell.as_ref());
-        let (file_system_sandbox_policy, _) = attempt.permissions.to_runtime_permissions();
-        let launch_sandbox_permissions = sandbox_permissions_preserving_denied_reads(
-            req.sandbox_permissions,
-            &file_system_sandbox_policy,
-        );
         let managed_network = attempt.network_proxy(managed_network_for_sandbox_permissions(
             req.network.as_ref(),
-            launch_sandbox_permissions,
+            req.sandbox_permissions,
         ));
         let environment_is_remote = req.turn_environment.environment.is_remote();
         let credential_broker_available = !environment_is_remote
@@ -301,7 +286,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             snapshot_metrics::SnapshotMetrics::start(req, &ctx.step_context.turn.config);
         let shell_snapshot = if environment_is_remote
             || credential_broker_available
-                && launch_sandbox_permissions.requires_escalated_permissions()
+                && req.sandbox_permissions.requires_escalated_permissions()
         {
             None
         } else {
@@ -329,7 +314,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             .as_ref()
             .map(|metrics| metrics.started_at.elapsed());
         let shell_snapshot_location = shell_snapshot.as_ref().map(|snapshot| snapshot.path());
-        let mut env = exec_env_for_sandbox_permissions(&req.env, launch_sandbox_permissions);
+        let mut env = exec_env_for_sandbox_permissions(&req.env, req.sandbox_permissions);
         let snapshot_credential_context = if let Some(snapshot) = shell_snapshot.as_ref()
             && (managed_network.is_some() || req.shell.is_posix_login())
         {
