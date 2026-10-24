@@ -2036,6 +2036,174 @@
             },
             "method": {
               "enum": [
+                "controller/register"
+              ],
+              "title": "Controller/registerRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ControllerRegisterParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Controller/registerRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/read"
+              ],
+              "title": "Thread/control/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/request"
+              ],
+              "title": "Thread/control/requestRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlRequestParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/requestRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/update"
+              ],
+              "title": "Thread/control/updateRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlUpdateParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/updateRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/release"
+              ],
+              "title": "Thread/control/releaseRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlReleaseParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/releaseRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/input"
+              ],
+              "title": "Thread/control/inputRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlInputParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/inputRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/control/interrupt"
+              ],
+              "title": "Thread/control/interruptRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlInterruptParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/interruptRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/archive"
               ],
               "title": "Thread/archiveRequestMethod",
@@ -7066,6 +7234,25 @@
         "turnId"
       ],
       "title": "ContextCompactedNotification",
+      "type": "object"
+    },
+    "ControllerRegisterParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Registers a trusted MCP bridge connection as one external controller. Authentication of this stable identity is the bridge's responsibility.",
+      "properties": {
+        "controllerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "controllerId"
+      ],
+      "title": "ControllerRegisterParams",
+      "type": "object"
+    },
+    "ControllerRegisterResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ControllerRegisterResponse",
       "type": "object"
     },
     "ConversationTextRole": {
@@ -17961,6 +18148,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/control/changed"
+              ],
+              "title": "Thread/control/changedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadControlChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/control/changedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/readState/changed"
               ],
               "title": "Thread/readState/changedNotificationMethod",
@@ -21281,6 +21488,433 @@
     "ThreadCompactStartResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ThreadCompactStartResponse",
+      "type": "object"
+    },
+    "ThreadControlAction": {
+      "oneOf": [
+        {
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "approve"
+              ],
+              "title": "ApproveThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId",
+            "type"
+          ],
+          "title": "ApproveThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "deny"
+              ],
+              "title": "DenyThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId",
+            "type"
+          ],
+          "title": "DenyThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "revoke"
+              ],
+              "title": "RevokeThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "RevokeThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "lock"
+              ],
+              "title": "LockThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "LockThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "unlock"
+              ],
+              "title": "UnlockThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "UnlockThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "controllerId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "grant"
+              ],
+              "title": "GrantThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "controllerId",
+            "type"
+          ],
+          "title": "GrantThreadControlAction",
+          "type": "object"
+        }
+      ]
+    },
+    "ThreadControlChangedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/ThreadControlState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ThreadControlChangedNotification",
+      "type": "object"
+    },
+    "ThreadControlGrant": {
+      "properties": {
+        "controllerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "controllerId",
+        "id"
+      ],
+      "type": "object"
+    },
+    "ThreadControlInputParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Restricted input: deliberately excludes sandbox, approval, and config overrides.",
+      "properties": {
+        "expectedTurnId": {
+          "description": "Null means start only if idle. A turn ID means steer exactly that turn.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "grantId": {
+          "type": "string"
+        },
+        "input": {
+          "items": {
+            "$ref": "#/definitions/UserInput"
+          },
+          "type": "array"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId",
+        "input",
+        "threadId"
+      ],
+      "title": "ThreadControlInputParams",
+      "type": "object"
+    },
+    "ThreadControlInputResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turnId"
+      ],
+      "title": "ThreadControlInputResponse",
+      "type": "object"
+    },
+    "ThreadControlInterruptParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "grantId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId",
+        "threadId",
+        "turnId"
+      ],
+      "title": "ThreadControlInterruptParams",
+      "type": "object"
+    },
+    "ThreadControlInterruptResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ThreadControlInterruptResponse",
+      "type": "object"
+    },
+    "ThreadControlReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadControlReadParams",
+      "type": "object"
+    },
+    "ThreadControlReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/ThreadControlState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ThreadControlReadResponse",
+      "type": "object"
+    },
+    "ThreadControlReleaseParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "grantId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId",
+        "threadId"
+      ],
+      "title": "ThreadControlReleaseParams",
+      "type": "object"
+    },
+    "ThreadControlReleaseResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/ThreadControlState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ThreadControlReleaseResponse",
+      "type": "object"
+    },
+    "ThreadControlRequest": {
+      "properties": {
+        "autoGrantAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "controllerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadControlRequestStatus"
+        }
+      },
+      "required": [
+        "controllerId",
+        "id",
+        "reason",
+        "requestedAt",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ThreadControlRequestParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "requestId": {
+          "description": "Caller-generated unique ID. Repeating the latest request is idempotent.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "requestId",
+        "threadId"
+      ],
+      "title": "ThreadControlRequestParams",
+      "type": "object"
+    },
+    "ThreadControlRequestResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/ThreadControlState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ThreadControlRequestResponse",
+      "type": "object"
+    },
+    "ThreadControlRequestStatus": {
+      "enum": [
+        "pending",
+        "granted",
+        "denied"
+      ],
+      "type": "string"
+    },
+    "ThreadControlState": {
+      "properties": {
+        "activeTurnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadControlGrant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interactiveAttached": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "request": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadControlRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Latest request, including its terminal decision, retained until replaced."
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnRunning": {
+          "description": "Also covers startup before an active turn ID has been published.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "interactiveAttached",
+        "locked",
+        "threadId",
+        "turnRunning"
+      ],
+      "type": "object"
+    },
+    "ThreadControlUpdateParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/ThreadControlAction"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "threadId"
+      ],
+      "title": "ThreadControlUpdateParams",
+      "type": "object"
+    },
+    "ThreadControlUpdateResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/ThreadControlState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ThreadControlUpdateResponse",
       "type": "object"
     },
     "ThreadDeleteParams": {

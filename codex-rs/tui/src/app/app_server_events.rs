@@ -147,6 +147,7 @@ impl App {
                 self.repaint_agents_overview();
             }
             AppServerEvent::Disconnected { message } => {
+                self.reset_thread_control_ui();
                 // The request result distinguishes a refused start from a lost reply.
                 if self.pending_startup_thread_start
                     && !matches!(self.app_server_target, crate::AppServerTarget::Embedded)
@@ -168,6 +169,10 @@ impl App {
         app_server_client: &AppServerSession,
         notification: ServerNotification,
     ) {
+        if let ServerNotification::ThreadControlChanged(changed) = notification {
+            self.receive_thread_control(changed.state);
+            return;
+        }
         // A picker can leave an old runtime's close notification queued while the same thread
         // is resumed. Thread IDs survive reloads, so confirm that the displayed thread is still
         // unloaded before routing a close that would exit the TUI or switch away from it.

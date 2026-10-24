@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadControlGrant": {
+      "properties": {
+        "controllerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "controllerId",
+        "id"
+      ],
+      "type": "object"
+    },
+    "ThreadControlRequest": {
+      "properties": {
+        "autoGrantAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "controllerId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadControlRequestStatus"
+        }
+      },
+      "required": [
+        "controllerId",
+        "id",
+        "reason",
+        "requestedAt",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ThreadControlRequestStatus": {
+      "enum": [
+        "pending",
+        "granted",
+        "denied"
+      ],
+      "type": "string"
+    },
+    "ThreadControlState": {
+      "properties": {
+        "activeTurnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadControlGrant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interactiveAttached": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "request": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadControlRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Latest request, including its terminal decision, retained until replaced."
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnRunning": {
+          "description": "Also covers startup before an active turn ID has been published.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "interactiveAttached",
+        "locked",
+        "threadId",
+        "turnRunning"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "state": {
+      "$ref": "#/definitions/ThreadControlState"
+    }
+  },
+  "required": [
+    "state"
+  ],
+  "title": "ThreadControlReadResponse",
+  "type": "object"
+}

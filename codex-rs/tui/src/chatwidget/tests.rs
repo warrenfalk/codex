@@ -311,6 +311,8 @@ mod terminal_program_status;
 mod terminal_title;
 #[path = "tests/thread_archive_tests.rs"]
 mod thread_archive_tests;
+#[path = "tests/thread_control_tests.rs"]
+mod thread_control_tests;
 #[path = "tests/thread_unread_tests.rs"]
 mod thread_unread_tests;
 #[path = "tests/tool_activity_tests.rs"]

@@ -25,6 +25,7 @@ impl ChatWidget {
 
 #[derive(Debug)]
 pub(crate) enum Notification {
+    ThreadControlRequested { controller_id: String },
     AgentTurnComplete { response: String },
     ExecApprovalRequested { command: String },
     EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
@@ -38,6 +39,9 @@ pub(crate) enum Notification {
 impl Notification {
     pub(super) fn display(&self) -> String {
         match self {
+            Notification::ThreadControlRequested { controller_id } => {
+                format!("{controller_id} requests control of a Codex thread")
+            }
             Notification::AgentTurnComplete { response } => {
                 Notification::agent_turn_preview(response)
                     .unwrap_or_else(|| "Agent turn complete".to_string())
@@ -79,6 +83,7 @@ impl Notification {
         match self {
             Notification::AgentTurnComplete { .. } => "agent-turn-complete",
             Notification::ExecApprovalRequested { .. }
+            | Notification::ThreadControlRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. } => "approval-requested",
             Notification::FocusRequested => "focus-requested",
@@ -94,6 +99,7 @@ impl Notification {
             | Notification::FocusRequested
             | Notification::ModelCapacityWarning => 0,
             Notification::ExecApprovalRequested { .. }
+            | Notification::ThreadControlRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. }
             | Notification::PlanModePrompt { .. }

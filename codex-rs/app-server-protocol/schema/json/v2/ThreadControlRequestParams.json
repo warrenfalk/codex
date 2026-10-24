@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "reason": {
+      "type": "string"
+    },
+    "requestId": {
+      "description": "Caller-generated unique ID. Repeating the latest request is idempotent.",
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason",
+    "requestId",
+    "threadId"
+  ],
+  "title": "ThreadControlRequestParams",
+  "type": "object"
+}

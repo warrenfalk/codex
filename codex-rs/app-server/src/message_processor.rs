@@ -113,6 +113,7 @@ use crate::models_refresh_worker::ModelsRefreshWorker;
 use crate::turn_admission::TurnAdmission;
 
 mod request_future;
+mod thread_control;
 
 const CONNECTION_RPC_DRAIN_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
 
@@ -148,6 +149,7 @@ fn reject_removed_permission_profile(request: &JSONRPCRequest) -> Result<(), JSO
 }
 
 pub(crate) struct MessageProcessor {
+    thread_control: Arc<crate::thread_control::ThreadControlService>,
     pub(crate) turn_admission: TurnAdmission,
     user_verification: Arc<crate::user_verification::Service>,
     outgoing: Arc<OutgoingMessageSender>,
@@ -182,6 +184,8 @@ pub(crate) struct MessageProcessor {
 
 #[derive(Debug)]
 pub(crate) struct ConnectionSessionState {
+    /// Fixed by the first post-initialize request: None is an interactive client.
+    pub(crate) controller: OnceLock<Option<String>>,
     pub(crate) rpc_gate: Arc<ConnectionRpcGate>,
     pub(crate) origin: crate::transport::ConnectionOrigin,
     pub(crate) mcp_event_streams: McpEventStreams,
@@ -203,6 +207,7 @@ pub(crate) struct InitializedConnectionSessionState {
 impl ConnectionSessionState {
     pub(crate) fn new(origin: crate::transport::ConnectionOrigin) -> Self {
         Self {
+            controller: OnceLock::new(),
             origin,
             rpc_gate: Arc::new(ConnectionRpcGate::new()),
             mcp_event_streams: McpEventStreams::default(),
@@ -214,6 +219,10 @@ impl ConnectionSessionState {
 
     pub(crate) fn initialized(&self) -> bool {
         self.initialized.get().is_some()
+    }
+
+    pub(crate) fn controller_id(&self) -> Option<&str> {
+        self.controller.get().and_then(Option::as_deref)
     }
 
     pub(crate) fn experimental_api_enabled(&self) -> bool {
@@ -576,6 +585,13 @@ impl MessageProcessor {
             config_warnings,
             sample_responses,
         );
+        let thread_control = crate::thread_control::ThreadControlService::new(
+            config.codex_home.to_path_buf(),
+            Arc::clone(&thread_manager),
+            Arc::clone(&thread_store),
+            thread_state_manager.clone(),
+            outgoing.clone(),
+        );
         let turn_processor = TurnRequestProcessor::new(
             auth_manager,
             Arc::clone(&thread_manager),
@@ -634,6 +650,7 @@ impl MessageProcessor {
         );
 
         Self {
+            thread_control,
             turn_admission,
             user_verification,
             outgoing,
@@ -872,6 +889,7 @@ impl MessageProcessor {
                 connection_id,
                 ConnectionCapabilities {
                     request_attestation,
+                    external_controller: false,
                 },
             )
             .await;
@@ -981,6 +999,9 @@ impl MessageProcessor {
         session: &ConnectionSessionState,
     ) {
         let JSONRPCResponse { id, result, .. } = response;
+        if session.controller_id().is_some() {
+            return;
+        }
         if !session.take_answerable_server_request(&id).await {
             tracing::warn!(request_id = ?id, "ignoring response for unowned server request");
             return;
@@ -997,6 +1018,9 @@ impl MessageProcessor {
         err: JSONRPCError,
         session: &ConnectionSessionState,
     ) {
+        if session.controller_id().is_some() {
+            return;
+        }
         if !session.take_answerable_server_request(&err.id).await {
             tracing::warn!(request_id = ?err.id, "ignoring error for unowned server request");
             return;
@@ -1056,6 +1080,41 @@ impl MessageProcessor {
             return Err(invalid_request("Not initialized"));
         }
 
+        if let ClientRequest::ControllerRegister { params, .. } = &codex_request {
+            crate::thread_control::validate_label(&params.controller_id)?;
+            session
+                .controller
+                .set(Some(params.controller_id.clone()))
+                .map_err(|_| {
+                    invalid_request(
+                        "controller/register must be the first request after initialize",
+                    )
+                })?;
+            self.thread_processor
+                .connection_initialized(
+                    connection_request_id.connection_id,
+                    ConnectionCapabilities {
+                        request_attestation: session.request_attestation(),
+                        external_controller: true,
+                    },
+                )
+                .await;
+            self.outgoing
+                .send_response(
+                    connection_request_id,
+                    codex_app_server_protocol::ControllerRegisterResponse {},
+                )
+                .await;
+            return Ok(());
+        }
+        session.controller.get_or_init(|| None);
+        if session.controller_id().is_some() {
+            crate::thread_control::admission::validate_controller_request(&codex_request)?;
+        }
+        self.thread_control
+            .revoke_for_input(&session, &codex_request)
+            .await?;
+
         if let Some(reason) = codex_request.experimental_reason()
             && !session.experimental_api_enabled()
         {
@@ -1079,6 +1138,7 @@ impl MessageProcessor {
             | ClientRequest::ThreadArchive { .. } => (Some(self.turn_admission.admit()?), false),
             ClientRequest::ThreadSample { .. }
             | ClientRequest::TurnStart { .. }
+            | ClientRequest::ThreadControlInput { .. }
             | ClientRequest::TurnSteer { .. }
             | ClientRequest::ReviewStart { .. }
             | ClientRequest::ThreadCompactStart { .. }
@@ -1170,11 +1230,23 @@ impl MessageProcessor {
         let app_server_client_name = session.app_server_client_name().map(str::to_string);
         let client_version = session.client_version().map(str::to_string);
         let client_mcp_extensions = session.client_mcp_extensions();
+        // Held through command submission, never for the resulting agent turn.
+        let _control_admission = self.thread_control.admit(&session, &codex_request).await?;
         let request_id = ConnectionRequestId {
             connection_id,
             request_id: codex_request.id().clone(),
         };
         let result: Result<Option<ClientResponsePayload>, JSONRPCErrorError> = match codex_request {
+            request @ (ClientRequest::ControllerRegister { .. }
+            | ClientRequest::ThreadControlRead { .. }
+            | ClientRequest::ThreadControlRequest { .. }
+            | ClientRequest::ThreadControlUpdate { .. }
+            | ClientRequest::ThreadControlRelease { .. }
+            | ClientRequest::ThreadControlInput { .. }
+            | ClientRequest::ThreadControlInterrupt { .. }) => {
+                self.handle_thread_control(request, request_id.clone(), &session)
+                    .await
+            }
             ClientRequest::Initialize { .. } => {
                 panic!("Initialize should be handled before initialized request dispatch");
             }

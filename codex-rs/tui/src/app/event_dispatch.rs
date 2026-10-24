@@ -582,6 +582,12 @@ impl App {
             AppEvent::SetThreadUnread { thread_id, unread } => {
                 self.set_thread_unread(app_server, thread_id, unread).await;
             }
+            AppEvent::ThreadControlCommand { thread_id, command } => {
+                self.thread_control_command(app_server, thread_id, &command).await;
+            }
+            AppEvent::ThreadControlUserInput { thread_id } => {
+                self.revoke_control_for_input(app_server, thread_id).await;
+            }
             AppEvent::DeleteCurrentThread => {
                 return self.delete_current_thread(tui, app_server).await;
             }

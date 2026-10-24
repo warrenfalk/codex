@@ -188,6 +188,7 @@ impl ChatWidget {
         }
 
         match cmd {
+            SlashCommand::Control => self.dispatch_control_command(""),
             SlashCommand::Daybreak => {
                 if !self.config.features.enabled(Feature::CliDaybreak) {
                     return;
@@ -820,6 +821,7 @@ impl ChatWidget {
                 });
             }
             SlashCommand::Permissions => self.select_permission_profile(trimmed),
+            SlashCommand::Control => self.dispatch_control_command(trimmed),
             SlashCommand::Speak => self.handle_speak_command(trimmed),
             SlashCommand::Export => {
                 self.set_queue_autosend_suppressed(/*suppressed*/ true);
@@ -1295,6 +1297,7 @@ impl ChatWidget {
         }
         match cmd {
             SlashCommand::Ide
+            | SlashCommand::Control
             | SlashCommand::Status
             | SlashCommand::Daemon
             | SlashCommand::Pwd

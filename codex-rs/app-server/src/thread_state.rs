@@ -359,6 +359,7 @@ struct ThreadStateManagerInner {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ConnectionCapabilities {
     pub(crate) request_attestation: bool,
+    pub(crate) external_controller: bool,
 }
 
 #[derive(Clone, Default)]
@@ -371,6 +372,17 @@ pub(crate) struct ThreadStateManager {
 }
 
 impl ThreadStateManager {
+    pub(crate) async fn has_interactive_subscribers(&self, thread_id: ThreadId) -> bool {
+        let state = self.state.lock().await;
+        state.threads.get(&thread_id).is_some_and(|entry| {
+            entry.connection_ids.iter().any(|id| {
+                state
+                    .live_connections
+                    .get(id)
+                    .is_some_and(|capabilities| !capabilities.external_controller)
+            })
+        })
+    }
     /// Coordinates goal edits with cold/path-based resume for just this thread.
     pub(crate) async fn lock_goal_resume(
         &self,

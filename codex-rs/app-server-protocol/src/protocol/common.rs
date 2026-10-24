@@ -587,6 +587,41 @@ client_request_definitions! {
         serialization: None,
         response: v2::ThreadSampleCancelResponse,
     },
+    ControllerRegister => "controller/register" {
+        params: v2::ControllerRegisterParams,
+        serialization: None,
+        response: v2::ControllerRegisterResponse,
+    },
+    ThreadControlRead => "thread/control/read" {
+        params: v2::ThreadControlReadParams,
+        serialization: None,
+        response: v2::ThreadControlReadResponse,
+    },
+    ThreadControlRequest => "thread/control/request" {
+        params: v2::ThreadControlRequestParams,
+        serialization: None,
+        response: v2::ThreadControlRequestResponse,
+    },
+    ThreadControlUpdate => "thread/control/update" {
+        params: v2::ThreadControlUpdateParams,
+        serialization: None,
+        response: v2::ThreadControlUpdateResponse,
+    },
+    ThreadControlRelease => "thread/control/release" {
+        params: v2::ThreadControlReleaseParams,
+        serialization: None,
+        response: v2::ThreadControlReleaseResponse,
+    },
+    ThreadControlInput => "thread/control/input" {
+        params: v2::ThreadControlInputParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadControlInputResponse,
+    },
+    ThreadControlInterrupt => "thread/control/interrupt" {
+        params: v2::ThreadControlInterruptParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadControlInterruptResponse,
+    },
     ThreadArchive => "thread/archive" {
         params: v2::ThreadArchiveParams,
         serialization: thread_id(params.thread_id),
@@ -1997,6 +2032,7 @@ server_notification_definitions! {
     Error => "error" (v2::ErrorNotification),
     ThreadStarted => "thread/started" (v2::ThreadStartedNotification),
     ThreadStatusChanged => "thread/status/changed" (v2::ThreadStatusChangedNotification),
+    ThreadControlChanged => "thread/control/changed" (v2::ThreadControlChangedNotification),
     #[experimental("thread/readState/changed")]
     ThreadReadStateChanged => "thread/readState/changed" (v2::ThreadReadStateChangedNotification),
     ThreadUnreadChanged => "thread/unread/changed" (v2::ThreadUnreadChangedNotification),
