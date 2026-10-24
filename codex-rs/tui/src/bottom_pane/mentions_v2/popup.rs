@@ -22,6 +22,7 @@ pub(crate) struct Popup {
     rows: Vec<SearchResult>,
     search_mode: SearchMode,
     state: ScrollState,
+    project_error: Option<String>,
 }
 
 impl Popup {
@@ -35,6 +36,7 @@ impl Popup {
             rows: Vec::new(),
             search_mode: SearchMode::Results,
             state: ScrollState::new(),
+            project_error: None,
         };
         popup.refresh_rows();
         popup
@@ -89,6 +91,15 @@ impl Popup {
         self.refresh_rows();
     }
 
+    pub(crate) fn show_projects(&mut self) {
+        self.search_mode = SearchMode::Projects;
+        self.refresh_rows();
+    }
+
+    pub(crate) fn set_project_error(&mut self, error: Option<String>) {
+        self.project_error = error;
+    }
+
     pub(crate) fn next_search_mode(&mut self) {
         self.search_mode = self.search_mode.next();
         self.refresh_rows();
@@ -122,7 +133,11 @@ impl WidgetRef for Popup {
             &self.state,
             self.file_search.empty_message(),
             self.search_mode,
-            &self.query,
+            if self.search_mode == SearchMode::Projects {
+                self.project_error.as_deref().unwrap_or(&self.query)
+            } else {
+                &self.query
+            },
         );
     }
 }

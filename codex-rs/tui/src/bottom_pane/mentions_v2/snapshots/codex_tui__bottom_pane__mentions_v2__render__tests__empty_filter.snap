@@ -3,9 +3,9 @@ source: tui/src/bottom_pane/mentions_v2/render_tests.rs
 expression: text(&buffer)
 ---
   Mentions
-  Files, directories, plugins, skills and tasks
+  Files, directories, plugins, skills, tasks and projects
 
-   All Results   Filesystem Only   Plugins
+   All Results   Filesystem Only   Plugins   Projects
 
   new-query
 

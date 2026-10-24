@@ -69,6 +69,8 @@ mod pagination_completion_tests;
 mod patch_approval_tests;
 #[path = "tests/permission_selection_tests.rs"]
 mod permission_selection_tests;
+#[path = "tests/project_mentions_tests.rs"]
+mod project_mentions_tests;
 #[path = "tests/projectless_tests.rs"]
 mod projectless_tests;
 #[path = "tests/quick_dials_tests.rs"]
@@ -6651,6 +6653,7 @@ async fn make_test_app() -> Box<App> {
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         skill_load_warnings: SkillLoadWarningState::default(),
+        project_search_task: None,
         backtrack: BacktrackState::default(),
         backtrack_render_pending: false,
         feedback: codex_feedback::CodexFeedback::new(),
@@ -6783,6 +6786,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             skill_load_warnings: SkillLoadWarningState::default(),
+            project_search_task: None,
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             feedback: codex_feedback::CodexFeedback::new(),

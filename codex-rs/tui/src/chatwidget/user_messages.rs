@@ -620,7 +620,8 @@ pub(crate) fn mention_bindings_from_user_inputs(
                 } else {
                     name.clone()
                 };
-                let sigil = if plugin_id.is_some()
+                let sigil = if (plugin_id.is_some()
+                    || crate::project_mentions::project_path(path).is_some())
                     && mention_start(PLUGIN_TEXT_MENTION_SIGIL, &mention).is_some()
                 {
                     PLUGIN_TEXT_MENTION_SIGIL
@@ -845,6 +846,7 @@ impl ChatWidget {
         }
 
         (message, text_elements) = crate::task_mentions::decode_task_links(&message, text_elements);
+        (message, text_elements) = crate::project_references::decode(&message, text_elements);
 
         Self::user_message_display_from_parts(
             message,
