@@ -46,6 +46,7 @@ use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::turn_input::AnnotatedResponseItem;
 use codex_protocol::turn_input::NotSubmittedReason;
 use codex_protocol::turn_input::ResponsesApiClientMetadataUpdate;
+use codex_protocol::turn_input::TurnExecutionMode;
 use codex_protocol::turn_input::TurnInput as SubmittedTurnInput;
 use codex_protocol::turn_input::TurnInputMode;
 use codex_protocol::turn_input::TurnInputRequest;
@@ -150,6 +151,7 @@ impl PreparedTurnInputSettings {
             initiating_agent_path,
             root_turn_id,
             cyber_access_program,
+            execution_mode,
         } = self.start_options;
         let emit_thread_settings_applied = self.thread_settings_update.is_some();
         let _settings_guard = if emit_thread_settings_applied {
@@ -163,6 +165,7 @@ impl PreparedTurnInputSettings {
         let options = NewTurnContextOptions {
             final_output_json_schema,
             cyber_access_program,
+            model_only: execution_mode == TurnExecutionMode::ModelOnly,
         };
         let turn_context = match kind {
             TurnStartKind::User | TurnStartKind::Recovery => Some(
@@ -235,6 +238,13 @@ pub(super) async fn handle(
     submission_id: String,
 ) -> CodexResult<TurnInputSubmission> {
     let request = request.into();
+    if request.request.start.execution_mode == TurnExecutionMode::ModelOnly
+        && mode != TurnInputMode::StartIfIdle
+    {
+        return Err(CodexErr::InvalidRequest(
+            "model-only input must start on an idle thread".to_string(),
+        ));
+    }
     let result = match mode {
         TurnInputMode::StartOrSteer => start_or_steer(session, request, submission_id).await,
         TurnInputMode::StartIfIdle => {

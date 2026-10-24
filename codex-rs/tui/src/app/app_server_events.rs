@@ -252,6 +252,15 @@ impl App {
 
             return;
         }
+        if let ServerNotificationThreadTarget::Thread(thread_id) =
+            server_notification_thread_target(&notification)
+            && self.is_prompt_rewrite_thread(thread_id)
+        {
+            if matches!(notification, ServerNotification::ThreadClosed(_)) {
+                self.prompt_rewrite_thread_tombstones.remove(&thread_id);
+            }
+            return;
+        }
         self.handle_agent_picker_visibility_notification(app_server_client, &notification);
 
         if let ServerNotification::ThreadStarted(started) = &notification
@@ -604,6 +613,21 @@ impl App {
     ) {
         let request = &buffered_request.request;
         let thread_id = server_request_thread_id(request);
+        if thread_id.is_some_and(|thread_id| self.is_prompt_rewrite_thread(thread_id)) {
+            if let Err(err) = buffered_request
+                .reply
+                .clone()
+                .reject(JSONRPCErrorError {
+                    code: -32000,
+                    message: "Prompt rewrite turns cannot call tools.".to_string(),
+                    data: None,
+                })
+                .await
+            {
+                tracing::warn!("{err}");
+            }
+            return;
+        }
         if thread_id
             .is_some_and(|thread_id| self.temporary_structured_requests.contains_key(&thread_id))
         {
