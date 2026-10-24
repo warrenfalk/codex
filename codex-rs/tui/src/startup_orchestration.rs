@@ -11,11 +11,17 @@ pub(super) async fn run_main_inner(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     mut explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     if cli.no_daemon && explicit_remote_endpoint.is_some() {
         return Err(std::io::Error::other(
             "--no-daemon cannot be used with --remote.",
+        ));
+    }
+    if cli.no_daemon && local_endpoint.is_some() {
+        return Err(std::io::Error::other(
+            "--no-daemon cannot be used with --local.",
         ));
     }
     if explicit_remote_endpoint.is_some() && !cli.add_dir.is_empty() {
@@ -142,6 +148,21 @@ pub(super) async fn run_main_inner(
     let embedded_network_policy =
         codex_app_server_client::EmbeddedNetworkPolicy::load(&launch_loader_overrides).await;
     let workload_identity_selected = is_workload_identity_selected();
+    if workload_identity_selected {
+        app_server_target_for_launch(
+            explicit_remote_endpoint.clone(),
+            /*default_daemon_socket*/ None,
+            /*can_reuse_implicit_local_daemon*/ false,
+            /*workload_identity_selected*/ true,
+            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        )?;
+        if local_endpoint.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "workload identity requires an embedded app server",
+            ));
+        }
+    }
 
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         let validation_target = app_server_target_for_launch(
@@ -338,21 +359,62 @@ pub(super) async fn run_main_inner(
         screen,
     )?;
 
-    let implicit_connection = explicit_remote_endpoint.is_none();
-    let default_daemon = if implicit_connection && reuse_implicit_local_daemon {
-        startup_draft
-            .run_until(maybe_probe_default_daemon_socket(&codex_home))
-            .await?
+    let has_explicit_app_server = local_endpoint.is_some() || explicit_remote_endpoint.is_some();
+    let configured_local = if has_explicit_app_server || workload_identity_selected || cli.no_daemon
+    {
+        None
     } else {
-        explicit_local_daemon_socket
+        bootstrap_config
+            .config_toml
+            .tui
+            .as_ref()
+            .and_then(|tui| tui.local_app_server_url.clone())
     };
-    let mut app_server_target = app_server_target_for_launch(
-        explicit_remote_endpoint,
-        default_daemon,
-        reuse_implicit_local_daemon,
-        workload_identity_selected,
-        std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
-    )?;
+    let has_selected_app_server = has_explicit_app_server || configured_local.is_some();
+    let explicit_verified_daemon = explicit_local_daemon_socket.is_some();
+    let app_server_mode = if explicit_verified_daemon {
+        // An explicitly verified default daemon retains local semantics and must
+        // fail if unavailable, including during its restart window.
+        let target = app_server_target_for_launch(
+            explicit_remote_endpoint,
+            explicit_local_daemon_socket,
+            reuse_implicit_local_daemon,
+            workload_identity_selected,
+            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        )?;
+        ResolvedAppServerMode::for_unconnected_target(
+            target,
+            Some(chatwidget::ConnectedModeFooterState::Connected),
+        )
+    } else if has_selected_app_server {
+        startup_draft
+            .run_until(app_server_mode::resolve_app_server_mode(
+                local_endpoint,
+                explicit_remote_endpoint,
+                configured_local,
+            ))
+            .await?
+            .map_err(|err| std::io::Error::other(err.to_string()))?
+    } else {
+        let default_daemon = if reuse_implicit_local_daemon {
+            startup_draft
+                .run_until(maybe_probe_default_daemon_socket(&codex_home))
+                .await?
+        } else {
+            None
+        };
+        let target = app_server_target_for_launch(
+            /*explicit_remote_endpoint*/ None,
+            default_daemon,
+            reuse_implicit_local_daemon,
+            workload_identity_selected,
+            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        )?;
+        let footer_state = matches!(target, AppServerTarget::LocalDaemon { .. })
+            .then_some(crate::chatwidget::ConnectedModeFooterState::Connected);
+        ResolvedAppServerMode::for_unconnected_target(target, footer_state)
+    };
+    let mut app_server_target = app_server_mode.target().clone();
     let remote_cwd_override = cli
         .cwd
         .clone()
@@ -546,7 +608,7 @@ pub(super) async fn run_main_inner(
         None
     };
     let auto_start_daemon = config.features.enabled(Feature::DaemonAutoStart)
-        && implicit_connection
+        && !has_selected_app_server
         && !cli.agents_overview
         && !cli.no_daemon
         && !app_server_target.uses_remote_workspace();
@@ -617,18 +679,19 @@ pub(super) async fn run_main_inner(
         }
     }
     // The overview must inspect the shared server's agents regardless of local settings.
-    let compatibility_warning = if cli.agents_overview {
-        None
-    } else {
-        daemon_recovery::check(
-            &mut startup_draft,
-            &app_server_target,
-            &config,
-            &cli_kv_overrides,
-            managed_daemon,
-        )
-        .await?
-    };
+    let compatibility_warning =
+        if cli.agents_overview || (has_selected_app_server && !explicit_verified_daemon) {
+            None
+        } else {
+            daemon_recovery::check(
+                &mut startup_draft,
+                &app_server_target,
+                &config,
+                &cli_kv_overrides,
+                managed_daemon,
+            )
+            .await?
+        };
     if compatibility_warning.is_some() {
         app_server_target = AppServerTarget::Embedded;
         daemon_exclusion = Some("daemon feature settings");
@@ -930,13 +993,30 @@ pub(super) async fn run_main_inner(
         tracing::warn!("Could not save screen-reader detection: {err}");
     }
 
+    // Implicit daemon startup and recovery can change the target after discovery.
+    // An explicitly selected local/remote server keeps its already-open connection.
+    let app_server_mode = if app_server_mode.target() == &app_server_target {
+        app_server_mode
+    } else {
+        let footer_state = match (&app_server_target, app_server_mode.footer_state()) {
+            (AppServerTarget::Embedded, Some(_)) => {
+                Some(chatwidget::ConnectedModeFooterState::LocalFallback)
+            }
+            (AppServerTarget::Embedded, None) => None,
+            (AppServerTarget::LocalDaemon { .. } | AppServerTarget::Remote { .. }, _) => {
+                Some(chatwidget::ConnectedModeFooterState::Connected)
+            }
+        };
+        ResolvedAppServerMode::for_unconnected_target(app_server_target, footer_state)
+    };
+
     // Keep the large app future off the enclosing CLI startup stack during transitions.
     let app_result = Box::pin(run_ratatui_app(
         cli,
         arg0_paths,
         loader_overrides,
         strict_config,
-        app_server_target,
+        app_server_mode,
         remote_cwd_override,
         config,
         manually_selected_oss_provider,
