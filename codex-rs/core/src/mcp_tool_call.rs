@@ -816,8 +816,11 @@ async fn maybe_request_codex_apps_auth_elicitation(
         AskForApproval::Granular(granular_config) if !granular_config.allows_mcp_elicitations() => {
             return result;
         }
-        AskForApproval::OnRequest | AskForApproval::UnlessTrusted | AskForApproval::Granular(_) => {
-        }
+        AskForApproval::OnRequest
+        | AskForApproval::TrustSandbox
+        | AskForApproval::TrustSandboxTimeout
+        | AskForApproval::UnlessTrusted
+        | AskForApproval::Granular(_) => {}
     }
 
     let connector_id = metadata.and_then(|metadata| metadata.connector_id.as_deref());
@@ -1602,6 +1605,7 @@ async fn maybe_request_mcp_tool_approval(
         approval_reason: None,
         retry_reason: None,
         network_approval_context: None,
+        auto_approve_after: None,
     };
     let approval = sess.request_approval(action, approval_context).await;
     Some(McpToolApproval {

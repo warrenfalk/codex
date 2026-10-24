@@ -803,6 +803,7 @@ impl NetworkApprovalService {
             approval_reason: Some(prompt_reason),
             retry_reason: Some(policy_denial_message.clone()),
             network_approval_context: Some(network_approval_context.clone()),
+            auto_approve_after: None,
         };
         let approval = session.request_approval(action, approval_context);
         let approval_result = if let Some(owner_call) = &owner_call {
