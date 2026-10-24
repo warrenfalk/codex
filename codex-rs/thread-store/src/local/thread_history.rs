@@ -524,6 +524,7 @@ WHERE thread_id = ?
                 phase: Some(MessagePhase::Commentary | MessagePhase::PartialAnswer) | None,
                 ..
             }
+            | ThreadItem::NoteToSelf { .. }
             | ThreadItem::HookPrompt { .. }
             | ThreadItem::FunctionCallOutput { .. }
             | ThreadItem::Plan { .. }

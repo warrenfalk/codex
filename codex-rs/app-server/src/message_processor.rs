@@ -1625,6 +1625,9 @@ impl MessageProcessor {
             ClientRequest::ThreadReadStateUpdate { params, .. } => {
                 self.thread_processor.thread_read_state_update(params).await
             }
+            ClientRequest::ThreadNoteCreate { params, .. } => {
+                self.thread_processor.thread_note_create(params).await
+            }
             ClientRequest::ThreadTurnsList { params, .. } => {
                 self.thread_processor.thread_turns_list(params).await
             }
