@@ -5,13 +5,15 @@ expression: "render_picker(params, 120)"
 
   Keymap
   Inline editor movement and editing shortcuts.
-  17 actions.
+  19 actions.
 
    All   Common   Customized (0)   Unbound (5)   App   Composer   Editor   Vim   Navigation   Agents   Approval      ›
 
   Type to search shortcuts
 
-› Editor         Insert Newline           ctrl-j, ctrl-m, enter, shift-enter, alt-enter
+› Editor         Undo                     alt-u
+  Editor         Redo                     alt-e
+  Editor         Insert Newline           ctrl-j, ctrl-m, enter, shift-enter, alt-enter
   Editor         Move Left                left, ctrl-b
   Editor         Move Right               right, ctrl-f
   Editor         Move Up                  up, ctrl-p
@@ -28,8 +30,6 @@ expression: "render_picker(params, 120)"
   Editor       - Kill Whole Line          unbound
   Editor         Kill Line End            ctrl-k
   Editor         Yank                     ctrl-y
-
-
 
 
 

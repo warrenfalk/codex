@@ -148,6 +148,8 @@ define_keymap_actions! {
         history_search_next => "Move to the next history search match.",
     }
     editor "Editor" {
+        undo => "Undo the most recent draft edit.",
+        redo => "Redo the most recently undone draft edit.",
         insert_newline => "Insert a newline in the editor.",
         move_left => "Move the cursor left.",
         move_right => "Move the cursor right.",
