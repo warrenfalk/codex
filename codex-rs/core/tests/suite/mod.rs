@@ -92,6 +92,7 @@ mod external_auth;
 mod fork_thread;
 mod gcp;
 mod git_enrichment;
+mod git_metadata_permissions;
 mod guardian_authorization;
 mod guardian_authorization_refresh;
 #[path = "guardian_cached_score_tests.rs"]
