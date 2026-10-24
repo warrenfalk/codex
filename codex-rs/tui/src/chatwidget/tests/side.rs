@@ -25,36 +25,24 @@ async fn suppressed_interrupted_turn_notice_skips_history_warning() {
     );
 }
 
-fn assert_side_rename_rejected(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-    op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>,
-) {
-    let event = rx
-        .try_recv()
-        .expect("expected side conversation rename error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(
-                rendered.contains("Side conversations are ephemeral and cannot be renamed."),
-                "expected side conversation rename error, got {rendered:?}"
-            );
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(rx.try_recv().is_err(), "expected no follow-up events");
-    assert!(op_rx.try_recv().is_err(), "expected no rename op");
-}
-
 #[tokio::test]
-async fn slash_rename_is_rejected_for_side_threads() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_thread_rename_block_message(
-        "Side conversations are ephemeral and cannot be renamed.".to_string(),
-    );
+async fn slash_rename_names_side_threads_and_can_be_canceled() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_side_conversation_active(/*active*/ true);
+    chat.thread_name = Some("Pilot".to_string());
 
     chat.dispatch_command(SlashCommand::Rename);
-    assert_side_rename_rejected(&mut rx, &mut op_rx);
+    assert_chatwidget_snapshot!(
+        "side_rename_prompt",
+        render_bottom_popup(&chat, /*width*/ 80)
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(rx.try_recv().is_err());
+    assert!(chat.side_conversation_active());
+
+    chat.dispatch_command(SlashCommand::Rename);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::SetThreadName { name })) if name == "Pilot");
 }
 
 fn assert_close_choice_event(
@@ -111,7 +99,7 @@ async fn side_close_prompt_esc_and_ctrl_c_cancel() {
 }
 
 #[tokio::test]
-async fn side_close_prompt_emits_summary_choices_and_leave() {
+async fn side_close_prompt_emits_summary_keep_and_leave_choices() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.open_side_conversation_close_prompt();
@@ -129,6 +117,13 @@ async fn side_close_prompt_emits_summary_choices_and_leave() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_close_choice_event(&mut rx, SideConversationCloseChoice::KeepAsFork);
+
+    chat.open_side_conversation_close_prompt();
+    for _ in 0..4 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_close_choice_event(&mut rx, SideConversationCloseChoice::Leave);
 }
@@ -170,14 +165,54 @@ async fn side_close_prompt_narrow_snapshot() {
 }
 
 #[tokio::test]
-async fn slash_rename_with_args_is_rejected_for_side_threads() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_thread_rename_block_message(
-        "Side conversations are ephemeral and cannot be renamed.".to_string(),
-    );
+async fn slash_rename_with_args_names_side_threads() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_side_conversation_active(/*active*/ true);
 
     chat.dispatch_command_with_args(SlashCommand::Rename, "investigate".to_string(), Vec::new());
-    assert_side_rename_rejected(&mut rx, &mut op_rx);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::CodexOp(Op::SetThreadName { name })) if name == "investigate");
+}
+
+#[tokio::test]
+async fn keep_side_fork_name_prompt_submits_and_cancels() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.set_side_conversation_active(/*active*/ true);
+    chat.open_keep_side_fork_name_prompt();
+    assert_chatwidget_snapshot!(
+        "keep_side_fork_name_prompt",
+        render_bottom_popup(&chat, /*width*/ 80)
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(rx.try_recv().is_err());
+    assert!(chat.side_conversation_active());
+
+    chat.open_keep_side_fork_name_prompt();
+    chat.handle_paste("New fork".to_string());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::KeepSideForkAndReturn { thread_id: id, name }) if id == thread_id && name == "New fork");
+}
+
+#[tokio::test]
+async fn side_fork_command_explains_rename() {
+    for args in [None, Some("another fork")] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.set_side_conversation_active(/*active*/ true);
+        if let Some(args) = args {
+            chat.dispatch_command_with_args(SlashCommand::Fork, args.to_string(), Vec::new());
+        } else {
+            chat.dispatch_command(SlashCommand::Fork);
+        }
+        let inserted = drain_insert_history(&mut rx);
+        let text = inserted
+            .iter()
+            .map(|lines| lines_to_single_string(lines))
+            .collect::<Vec<_>>()
+            .join("\n");
+        insta::assert_snapshot!("side_fork_use_rename", text);
+        assert!(!chat.has_active_view());
+    }
 }
 
 #[tokio::test]

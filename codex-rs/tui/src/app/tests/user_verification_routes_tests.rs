@@ -153,7 +153,11 @@ async fn discarding_side_cancels_verification_and_ignores_late_proof() -> Result
     let mut app_server =
         crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
     let primary_thread_id = ThreadId::new();
-    let side_thread_id = ThreadId::new();
+    let side_thread_id = app_server
+        .start_thread(&app.side_fork_config())
+        .await?
+        .session
+        .thread_id;
     let request = user_verification_server_request(side_thread_id, /*request_id*/ 19);
     app.active_thread_id = Some(primary_thread_id);
     app.side_threads
@@ -168,8 +172,10 @@ async fn discarding_side_cancels_verification_and_ignores_late_proof() -> Result
         .begin(&side_thread_id.to_string(), "deployments", request.id())
         .expect("pending side-thread verification");
 
-    app.discard_side_thread_in_background(&mut app_server, side_thread_id)
-        .await;
+    assert!(
+        app.discard_side_thread(&mut app_server, side_thread_id)
+            .await
+    );
     assert!(attempt.cancelled.is_cancelled());
     assert!(
         !app.pending_app_server_requests

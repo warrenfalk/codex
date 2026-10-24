@@ -521,9 +521,6 @@ impl ChatWidget {
     }
 
     pub(super) fn show_rename_prompt(&mut self) {
-        if !self.ensure_thread_rename_allowed() {
-            return;
-        }
         let tx = self.app_event_tx.clone();
         let existing_name = self.thread_name.as_deref().filter(|name| !name.is_empty());
         let title = if existing_name.is_some() {
@@ -574,16 +571,6 @@ impl ChatWidget {
         if self.thread_id == Some(thread_id) {
             self.bottom_pane
                 .apply_text_suggestion(request_id, suggestion);
-        }
-    }
-
-    pub(super) fn ensure_thread_rename_allowed(&mut self) -> bool {
-        match self.thread_rename_block_message.clone() {
-            Some(message) => {
-                self.add_error_message(message);
-                false
-            }
-            None => true,
         }
     }
 

@@ -156,7 +156,14 @@ pub(crate) enum SideConversationCloseChoice {
     Cancel,
     Summarize,
     SummarizeForMe,
+    KeepAsFork,
     Leave,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SideForkDestination {
+    Continue,
+    Parent,
 }
 
 /// One absolute history offset returned by a batch lookup.
@@ -448,6 +455,11 @@ pub(crate) enum AppEvent {
 
     /// Handle the selected close action for an idle side conversation.
     SideConversationCloseSelected(SideConversationCloseChoice),
+    /// Name and keep a side fork, then return to its parent.
+    KeepSideForkAndReturn {
+        thread_id: ThreadId,
+        name: String,
+    },
 
     /// Apply or report the completed hidden prompt-rewrite turn.
     PromptRewriteCompleted(PromptRewriteCompletion),

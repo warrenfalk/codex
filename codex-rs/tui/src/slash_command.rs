@@ -215,6 +215,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Copy
+                | SlashCommand::Rename
                 | SlashCommand::Speak
                 | SlashCommand::Agents
                 | SlashCommand::Export

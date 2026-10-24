@@ -1,0 +1,5 @@
+---
+source: tui/src/app_server_session/side_conversation_tests.rs
+expression: "saved.name.expect(\"saved side name\")"
+---
+(Side) Original Name

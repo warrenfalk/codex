@@ -1,4 +1,4 @@
-//! Summary handoff for ephemeral side conversations.
+//! Summary handoff for side conversations.
 //!
 //! This module owns the close-prompt choices that either discard a side thread or
 //! ask the side agent to produce a parent-thread summary before the side thread is
@@ -46,6 +46,9 @@ impl App {
     ) -> Result<()> {
         match choice {
             SideConversationCloseChoice::Cancel => {}
+            SideConversationCloseChoice::KeepAsFork => {
+                self.chat_widget.open_keep_side_fork_name_prompt();
+            }
             SideConversationCloseChoice::Leave => {
                 if self.pending_side_summary.is_some() {
                     self.chat_widget.add_error_message(
@@ -53,9 +56,21 @@ impl App {
                     );
                     return Ok(());
                 }
-                if let Some(parent_thread_id) = self.active_side_parent_thread_id() {
-                    self.select_agent_thread_and_discard_side(tui, app_server, parent_thread_id)
+                if let Some(parent_thread_id) = self.active_side_parent_thread_id()
+                    && let Some(side_thread_id) = self.current_displayed_thread_id()
+                {
+                    self.select_agent_thread(tui, app_server, parent_thread_id)
                         .await?;
+                    if self.active_thread_id == Some(parent_thread_id)
+                        && !self.discard_side_thread(app_server, side_thread_id).await
+                    {
+                        self.keep_side_thread_visible_after_cleanup_failure(
+                            tui,
+                            app_server,
+                            side_thread_id,
+                        )
+                        .await;
+                    }
                 }
             }
             SideConversationCloseChoice::Summarize
@@ -73,7 +88,9 @@ impl App {
                     SideConversationCloseChoice::SummarizeForMe => {
                         SideSummaryDestination::ParentNoteToSelf
                     }
-                    SideConversationCloseChoice::Cancel | SideConversationCloseChoice::Leave => {
+                    SideConversationCloseChoice::Cancel
+                    | SideConversationCloseChoice::KeepAsFork
+                    | SideConversationCloseChoice::Leave => {
                         unreachable!("handled above")
                     }
                 };

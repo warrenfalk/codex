@@ -280,6 +280,7 @@ mod session_picker;
 #[cfg(unix)]
 mod shutdown_signal;
 mod side;
+mod side_fork;
 mod side_summary;
 mod startup;
 pub(crate) mod startup_bootstrap;
@@ -312,6 +313,7 @@ use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 pub(crate) use self::platform_actions::WindowsSandboxHost;
 use self::platform_actions::*;
+pub(crate) use self::side::SIDE_DEVELOPER_INSTRUCTIONS;
 use self::side::SideParentStatus;
 use self::side::SideParentStatusChange;
 use self::side::SideThreadState;

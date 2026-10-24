@@ -3008,6 +3008,18 @@ impl App {
                     .handle_start_side(tui, app_server, parent_thread_id, user_message)
                     .await;
             }
+            AppEvent::KeepSideForkAndReturn { thread_id, name } => {
+                if self.current_displayed_thread_id() == Some(thread_id)
+                    && let Some(parent_id) = self.active_side_parent_thread_id()
+                    && self.keep_side_conversation_as_fork(
+                        app_server,
+                        name,
+                        crate::app_event::SideForkDestination::Parent,
+                    ).await?
+                {
+                    self.select_agent_thread(tui, app_server, parent_id).await?;
+                }
+            }
             AppEvent::SideConversationCloseSelected(choice) => {
                 self.handle_side_conversation_close_choice(tui, app_server, choice)
                     .await?;
