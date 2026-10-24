@@ -56,7 +56,7 @@ stream_max_retries = 0
 "#
                     ),
                 )?;
-                let server_config = ConfigBuilder::default()
+                let mut server_config = ConfigBuilder::default()
                     .codex_home(server_home.path().to_path_buf())
                     .harness_overrides(ConfigOverrides {
                         cwd: Some(remote_cwd.to_path_buf()),
@@ -64,6 +64,8 @@ stream_max_retries = 0
                     })
                     .build()
                     .await?;
+                // Reserve this fixture's sole model response for the workspace-roots turn.
+                server_config.auto_thread_title = false;
                 let client_config = ConfigBuilder::default()
                     .codex_home(client_home.path().to_path_buf())
                     .harness_overrides(ConfigOverrides {
@@ -118,7 +120,9 @@ stream_max_retries = 0
                         {
                             assert_eq!(
                                 completed.turn.status,
-                                codex_app_server_protocol::TurnStatus::Completed
+                                codex_app_server_protocol::TurnStatus::Completed,
+                                "turn error: {:?}",
+                                completed.turn.error,
                             );
                             return;
                         }

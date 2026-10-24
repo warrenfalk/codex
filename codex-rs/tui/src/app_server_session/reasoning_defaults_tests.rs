@@ -83,6 +83,7 @@ stream_max_retries = 0
             .codex_home(home.path().to_path_buf())
             .build()
             .await?;
+        server_config.auto_thread_title = false;
         let mut catalog = codex_models_manager::bundled_models_response()?;
         catalog
             .models
@@ -161,7 +162,9 @@ stream_max_retries = 0
                     {
                         assert_eq!(
                             completed.turn.status,
-                            codex_app_server_protocol::TurnStatus::Completed
+                            codex_app_server_protocol::TurnStatus::Completed,
+                            "turn error: {:?}",
+                            completed.turn.error
                         );
                         return;
                     }

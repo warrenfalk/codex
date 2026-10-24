@@ -428,7 +428,7 @@ async fn run_outbound_router(
 }
 
 async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
-    let config_manager = ConfigManager::new(
+    let mut config_manager = ConfigManager::new(
         args.config.codex_home.to_path_buf(),
         args.cli_overrides,
         args.loader_overrides,
@@ -438,6 +438,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
         args.thread_config_loader,
     )
     .with_embedded_network_policy(args.embedded_network_policy);
+    config_manager.auto_thread_title_override = Some(args.config.auto_thread_title);
     // Keep the caller's project context independent of any fallback policy config.
     let startup_cwd =
         (!args.config.config_layer_stack.is_projectless()).then(|| args.config.cwd.to_path_buf());

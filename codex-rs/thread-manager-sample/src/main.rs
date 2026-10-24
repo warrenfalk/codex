@@ -284,6 +284,7 @@ async fn new_config(
         include_environment_context: false,
         include_environment_context_time: true,
         compact_prompt: None,
+        auto_thread_title: true,
         notify: None,
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,

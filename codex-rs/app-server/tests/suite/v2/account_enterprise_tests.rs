@@ -466,6 +466,8 @@ oauth = {{ client_id = "mcp-client", client_secret = "resource-secret", token_en
         .await?;
     // Development builds otherwise force file storage, bypassing the mock keyring.
     config.cli_auth_credentials_store_mode = AuthCredentialsStoreMode::Auto;
+    // This in-process fixture reserves its model response for the revert turn.
+    config.auto_thread_title = false;
     let state_db = codex_rollout::state_db::try_init(&config).await?;
     let config = Arc::new(config);
     let mut client = in_process::start(InProcessStartArgs {
