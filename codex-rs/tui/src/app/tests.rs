@@ -6586,6 +6586,7 @@ async fn make_test_app() -> Box<App> {
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
         pending_focus_ack: None,
+        thread_control: Default::default(),
         _test_codex_home: test_codex_home,
     })
 }
@@ -6718,6 +6719,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
             pending_focus_ack: None,
+            thread_control: Default::default(),
             _test_codex_home: test_codex_home,
         }),
         rx,

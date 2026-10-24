@@ -1,3 +1,9 @@
+# External thread control
+
+See [External thread control API](thread-control.md) for connecting an external
+MCP bridge, requesting revocable control of threads, and implementing the
+interactive permission UI.
+
 # Thread list exclusions
 
 `thread/list` accepts `excludedThreadIds`, an optional array of up to 100

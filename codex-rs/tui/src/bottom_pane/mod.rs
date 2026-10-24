@@ -83,6 +83,7 @@ mod empty_state_policy;
 mod hook_status;
 mod mcp_server_elicitation;
 mod multi_select_picker;
+mod thread_control;
 pub(crate) use multi_select_picker::MultiSelectItem;
 pub(crate) use multi_select_picker::MultiSelectPicker;
 #[cfg(test)]
@@ -321,6 +322,7 @@ pub(crate) struct BottomPane {
     /// Running-hook summary supplied by the lifecycle owner after its reveal delay.
     hook_status_message: Option<String>,
     inline_banner: Option<actionable_banner::InlineBanner>,
+    thread_control: Option<codex_app_server_protocol::ThreadControlState>,
     /// Streaming may drop the row without losing its elapsed time or modal pause.
     status_timer: crate::status_indicator_widget::StatusTimer,
     /// Unified exec session summary source.
@@ -404,6 +406,7 @@ impl BottomPane {
             status: None,
             hook_status_message: None,
             inline_banner: None,
+            thread_control: None,
             status_timer: crate::status_indicator_widget::StatusTimer::default(),
             unified_exec_footer: UnifiedExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
@@ -2398,7 +2401,7 @@ impl BottomPane {
         self.renderable_for_views(options, views)
     }
 
-    fn renderable_for_views<'a>(
+    fn content_renderable_for_views<'a>(
         &'a self,
         mut options: ComposerRenderOptions<'a>,
         views: &'a [Box<dyn BottomPaneView>],

@@ -1027,6 +1027,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
             pending_focus_ack: None,
+            thread_control: Default::default(),
             #[cfg(test)]
             _test_codex_home: None,
         };

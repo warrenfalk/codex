@@ -1180,6 +1180,20 @@ class ContextCompactedNotification(BaseModel):
     turn_id: Annotated[str, Field(alias="turnId")]
 
 
+class ControllerRegisterParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    controller_id: Annotated[str, Field(alias="controllerId")]
+
+
+class ControllerRegisterResponse(BaseModel):
+    pass
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
 class ConversationTextRole(Enum):
     user = "user"
     developer = "developer"
@@ -5709,6 +5723,149 @@ class ThreadCompactStartResponse(BaseModel):
     )
 
 
+class ApproveThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    request_id: Annotated[str, Field(alias="requestId")]
+    type: Annotated[Literal["approve"], Field(title="ApproveThreadControlActionType")]
+
+
+class DenyThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    request_id: Annotated[str, Field(alias="requestId")]
+    type: Annotated[Literal["deny"], Field(title="DenyThreadControlActionType")]
+
+
+class RevokeThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    type: Annotated[Literal["revoke"], Field(title="RevokeThreadControlActionType")]
+
+
+class LockThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    type: Annotated[Literal["lock"], Field(title="LockThreadControlActionType")]
+
+
+class UnlockThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    type: Annotated[Literal["unlock"], Field(title="UnlockThreadControlActionType")]
+
+
+class GrantThreadControlAction(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    controller_id: Annotated[str, Field(alias="controllerId")]
+    type: Annotated[Literal["grant"], Field(title="GrantThreadControlActionType")]
+
+
+class ThreadControlAction(
+    RootModel[
+        ApproveThreadControlAction
+        | DenyThreadControlAction
+        | RevokeThreadControlAction
+        | LockThreadControlAction
+        | UnlockThreadControlAction
+        | GrantThreadControlAction
+    ]
+):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: (
+        ApproveThreadControlAction
+        | DenyThreadControlAction
+        | RevokeThreadControlAction
+        | LockThreadControlAction
+        | UnlockThreadControlAction
+        | GrantThreadControlAction
+    )
+
+
+class ThreadControlGrant(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    controller_id: Annotated[str, Field(alias="controllerId")]
+    id: str
+
+
+class ThreadControlInputResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class ThreadControlInterruptParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    grant_id: Annotated[str, Field(alias="grantId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
+class ThreadControlInterruptResponse(BaseModel):
+    pass
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class ThreadControlReadParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadControlReleaseParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    grant_id: Annotated[str, Field(alias="grantId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadControlRequestParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    reason: str
+    request_id: Annotated[
+        str,
+        Field(
+            alias="requestId",
+            description="Caller-generated unique ID. Repeating the latest request is idempotent.",
+        ),
+    ]
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadControlRequestStatus(Enum):
+    pending = "pending"
+    granted = "granted"
+    denied = "denied"
+
+
+class ThreadControlUpdateParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    action: ThreadControlAction
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
 class ThreadDeleteParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -7560,6 +7717,72 @@ class ThreadResumeRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/resume"], Field(title="Thread/resumeRequestMethod")]
     params: ThreadResumeParams
+
+
+class ControllerRegisterRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["controller/register"], Field(title="Controller/registerRequestMethod")
+    ]
+    params: ControllerRegisterParams
+
+
+class ThreadControlReadRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/read"], Field(title="Thread/control/readRequestMethod")
+    ]
+    params: ThreadControlReadParams
+
+
+class ThreadControlRequestRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/request"], Field(title="Thread/control/requestRequestMethod")
+    ]
+    params: ThreadControlRequestParams
+
+
+class ThreadControlUpdateRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/update"], Field(title="Thread/control/updateRequestMethod")
+    ]
+    params: ThreadControlUpdateParams
+
+
+class ThreadControlReleaseRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/release"], Field(title="Thread/control/releaseRequestMethod")
+    ]
+    params: ThreadControlReleaseParams
+
+
+class ThreadControlInterruptRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/interrupt"], Field(title="Thread/control/interruptRequestMethod")
+    ]
+    params: ThreadControlInterruptParams
 
 
 class ThreadArchiveRequest(BaseModel):
@@ -10713,6 +10936,66 @@ class SubAgentSource(
     root: SubAgentSourceValue | ThreadSpawnSubAgentSource | OtherSubAgentSource
 
 
+class ThreadControlInputParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    expected_turn_id: Annotated[
+        str | None,
+        Field(
+            alias="expectedTurnId",
+            description="Null means start only if idle. A turn ID means steer exactly that turn.",
+        ),
+    ] = None
+    grant_id: Annotated[str, Field(alias="grantId")]
+    input: list[UserInput]
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadControlRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    auto_grant_at: Annotated[int | None, Field(alias="autoGrantAt")] = None
+    controller_id: Annotated[str, Field(alias="controllerId")]
+    id: str
+    reason: str
+    requested_at: Annotated[int, Field(alias="requestedAt")]
+    status: ThreadControlRequestStatus
+
+
+class ThreadControlState(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    active_turn_id: Annotated[str | None, Field(alias="activeTurnId")] = None
+    grant: ThreadControlGrant | None = None
+    interactive_attached: Annotated[bool, Field(alias="interactiveAttached")]
+    locked: bool
+    request: Annotated[
+        ThreadControlRequest | None,
+        Field(
+            description="Latest request, including its terminal decision, retained until replaced."
+        ),
+    ] = None
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_running: Annotated[
+        bool,
+        Field(
+            alias="turnRunning",
+            description="Also covers startup before an active turn ID has been published.",
+        ),
+    ]
+
+
+class ThreadControlUpdateResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    state: ThreadControlState
+
+
 class ThreadForkParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -11539,6 +11822,17 @@ class ThreadForkRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/fork"], Field(title="Thread/forkRequestMethod")]
     params: ThreadForkParams
+
+
+class ThreadControlInputRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/control/input"], Field(title="Thread/control/inputRequestMethod")
+    ]
+    params: ThreadControlInputParams
 
 
 class ThreadGoalSetRequest(BaseModel):
@@ -12657,6 +12951,34 @@ class SessionSource(RootModel[SessionSourceValue | CustomSessionSource | SubAgen
     root: SessionSourceValue | CustomSessionSource | SubAgentSessionSource
 
 
+class ThreadControlChangedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    state: ThreadControlState
+
+
+class ThreadControlReadResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    state: ThreadControlState
+
+
+class ThreadControlReleaseResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    state: ThreadControlState
+
+
+class ThreadControlRequestResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    state: ThreadControlState
+
+
 class FunctionCallOutputThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -13242,6 +13564,23 @@ class ReviewStartResponse(BaseModel):
         ),
     ]
     turn: Turn
+
+
+class ThreadControlChangedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/control/changed"], Field(title="Thread/control/changedNotificationMethod")
+    ]
+    params: ThreadControlChangedNotification
 
 
 class TurnStartedServerNotification(BaseModel):
@@ -13854,6 +14193,13 @@ class ClientRequest(
         | ThreadStartRequest
         | ThreadResumeRequest
         | ThreadForkRequest
+        | ControllerRegisterRequest
+        | ThreadControlReadRequest
+        | ThreadControlRequestRequest
+        | ThreadControlUpdateRequest
+        | ThreadControlReleaseRequest
+        | ThreadControlInputRequest
+        | ThreadControlInterruptRequest
         | ThreadArchiveRequest
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
@@ -13969,6 +14315,13 @@ class ClientRequest(
         | ThreadStartRequest
         | ThreadResumeRequest
         | ThreadForkRequest
+        | ControllerRegisterRequest
+        | ThreadControlReadRequest
+        | ThreadControlRequestRequest
+        | ThreadControlUpdateRequest
+        | ThreadControlReleaseRequest
+        | ThreadControlInputRequest
+        | ThreadControlInterruptRequest
         | ThreadArchiveRequest
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
@@ -14344,6 +14697,7 @@ class ServerNotification(
         ErrorServerNotification
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
+        | ThreadControlChangedServerNotification
         | ThreadReadStateChangedServerNotification
         | ThreadUnreadChangedServerNotification
         | ThreadProjectEnvStatusChangedServerNotification
@@ -14439,6 +14793,7 @@ class ServerNotification(
         ErrorServerNotification
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
+        | ThreadControlChangedServerNotification
         | ThreadReadStateChangedServerNotification
         | ThreadUnreadChangedServerNotification
         | ThreadProjectEnvStatusChangedServerNotification

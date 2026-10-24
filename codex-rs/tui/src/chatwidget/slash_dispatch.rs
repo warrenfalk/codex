@@ -188,6 +188,7 @@ impl ChatWidget {
         }
 
         match cmd {
+            SlashCommand::Control => self.dispatch_control_command(""),
             SlashCommand::Daybreak => {
                 if !self.config.features.enabled(Feature::CliDaybreak) {
                     return;
@@ -796,6 +797,7 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Control => self.dispatch_control_command(trimmed),
             SlashCommand::Export if trimmed.is_empty() => self.show_transcript_export_popup(),
             SlashCommand::Speak => self.handle_speak_command(trimmed),
             SlashCommand::Export => {
@@ -1273,6 +1275,7 @@ impl ChatWidget {
         }
         match cmd {
             SlashCommand::Ide
+            | SlashCommand::Control
             | SlashCommand::Status
             | SlashCommand::Daemon
             | SlashCommand::Pwd

@@ -182,6 +182,9 @@ async fn send_message_to_connection(
         return false;
     }
     if let OutgoingMessage::Request(request) = &message {
+        if connection_state.session.controller_id().is_some() {
+            return false;
+        }
         connection_state
             .session
             .note_answerable_server_request(request.id().clone())

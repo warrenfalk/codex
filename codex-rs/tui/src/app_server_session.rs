@@ -16,6 +16,7 @@ mod realtime;
 mod rollout_history;
 mod side_conversation;
 mod startup_launch;
+mod thread_control;
 mod thread_list;
 mod thread_unread;
 mod web_search;

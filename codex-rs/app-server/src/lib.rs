@@ -138,6 +138,7 @@ mod request_processors;
 mod request_serialization;
 mod server_request_error;
 mod skills_watcher;
+mod thread_control;
 mod thread_state;
 mod thread_status;
 mod thread_unread;
