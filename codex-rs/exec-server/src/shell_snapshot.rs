@@ -371,6 +371,13 @@ impl ShellSnapshotCache {
             )
         };
 
+        // Socket stdin can trigger Bash's remote-shell rc startup even with -p.
+        // Restore the captured startup state without running that rc file again.
+        if shell_type == ShellType::Bash {
+            prepared
+                .command
+                .insert(shell_start + 1, "--norc".to_string());
+        }
         telemetry.shell_snapshot_command(wait, availability, "used");
         Ok(reader)
     }
