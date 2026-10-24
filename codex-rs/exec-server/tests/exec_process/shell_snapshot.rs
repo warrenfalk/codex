@@ -9,6 +9,83 @@ enum SnapshotSandbox {
     DenyFdPath,
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial(remote_exec_server)]
+async fn remote_sandbox_reuses_captured_bash_state_after_profile_changes() -> Result<()> {
+    if let Some(warning) = codex_sandboxing::system_bwrap_warning(
+        &PermissionProfile::workspace_write(),
+        &std::env::current_dir()?,
+    ) {
+        eprintln!("skipping sandbox test: {warning}");
+        return Ok(());
+    }
+    let context = create_process_context(/*use_remote*/ true).await?;
+    let home = TempDir::new()?;
+    let cwd = PathUri::from_host_native_path(home.path())?;
+    let profile = home.path().join(".bashrc");
+    std::fs::write(
+        &profile,
+        "printf x >> \"$HOME/captures\"\ncaptured_helper() { printf from-snapshot; }\n",
+    )?;
+    for index in 0..2 {
+        if index == 1 {
+            // The attachment owns its captured startup state even if the profile changes.
+            std::fs::write(&profile, "printf uncaptured-startup; exit 41\n")?;
+        }
+        let started = context
+            .backend
+            .start(ExecParams {
+                metadata: Default::default(),
+                process_id: format!("captured-profile-{index}").into(),
+                argv: vec![
+                    "/bin/bash".to_string(),
+                    "-lc".to_string(),
+                    "captured_helper".to_string(),
+                ],
+                cwd: cwd.clone(),
+                env: HashMap::new(),
+                env_policy: Some(ExecEnvPolicy {
+                    inherit: ShellEnvironmentPolicyInherit::None,
+                    ignore_default_excludes: false,
+                    exclude: Vec::new(),
+                    r#set: HashMap::from([
+                        (
+                            "HOME".to_string(),
+                            home.path().to_string_lossy().into_owned(),
+                        ),
+                        ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+                    ]),
+                    include_only: vec!["HOME".to_string(), "PATH".to_string()],
+                }),
+                shell_snapshot: Some(ShellSnapshotRequest {
+                    scope_id: "captured-profile".to_string(),
+                    shell: ShellInfo {
+                        name: "bash".to_string(),
+                        path: "/bin/bash".to_string(),
+                    },
+                }),
+                tty: false,
+                pipe_stdin: false,
+                arg0: None,
+                sandbox: Some(FileSystemSandboxContext::from_permission_profile(
+                    PermissionProfile::workspace_write(),
+                    cwd.clone(),
+                )),
+                enforce_managed_network: false,
+                managed_network: None,
+                network_proxy: None,
+            })
+            .await?;
+        assert_eq!(
+            collect_process_output_from_events(started.process).await?,
+            ("from-snapshot".to_string(), String::new(), Some(0), true)
+        );
+    }
+    assert_eq!(std::fs::read_to_string(home.path().join("captures"))?, "x");
+    Ok(())
+}
+
 pub(super) struct StartupProcesses(pub(super) std::path::PathBuf);
 
 impl Drop for StartupProcesses {
