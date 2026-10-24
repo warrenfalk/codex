@@ -632,6 +632,9 @@ pub struct Config {
     /// Plugin settings resolved with this snapshot, before capability admission.
     pub plugins: codex_config::types::PluginsConfigToml,
 
+    /// Original config-loading rules and last observed shell policy for new turns.
+    pub shell_environment_reload: codex_config::ShellEnvironmentPolicyReload,
+
     /// Warnings collected during config load that should be shown on startup.
     pub startup_warnings: Vec<String>,
 
@@ -676,6 +679,9 @@ pub struct Config {
 
     /// Effective permission configuration for shell tool execution.
     pub permissions: Permissions,
+
+    /// Disable automatic project environment loading for thread-scoped commands.
+    pub disable_project_env: bool,
 
     /// Whether config explicitly selected named permissions profiles instead
     /// of the legacy `sandbox_mode` syntax.
@@ -1577,30 +1583,36 @@ impl ConfigBuilder {
             None => AbsolutePathBuf::current_dir()?,
         };
         harness_overrides.cwd = Some(cwd.to_path_buf());
+        let load_options = ConfigLoadOptions {
+            loader_overrides,
+            strict_config,
+            cloud_config_bundle,
+        };
         let config_layer_stack = load_config_layers_state(
             LOCAL_FS.as_ref(),
             &codex_home,
             (!without_project_context).then_some(cwd),
             &cli_overrides,
-            ConfigLoadOptions {
-                loader_overrides,
-                strict_config,
-                cloud_config_bundle,
-            },
+            load_options.clone(),
             thread_config_loader
                 .as_deref()
                 .unwrap_or(&codex_config::NoopThreadConfigLoader),
         )
         .await?;
         let config_toml = config_toml_from_layers(&config_layer_stack).await?;
-        Config::load_config_with_layer_stack(
+        let mut config = Config::load_config_with_layer_stack(
             LOCAL_FS.as_ref(),
             config_toml,
             harness_overrides,
             codex_home,
             config_layer_stack,
         )
-        .await
+        .await?;
+        config.shell_environment_reload = codex_config::ShellEnvironmentPolicyReload::new(
+            load_options,
+            config.permissions.shell_environment_policy.clone(),
+        );
+        Ok(config)
     }
 
     #[cfg(test)]
@@ -4487,6 +4499,7 @@ impl Config {
                 windows_sandbox_mode,
                 windows_sandbox_type,
             },
+            disable_project_env: cfg.disable_project_env.unwrap_or(false),
             explicit_permission_profile_mode,
             custom_permission_profiles,
             approvals_reviewer: constrained_approvals_reviewer.value(),
@@ -4573,6 +4586,7 @@ impl Config {
             log_dir,
             config_layer_stack,
             application_network_policy: Default::default(),
+            shell_environment_reload: Default::default(),
             application_auth_route_config: None,
             history,
             ephemeral: ephemeral.unwrap_or_default(),

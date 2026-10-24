@@ -16,8 +16,8 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=94348ab8527021ff):
-        - namespace/functions; hash=124fee69a69ed6b2
+00:additional_tools/developer (3; hash=5d5b8e4ab490ba84):
+        - namespace/functions; hash=77a14a4d85666ee7
           - function/exec_command
           - function/write_stdin
           - function/list_mcp_resources
@@ -60,8 +60,8 @@ Settings:
 ## Window 2 (after request 3: input diverged at item 05)
 Settings: same as window 1
 -- request 4 (turn) --
-00:additional_tools/developer (3; hash=94348ab8527021ff):
-        - namespace/functions; hash=124fee69a69ed6b2
+00:additional_tools/developer (3; hash=5d5b8e4ab490ba84):
+        - namespace/functions; hash=77a14a4d85666ee7
           - function/exec_command
           - function/write_stdin
           - function/list_mcp_resources

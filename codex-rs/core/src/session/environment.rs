@@ -199,9 +199,15 @@ impl Session {
                     }
                 }
                 // Apply the saved defaults even if this turn selects the same environments.
-                self.services
+                if self
+                    .services
                     .turn_environments
-                    .set_active_thread_defaults(configuration.inferred_environment_config());
+                    .set_active_thread_defaults(configuration.inferred_environment_config())
+                {
+                    // A prewarm may already have consumed the settings invalidation before
+                    // these inherited permissions were activated.
+                    self.mark_mcp_runtime_dirty();
+                }
                 if environments != self.services.turn_environments.selections() {
                     self.services
                         .turn_environments

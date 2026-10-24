@@ -105,9 +105,9 @@ impl RuntimePathPrepends {
 
     fn shell_exports_after_snapshot(
         &self,
-        explicit_env_overrides: &HashMap<String, String>,
+        snapshot_env_overrides: &HashMap<String, String>,
     ) -> String {
-        if explicit_env_overrides.contains_key("PATH") {
+        if snapshot_env_overrides.contains_key("PATH") {
             return String::new();
         }
 
@@ -273,12 +273,12 @@ pub(crate) fn prepare_brokered_shell_snapshot_env(
 /// be run by Bash/Zsh/sh. On non-matching commands, or when command cwd does
 /// not match the snapshot cwd, this is a no-op.
 ///
-/// `explicit_env_overrides` and `env` are intentionally separate inputs.
-/// `explicit_env_overrides` contains policy-driven shell env overrides that
-/// should win after the snapshot is sourced, while `env` is the full live exec
+/// `snapshot_env_overrides` and `env` are intentionally separate inputs.
+/// `snapshot_env_overrides` contains live exec environment keys that should win
+/// after the snapshot is sourced, while `env` is the full live exec
 /// environment. We need access to both so snapshot restore logic can preserve
-/// runtime-only vars like `CODEX_THREAD_ID` without pretending they came from
-/// the explicit override policy.
+/// runtime-only vars like `CODEX_THREAD_ID` without treating the full live env
+/// as a set of post-snapshot overrides.
 ///
 /// `runtime_path_prepends` contains Codex-owned PATH entries already applied to
 /// the live `env`; snapshot wrapping replays them after restoring the snapshot
@@ -287,7 +287,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     command: &[String],
     session_shell: &Shell,
     shell_snapshot: Option<&AbsolutePathBuf>,
-    explicit_env_overrides: &HashMap<String, String>,
+    snapshot_env_overrides: &HashMap<String, String>,
     env: &HashMap<String, String>,
     runtime_path_prepends: &RuntimePathPrepends,
 ) -> Vec<String> {
@@ -337,7 +337,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
-    let mut override_env = explicit_env_overrides.clone();
+    let mut override_env = snapshot_env_overrides.clone();
     for key in [
         CODEX_SESSION_ID_ENV_VAR,
         CODEX_THREAD_ID_ENV_VAR,
@@ -471,7 +471,7 @@ unset __CODEX_SNAPSHOT_ORIGINAL_ENV_SET __CODEX_SNAPSHOT_ORIGINAL_ENV \
         command[2].clone()
     };
     let runtime_path_prepend_exports =
-        runtime_path_prepends.shell_exports_after_snapshot(explicit_env_overrides);
+        runtime_path_prepends.shell_exports_after_snapshot(snapshot_env_overrides);
     let override_captures = join_shell_blocks([
         outer_brokered_credential_exports.clone(),
         override_captures,
@@ -519,10 +519,10 @@ unset __CODEX_SNAPSHOT_ORIGINAL_ENV_SET __CODEX_SNAPSHOT_ORIGINAL_ENV \
 }
 
 fn build_override_exports(
-    explicit_env_overrides: &HashMap<String, String>,
+    snapshot_env_overrides: &HashMap<String, String>,
     restore_even_when_absent: &[&str],
 ) -> (String, String) {
-    let mut keys = explicit_env_overrides
+    let mut keys = snapshot_env_overrides
         .keys()
         .map(String::as_str)
         .chain(restore_even_when_absent.iter().copied())
