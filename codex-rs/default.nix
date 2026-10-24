@@ -1,8 +1,12 @@
 {
+  alsa-lib ? null,
   cmake,
   curl,
   formats,
   git,
+  glib,
+  gst_all_1,
+  libopus,
   llvmPackages,
   openssl,
   python3,
@@ -19,12 +23,18 @@ let
     inherit lib formats;
     lockFile = ./Cargo.lock;
   };
+  nativeAudioLibraries = [
+    glib
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
+    libopus
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [ alsa-lib ];
 in
 rustPlatform.buildRustPackage (_: {
   env = {
     PKG_CONFIG_PATH =
       lib.makeSearchPathOutput "dev" "lib/pkgconfig"
-        ([ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]);
+        ([ openssl ] ++ nativeAudioLibraries ++ lib.optionals stdenv.hostPlatform.isLinux [ libcap ]);
 
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
 
@@ -43,6 +53,7 @@ rustPlatform.buildRustPackage (_: {
   cargoLock.lockFile = ./Cargo.lock;
   doCheck = false;
   src = ./.;
+  buildInputs = nativeAudioLibraries;
 
   prePatch = ''
     cp ${mxcSdkLock.lockFile} "$cargoDepsCopy/${mxcSdkLock.crateDirectory}/Cargo.lock"
@@ -64,7 +75,7 @@ rustPlatform.buildRustPackage (_: {
     openssl
     pkg-config
     python3
-  ] ++ lib.optionals stdenv.isLinux [
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [
     libcap
   ];
 
