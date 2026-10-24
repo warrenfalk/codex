@@ -17,6 +17,7 @@ use crate::keymap::KeymapContext;
 use crate::keymap::ListAction;
 use crate::keymap::RuntimeKeymap;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::items::AsyncUserInputQuestion;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -155,10 +156,11 @@ impl AsyncQuestions {
         let width = usize::from(width.max(1));
         self.current_question()
             .map(|question| {
-                crate::markdown_render::render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+                crate::markdown_render::render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
                     &question.title,
                     Some(width),
                     /*cwd*/ None,
+                    UriBasedFileOpener::None,
                     &crate::markdown_render::hide_web_link_destination,
                 )
                 .into_iter()
