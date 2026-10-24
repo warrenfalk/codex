@@ -326,7 +326,15 @@ pub(crate) async fn backfill_sessions_with_lease(
                             .await
                             .or(Some(fallback_archived_at));
                     }
-                    if let Err(err) = runtime.upsert_thread(&metadata).await {
+                    let upsert_result = match existing_metadata.as_ref() {
+                        Some(existing) => {
+                            runtime
+                                .upsert_thread_with_observed_title(&metadata, &existing.title)
+                                .await
+                        }
+                        None => runtime.upsert_thread(&metadata).await,
+                    };
+                    if let Err(err) = upsert_result {
                         stats.failed = stats.failed.saturating_add(1);
                         warn!("failed to upsert rollout {}: {err}", rollout.path.display());
                     } else {
