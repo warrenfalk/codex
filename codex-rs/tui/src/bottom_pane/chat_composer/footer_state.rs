@@ -35,6 +35,7 @@ use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::ShortcutHint;
+use crate::slash_command::SlashCommand;
 use crate::style::secondary_text_style;
 use std::time::Duration;
 
@@ -169,6 +170,25 @@ impl super::ChatComposer {
     /// `None` restores the default shortcut footer.
     pub(crate) fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {
         self.footer.hint_override = items;
+    }
+
+    /// Updates the command warning that replaces the ambient footer row.
+    ///
+    /// Returns `true` only when the rendered footer can change.
+    pub(crate) fn set_prompt_command_warning(
+        &mut self,
+        command: Option<super::SlashCommand>,
+    ) -> bool {
+        if self.footer.prompt_command_warning == command {
+            return false;
+        }
+        self.footer.prompt_command_warning = command;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<super::SlashCommand> {
+        self.footer.prompt_command_warning
     }
 
     /// Show the transient "press again to quit" hint for `key`.
@@ -351,6 +371,7 @@ pub(super) struct FooterState {
     pub(super) use_shift_enter_hint: bool,
     pub(super) mode: FooterMode,
     pub(super) hint_override: Option<Vec<(String, String)>>,
+    pub(super) prompt_command_warning: Option<SlashCommand>,
     pub(super) flash: Option<FooterFlash>,
     pub(super) context_window_percent: Option<i64>,
     pub(super) context_window_used_tokens: Option<i64>,
