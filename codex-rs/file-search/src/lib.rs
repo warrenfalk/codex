@@ -35,6 +35,7 @@ use nucleo::pattern::AtomKind;
 use nucleo::pattern::Pattern;
 
 mod cli;
+mod path_local;
 mod snapshot;
 
 #[cfg(test)]
@@ -130,6 +131,10 @@ pub struct FileSearchOptions {
     /// traversed path is inside a git repository. When disabled, the walker
     /// turns off `.gitignore`, git-global/exclude rules, `.ignore`, and
     /// parent-directory ignore scanning.
+    ///
+    /// This only controls the recursive search corpus. Immediate path-local
+    /// completions are read directly from the filesystem so ignored files and
+    /// directories can still be discovered when the user types their path.
     pub respect_gitignore: bool,
 }
 
