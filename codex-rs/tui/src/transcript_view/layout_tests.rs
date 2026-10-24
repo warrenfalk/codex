@@ -223,6 +223,30 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
         assert_eq!(pinned_restored.row_count(), layout.row_count());
         assert!(pinned_restored.visible_image().is_some());
     }
+    // Clean View hides cached tool images in normal and detailed browsing, then restores them.
+    view.set_clean_scrollback_enabled(true);
+    for detailed in [false, true] {
+        view.set_presentation(detailed, HistoryRenderMode::Rich);
+        view.render(area, &mut buf, &cells);
+        assert!(view.image_placements().is_empty());
+        assert!((0..cells.len()).all(|index| {
+            view.entry_layout(&cells, index, /*full_content*/ true)
+                .unwrap()
+                .image
+                .is_none()
+        }));
+    }
+    view.set_clean_scrollback_enabled(false);
+    view.set_presentation(/*detailed*/ false, HistoryRenderMode::Rich);
+    view.render(area, &mut buf, &cells);
+    assert_eq!(
+        view.image_placements()
+            .iter()
+            .map(|p| p.area)
+            .collect::<Vec<_>>(),
+        expanded_areas
+    );
+
     // Short, inset viewports may begin in an image. Its placement stays inside the viewport.
     let short = Rect::new(
         /*x*/ 7, /*y*/ 5, /*width*/ 16, /*height*/ 3,

@@ -60,6 +60,10 @@ impl HistoryCell for PatchHistoryCell {
             RAW_DIFF_SUMMARY_WIDTH,
         ))
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 /// Create a new `PendingPatch` cell that lists the file‑level summary of
 /// a proposed patch. The summary lines should already be formatted (e.g.
@@ -90,6 +94,10 @@ pub(crate) struct PatchFailureCell {
 }
 
 impl HistoryCell for PatchFailureCell {
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
+
     fn activity_ids(&self) -> Vec<String> {
         vec![self.activity_id.clone()]
     }
@@ -173,6 +181,10 @@ impl HistoryCell for ViewImageHistoryCell {
         LegacyAppPathString::from_string(self.path_label.clone()).to_inferred_abs_path()
     }
 
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let line = vec![
             "• ".dim(),
@@ -248,6 +260,10 @@ pub(crate) struct ImageGenerationHistoryCell {
 }
 
 impl HistoryCell for ImageGenerationHistoryCell {
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
+
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         self.lines.clone()
     }

@@ -219,6 +219,7 @@ mod backend_banner_fallback;
 mod backend_events;
 mod backend_sessions;
 mod background_requests;
+mod clean_scrollback;
 mod composer_hints;
 mod config_panel;
 mod config_persistence;
@@ -568,6 +569,7 @@ pub(crate) struct App {
     native_history: native_history::NativeHistory,
     turn_tips: turn_tips::TurnTips,
     pub(crate) transcript_view: crate::transcript_view::TranscriptView,
+    pub(crate) clean_scrollback_enabled: bool,
     last_rendered_history_tail: Option<history_ui::RenderedHistoryTail>,
     last_thread_usage_status_cell: Option<history_ui::ThreadUsageStatusHistory>,
     pub(crate) pending_thread_usage_history_refresh: bool,

@@ -125,6 +125,7 @@ define_keymap_actions! {
         toggle_raw_output => "Toggle raw scrollback mode.",
         toggle_side_conversation => "Switch between a side conversation and its parent.",
         leader => "Set the prefix used by shared leader shortcuts.",
+        toggle_clean_scrollback => "Toggle clean scrollback mode.",
     }
     chat "Chat" {
         interrupt_turn => "Interrupt the active turn.",
