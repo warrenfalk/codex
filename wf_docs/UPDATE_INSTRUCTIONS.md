@@ -1,6 +1,8 @@
 # Manual Replay Instructions
 
-This document describes how to replay the commits in `rust-vX..main` onto a newer base tag without using `git rebase`.
+This document describes how to replay the commits in `rust-vX..main` onto a newer
+base tag without using `git rebase` during replay. An optional interactive
+autosquash may follow the completed update.
 
 It is based on the learnings of several updates since rust-v0.115.0.
 
@@ -34,7 +36,8 @@ The core rule is:
 
 ## Ground Rules
 
-- Do not use `git rebase`.
+- Do not use `git rebase` during replay. The optional post-update autosquash below
+  is a separate, user-approved step.
 - Replay one source commit at a time. Use `git cherry-pick --no-commit` for normal commits.
 - Batch validation, not commits. The [checkpoint policy](#checkpoint-policy) takes precedence over per-commit test and formatter scheduling in `AGENTS.md` for this update workflow. It does not waive final tests, lint, formatting, or builds.
 - If a source commit message begins with `!exec `, do not cherry-pick it. Verify the working tree is clean, run the exact command after `!exec `, then `git add -A` and commit with the exact same `!exec ...` message.
@@ -274,8 +277,8 @@ At each checkpoint:
    commit boundaries to locate the cause, in a separate worktree if needed.
 5. Correct uncommitted changes in place. For an already committed fork change,
    add a `fixup!` targeting its owning replay commit, including generated or
-   formatting corrections. Do not rebase or autosquash. Preserve adjacency of
-   bug-test/fix pairs; put later fixups after the pair.
+   formatting corrections. Do not rebase or autosquash during replay. Preserve
+   adjacency of bug-test/fix pairs; put later fixups after the pair.
 6. Rerun the affected checkpoint checks after behavioral fixes and record the
    outcome. Do not rerun tests solely because `fix` or `fmt` changed formatting.
    A classified failure remains a failure, not a passed checkpoint. Carry its
@@ -948,6 +951,53 @@ For each item, explain:
 Describe observable behavior clearly; listing conflicted files or saying
 “adapted to upstream” is insufficient. Identify unresolved overlaps or uncertain
 behavior explicitly.
+
+## Optional post-update autosquash
+
+After completing the update, check for `fixup!` commits above the new upstream
+base. If any remain, offer to run an interactive rebase with autosquash to fold
+them into their owning commits. Wait for the user's agreement before rewriting
+history. If there are no fixups, no offer is needed.
+
+Before rebasing, require a clean working tree and preserve the current tip on a
+backup branch with an unused name. For example, replacing the version below with
+the actual new base:
+
+```bash
+git branch backup/pre-autosquash-v0.116.0 HEAD
+git rebase -i --autosquash rust-v0.116.0
+```
+
+Resolve conflicts by intent using the rebase guidance in `AGENTS.md`. Preserve
+the retained commit messages, including `!exec` and `!instruct` text, and keep
+intentional bug-test/fix pairs adjacent. The rebase applies the committed changes;
+do not rerun their recorded generation commands as part of this history cleanup.
+
+Afterward, compare the final tracked tree against the saved pre-rebase tip and
+confirm that the working tree is clean:
+
+```bash
+git diff --exit-code backup/pre-autosquash-v0.116.0 HEAD --
+git rev-parse backup/pre-autosquash-v0.116.0^{tree} HEAD^{tree}
+git status --short
+```
+
+If the diff is empty, the tree hashes match, and the working tree is clean, the
+final file contents and modes are unchanged, even if conflicts required manual
+resolution. Reuse the completed update's validation evidence. Do not repeat the
+full test suite, Cargo/Nix builds, lint, or formatting solely because history was
+rewritten. This exception takes precedence over the generic post-rebase build
+requirements in `AGENTS.md`; it does not waive outstanding validation from the
+update itself or turn a known test failure into a pass.
+
+If the trees differ, inspect and explain every difference. Restore unintended
+changes; validate intentional changes with the affected checks, including any
+full-suite or build requirements that apply under `AGENTS.md`.
+
+Record the backup ref, pre/post commit IDs, folded fixups, conflict resolutions,
+tree comparison and validation decision in the replay ledger. Preserve the
+backup and original validation records so their old commit IDs remain traceable.
+Existing packaged binaries retain their pre-rebase embedded source revision.
 
 ## After finishing
 
