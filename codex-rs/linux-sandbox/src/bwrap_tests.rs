@@ -801,7 +801,7 @@ fn missing_user_project_root_subpath_rules_are_still_enforced() {
 #[test]
 fn mounts_dev_before_writable_dev_binds() {
     let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
-        &[AbsolutePathBuf::try_from(Path::new("/dev")).expect("/dev path")],
+        &[AbsolutePathBuf::try_from(Path::new("/dev/null")).expect("device path")],
         /*exclude_tmpdir_env_var*/ true,
         /*exclude_slash_tmp*/ true,
     );
@@ -816,10 +816,6 @@ fn mounts_dev_before_writable_dev_binds() {
             PathBuf::from("/.git"),
             PathBuf::from("/.agents"),
             PathBuf::from("/.codex"),
-            PathBuf::from("/dev/.git"),
-            PathBuf::from("/dev/.agents"),
-            PathBuf::from("/dev/.codex"),
-            PathBuf::from("/dev/.aws"),
         ]
     );
     let dev_mounts = args
@@ -839,8 +835,8 @@ fn mounts_dev_before_writable_dev_binds() {
     let dev_bind = args
         .args
         .windows(3)
-        .position(|args| args == ["--bind", "/dev", "/dev"])
-        .expect("/dev bind");
+        .position(|args| args == ["--dev-bind", "/dev/null", "/dev/null"])
+        .expect("device bind");
     assert!(*initial_dev_mount < root_bind && root_bind < *restored_dev_mount);
     assert!(*restored_dev_mount < dev_bind);
 }
