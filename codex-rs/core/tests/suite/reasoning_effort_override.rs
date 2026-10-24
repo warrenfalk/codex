@@ -17,7 +17,6 @@ use codex_login::CodexAuth;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
-use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::Op;
@@ -580,6 +579,11 @@ async fn reasoning_effort_override_capacity_retry_keeps_latest_adjacent_update()
             .set_body_json(serde_json::json!({"error": {"code": "server_is_overloaded"}})),
     )
     .await;
+    let capacity_retry = responses::mount_sse_once(
+        &server,
+        responses::sse(vec![responses::ev_completed("capacity-recovered")]),
+    )
+    .await;
     let retried = responses::mount_sse_once(
         &server,
         responses::sse(vec![responses::ev_completed("retried")]),
@@ -617,12 +621,13 @@ async fn reasoning_effort_override_capacity_retry_keeps_latest_adjacent_update()
     let EventMsg::TurnComplete(completed) = completed else {
         unreachable!("waited for turn completion");
     };
+    assert_eq!(completed.error, None);
     assert_eq!(
-        completed.error.and_then(|error| error.codex_error_info),
-        Some(CodexErrorInfo::ServerOverloaded)
+        capacity_retry.single_request().input(),
+        failed.single_request().input()
     );
 
-    // The app's capacity Retry action uses current settings without adding a user message.
+    // After automatic recovery, a settings-only turn replaces the adjacent effort update.
     test.codex
         .start_or_steer_turn(
             TurnInputRequest::user_input(Vec::new()).with_thread_settings(
