@@ -675,11 +675,14 @@ impl Session {
 
         let finishing = CancellationToken::new();
         let finish_recording = finishing.clone().drop_guard();
+        let mut finished_task_guard = None;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {
                 let task = active_turn.task.take()?;
-                task.handle.detach();
+                // Retain the task handle through terminal event delivery, alongside the
+                // finishing token used to order pending-input persistence.
+                finished_task_guard = Some(task);
                 active_turn.finishing = Some(finishing);
                 Some(Arc::clone(&active_turn.turn_state))
             })
@@ -906,6 +909,7 @@ impl Session {
         if cleared_active_turn {
             self.maybe_start_turn_for_pending_work().await;
         }
+        drop(finished_task_guard);
     }
 
     async fn take_active_turn(&self, reason: &TurnAbortReason) -> Option<ActiveTurn> {
