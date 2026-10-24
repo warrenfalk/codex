@@ -5,6 +5,7 @@ mod local_logs;
 mod nfs;
 
 use bytes::Bytes;
+use codex_protocol::PidNamespace;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::config_types::WindowsSandboxProxySettingsMode;
 use codex_protocol::models::ManagedFileSystemPermissions;
@@ -287,6 +288,8 @@ pub enum ExecPermissionProfile {
     Managed {
         file_system: ExecManagedFileSystemPermissions,
         network: NetworkSandboxPolicy,
+        #[serde(default, skip_serializing_if = "PidNamespace::is_isolated")]
+        pid_namespace: PidNamespace,
     },
     Disabled,
     External {
@@ -300,9 +303,11 @@ impl From<PermissionProfile> for ExecPermissionProfile {
             PermissionProfile::Managed {
                 file_system,
                 network,
+                pid_namespace,
             } => Self::Managed {
                 file_system: file_system.into(),
                 network,
+                pid_namespace,
             },
             PermissionProfile::Disabled => Self::Disabled,
             PermissionProfile::External { network } => Self::External { network },
@@ -316,9 +321,11 @@ impl From<ExecPermissionProfile> for PermissionProfile {
             ExecPermissionProfile::Managed {
                 file_system,
                 network,
+                pid_namespace,
             } => Self::Managed {
                 file_system: file_system.into(),
                 network,
+                pid_namespace,
             },
             ExecPermissionProfile::Disabled => Self::Disabled,
             ExecPermissionProfile::External { network } => Self::External { network },

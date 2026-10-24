@@ -1993,6 +1993,7 @@ auth = ["bearer"]"#,
                 permission_profile: Some(PermissionProfile::Managed {
                     file_system: ManagedFileSystemPermissions::Unrestricted,
                     network: NetworkSandboxPolicy::Enabled,
+                    pid_namespace: codex_protocol::PidNamespace::Isolated,
                 }),
                 ..Default::default()
             })

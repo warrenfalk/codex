@@ -271,6 +271,7 @@ fn mcp_prompt_auto_approval_honors_unrestricted_managed_profiles() {
     assert!(mcp_permission_prompt_is_auto_approved(
         AskForApproval::Never,
         &PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Unrestricted,
             network: NetworkSandboxPolicy::Enabled,
         },
@@ -279,6 +280,7 @@ fn mcp_prompt_auto_approval_honors_unrestricted_managed_profiles() {
     assert!(mcp_permission_prompt_is_auto_approved(
         AskForApproval::Never,
         &PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Unrestricted,
             network: NetworkSandboxPolicy::Restricted,
         },
@@ -292,6 +294,7 @@ fn mcp_prompt_auto_approval_honors_unrestricted_managed_profiles() {
     assert!(!mcp_permission_prompt_is_auto_approved(
         AskForApproval::OnRequest,
         &PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             file_system: ManagedFileSystemPermissions::Unrestricted,
             network: NetworkSandboxPolicy::Enabled,
         },

@@ -372,6 +372,7 @@ async fn unsupported_legacy_permissions_are_shown_without_exiting() -> Result<()
         app.config.cwd.as_path(),
     );
     let permission_profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![

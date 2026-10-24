@@ -117,116 +117,119 @@ async fn external_writer_fork_shortcut_respects_input_ownership() -> Result<()> 
 
 #[tokio::test]
 async fn external_writer_fork_opens_editable_thread_without_taking_source_lease() -> Result<()> {
-    let (mut app, mut events, _operations) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    app.config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
-    let thread_id = ThreadId::from_string(
-        &create_fake_rollout(
-            codex_home.path(),
-            "2026-01-01T00-00-00",
-            "2026-01-01T00:00:00Z",
-            "Saved user message",
-            Some(app.config.model_provider_id.as_str()),
-            /*git_info*/ None,
+    Box::pin(async {
+        let (mut app, mut events, _operations) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf().abs();
+        app.config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
+        let thread_id = ThreadId::from_string(
+            &create_fake_rollout(
+                codex_home.path(),
+                "2026-01-01T00-00-00",
+                "2026-01-01T00:00:00Z",
+                "Saved user message",
+                Some(app.config.model_provider_id.as_str()),
+                /*git_info*/ None,
+            )
+            .expect("create source rollout"),
+        )?;
+        let mut owner = crate::start_embedded_app_server_for_picker(&app.config).await?;
+        owner
+            .resume_thread(
+                &app.local_settings,
+                app.config.clone(),
+                thread_id,
+                app.resume_model_settings(),
+            )
+            .await?;
+        let (mut server, requests, proxy) = start_recording_app_server(
+            &app.config,
+            /*blocked_thread_list*/ None,
+            /*failed_thread_name*/ None,
         )
-        .expect("create source rollout"),
-    )?;
-    let mut owner = crate::start_embedded_app_server_for_picker(&app.config).await?;
-    owner
-        .resume_thread(
-            &app.local_settings,
-            app.config.clone(),
-            thread_id,
-            app.resume_model_settings(),
-        )
         .await?;
-    let (mut server, requests, proxy) = start_recording_app_server(
-        &app.config,
-        /*blocked_thread_list*/ None,
-        /*failed_thread_name*/ None,
-    )
-    .await?;
-    let (view, _notice) = server
-        .read_thread_for_viewing(&app.config, &app.local_settings, thread_id)
-        .await?;
-    app.enqueue_primary_thread_session(view.session, view.turns)
-        .await?;
-    app.ensure_thread_channel(thread_id).mark_external_writer();
-    app.chat_widget
-        .set_queue_autosend_suppressed(/*suppressed*/ true);
-    app.chat_widget.insert_str("Retained queued prompt");
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(
-        app.chat_widget.queued_user_message_texts(),
-        vec!["Retained queued prompt".to_string()]
-    );
-    app.chat_widget.insert_str("Retained draft");
-    app.chat_widget.show_external_writer_thread();
-    let retained_input = app.chat_widget.capture_thread_input_state();
-    while events.try_recv().is_ok() {}
-    requests.lock().expect("request recorder lock").clear();
-    let mut tui = crate::tui::test_support::make_test_tui()?;
+        let (view, _notice) = server
+            .read_thread_for_viewing(&app.config, &app.local_settings, thread_id)
+            .await?;
+        app.enqueue_primary_thread_session(view.session, view.turns)
+            .await?;
+        app.ensure_thread_channel(thread_id).mark_external_writer();
+        app.chat_widget
+            .set_queue_autosend_suppressed(/*suppressed*/ true);
+        app.chat_widget.insert_str("Retained queued prompt");
+        app.chat_widget
+            .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            app.chat_widget.queued_user_message_texts(),
+            vec!["Retained queued prompt".to_string()]
+        );
+        app.chat_widget.insert_str("Retained draft");
+        app.chat_widget.show_external_writer_thread();
+        let retained_input = app.chat_widget.capture_thread_input_state();
+        while events.try_recv().is_ok() {}
+        requests.lock().expect("request recorder lock").clear();
+        let mut tui = crate::tui::test_support::make_test_tui()?;
 
-    app.handle_tui_event(
-        &mut tui,
-        &mut server,
-        TuiEvent::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)),
-    )
-    .await?;
-    let event = events.try_recv()?;
-    assert!(matches!(event, AppEvent::ForkCurrentSession { name: None }));
-    Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
-
-    assert_eq!(app.chat_widget.capture_thread_input_state(), retained_input);
-    assert_ne!(app.chat_widget.thread_id(), Some(thread_id));
-    assert!(!app.chat_widget.is_external_writer_view());
-    assert!(!app.chat_widget.fork_in_progress);
-    let messages = std::iter::from_fn(|| events.try_recv().ok())
-        .filter_map(|event| match event {
-            AppEvent::InsertHistoryCell(cell) => {
-                let text = lines_to_single_string(&cell.display_lines(/*width*/ 100));
-                text.contains("Fork created.").then_some(text)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    insta::assert_snapshot!("fork_completion", messages.join("\n"));
-    assert_eq!(
-        recorded_params(&requests, "thread/fork")
-            .into_iter()
-            .map(|params| params["threadId"].clone())
-            .collect::<Vec<_>>(),
-        vec![serde_json::json!(thread_id.to_string())]
-    );
-    for method in ["thread/resume", "turn/start", "turn/interrupt"] {
-        assert!(recorded_params(&requests, method).is_empty(), "{method}");
-    }
-    app.handle_tui_event(
-        &mut tui,
-        &mut server,
-        TuiEvent::Paste("Editable fork".into()),
-    )
-    .await?;
-    assert_eq!(
-        app.chat_widget.composer_text_with_pending(),
-        "Retained draftEditable fork"
-    );
-    let error = server
-        .resume_thread(
-            &app.local_settings,
-            app.config.clone(),
-            thread_id,
-            app.resume_model_settings(),
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)),
         )
-        .await
-        .expect_err("source still has its original writer");
-    assert!(crate::app_server_session::is_active_writer_error(&error));
-    owner.shutdown().await?;
-    server.shutdown().await?;
-    proxy.await??;
-    Ok(())
+        .await?;
+        let event = events.try_recv()?;
+        assert!(matches!(event, AppEvent::ForkCurrentSession { name: None }));
+        Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+
+        assert_eq!(app.chat_widget.capture_thread_input_state(), retained_input);
+        assert_ne!(app.chat_widget.thread_id(), Some(thread_id));
+        assert!(!app.chat_widget.is_external_writer_view());
+        assert!(!app.chat_widget.fork_in_progress);
+        let messages = std::iter::from_fn(|| events.try_recv().ok())
+            .filter_map(|event| match event {
+                AppEvent::InsertHistoryCell(cell) => {
+                    let text = lines_to_single_string(&cell.display_lines(/*width*/ 100));
+                    text.contains("Fork created.").then_some(text)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        insta::assert_snapshot!("fork_completion", messages.join("\n"));
+        assert_eq!(
+            recorded_params(&requests, "thread/fork")
+                .into_iter()
+                .map(|params| params["threadId"].clone())
+                .collect::<Vec<_>>(),
+            vec![serde_json::json!(thread_id.to_string())]
+        );
+        for method in ["thread/resume", "turn/start", "turn/interrupt"] {
+            assert!(recorded_params(&requests, method).is_empty(), "{method}");
+        }
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            TuiEvent::Paste("Editable fork".into()),
+        )
+        .await?;
+        assert_eq!(
+            app.chat_widget.composer_text_with_pending(),
+            "Retained draftEditable fork"
+        );
+        let error = server
+            .resume_thread(
+                &app.local_settings,
+                app.config.clone(),
+                thread_id,
+                app.resume_model_settings(),
+            )
+            .await
+            .expect_err("source still has its original writer");
+        assert!(crate::app_server_session::is_active_writer_error(&error));
+        owner.shutdown().await?;
+        server.shutdown().await?;
+        proxy.await??;
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
