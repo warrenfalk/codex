@@ -833,12 +833,7 @@ fn mounts_dev_before_writable_dev_binds() {
     assert!(args.preserved_files.is_empty());
     assert_eq!(
         synthetic_mount_target_paths(&args),
-        vec![
-            PathBuf::from("/.aws"),
-            PathBuf::from("/.git"),
-            PathBuf::from("/.agents"),
-            PathBuf::from("/.codex"),
-        ]
+        vec![PathBuf::from("/.aws")],
     );
     let dev_mounts = args
         .args

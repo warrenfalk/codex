@@ -57,12 +57,14 @@ fn native_root_mounts_only_retain_explicit_read_only_subpaths() {
         FileSystemSandboxEntry::new(root.clone().into(), FileSystemAccessMode::Write),
         FileSystemSandboxEntry::new(read_only.clone().into(), FileSystemAccessMode::Read),
     ]);
-    assert_eq!(
-        policy.get_writable_roots_with_cwd_inheriting_root_metadata(&cwd),
-        vec![WritableRoot {
-            root,
-            read_only_subpaths: vec![read_only],
-            protected_metadata_names: Vec::new(),
-        }],
-    );
+    for policy_cwd in [cwd.as_path(), root.as_path()] {
+        assert_eq!(
+            policy.get_writable_roots_with_cwd_inheriting_root_metadata(policy_cwd),
+            vec![WritableRoot {
+                root: root.clone(),
+                read_only_subpaths: vec![read_only.clone()],
+                protected_metadata_names: Vec::new(),
+            }],
+        );
+    }
 }

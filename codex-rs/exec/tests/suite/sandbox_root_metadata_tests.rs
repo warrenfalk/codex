@@ -29,7 +29,10 @@ async fn full_access_with_explicit_restrictions_starts_without_root_metadata_mou
             AbsolutePathBuf::try_from("/")?.into(),
             FileSystemAccessMode::Write,
         ),
-        FileSystemSandboxEntry::new(workspace.join("read-only").into(), FileSystemAccessMode::Read),
+        FileSystemSandboxEntry::new(
+            workspace.join("read-only").into(),
+            FileSystemAccessMode::Read,
+        ),
         FileSystemSandboxEntry::new(workspace.join("denied").into(), FileSystemAccessMode::Deny),
     ]);
     let profile =
@@ -43,7 +46,11 @@ if (printf changed > denied) 2>/dev/null; then exit 13; fi
 printf allowed > writable
 "#;
     let child = spawn_command_under_sandbox(
-        vec![sh.to_string_lossy().into_owned(), "-c".into(), script.into()],
+        vec![
+            sh.to_string_lossy().into_owned(),
+            "-c".into(),
+            script.into(),
+        ],
         workspace.clone(),
         &profile,
         &workspace,
