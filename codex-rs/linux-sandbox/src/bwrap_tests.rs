@@ -799,6 +799,28 @@ fn missing_user_project_root_subpath_rules_are_still_enforced() {
 }
 
 #[test]
+fn root_write_with_denials_does_not_synthesize_project_metadata() {
+    let temp = TempDir::new().expect("tempdir");
+    let denied = temp.path().join("denied");
+    fs::write(&denied, "private").expect("write denied fixture");
+    let policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry::new(
+            AbsolutePathBuf::try_from("/").expect("root").into(),
+            FileSystemAccessMode::Write,
+        ),
+        FileSystemSandboxEntry::new(
+            AbsolutePathBuf::from_absolute_path(denied)
+                .expect("denied path")
+                .into(),
+            FileSystemAccessMode::Deny,
+        ),
+    ]);
+    let args = create_filesystem_args(&policy, temp.path(), BwrapOptions::default())
+        .expect("filesystem args");
+    assert_eq!(synthetic_mount_target_paths(&args), Vec::<PathBuf>::new());
+}
+
+#[test]
 fn mounts_dev_before_writable_dev_binds() {
     let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
         &[AbsolutePathBuf::try_from(Path::new("/dev/null")).expect("device path")],

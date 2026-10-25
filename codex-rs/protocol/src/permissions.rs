@@ -2666,6 +2666,10 @@ mod device_permissions;
 mod device_permissions_tests;
 
 #[cfg(test)]
+#[path = "permissions/root_metadata_tests.rs"]
+mod root_metadata_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;

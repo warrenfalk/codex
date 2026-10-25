@@ -37,6 +37,10 @@ mod pid_namespace;
 #[path = "sandbox_git_config_tests.rs"]
 mod git_config;
 
+#[cfg(target_os = "linux")]
+#[path = "sandbox_root_metadata_tests.rs"]
+mod root_metadata;
+
 pub(super) async fn spawn_command_under_sandbox(
     command: Vec<String>,
     command_cwd: AbsolutePathBuf,
