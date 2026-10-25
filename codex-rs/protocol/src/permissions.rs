@@ -1072,6 +1072,8 @@ impl FileSystemSandboxPolicy {
         let (protected, metadata_name) = entries
             .iter()
             .filter(|(_, access)| access.can_write())
+            // Filesystem roots grant broad access; they are not project directories.
+            .filter(|(root, _)| root.parent().is_some())
             .filter(|(root, _)| match root.to_abs_path() {
                 // Follow native aliases just as the filesystem mount builder does.
                 Ok(root) => !device_permissions::is_device_path(root.as_path()),
@@ -2371,7 +2373,9 @@ pub(crate) fn default_read_only_subpaths_for_writable_root(
     writable_root: &AbsolutePathBuf,
     protect_missing_dot_codex: bool,
 ) -> Vec<AbsolutePathBuf> {
-    if device_permissions::is_device_path(writable_root.as_path()) {
+    if writable_root.as_path().parent().is_none()
+        || device_permissions::is_device_path(writable_root.as_path())
+    {
         return Vec::new();
     }
     let mut subpaths: Vec<AbsolutePathBuf> = Vec::new();
@@ -2541,7 +2545,7 @@ fn protected_metadata_names_for_writable_root(
     root: &AbsolutePathBuf,
     raw_writable_roots: &[&AbsolutePathBuf],
 ) -> Vec<String> {
-    if device_permissions::is_device_path(root.as_path()) {
+    if root.as_path().parent().is_none() || device_permissions::is_device_path(root.as_path()) {
         return Vec::new();
     }
     let mut protected_names = Vec::new();
