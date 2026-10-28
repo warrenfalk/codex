@@ -10,8 +10,9 @@ sending the prompt first.
 - `Ctrl+I` copies the current composer input from the main TUI view.
 - Copying uses the expanded composer text, so pending paste placeholders are
   resolved before the clipboard content is written.
-- Success and failure are reported in history cells, matching the existing copy
-  feedback pattern used elsewhere in the TUI.
+- Copy results use the same temporary feedback area as selection copies and stay
+  visible with clean scrollback enabled. They do not add history cells.
+- Show one result when copying finishes, without a separate "Copying…" notice.
 - Terminal-only copy requests are reported as unconfirmed. They and failed
   copies preserve clipboard contents supplied by an earlier native copy.
 - If there is no current input, Codex reports that explicitly instead of

@@ -8598,11 +8598,12 @@ async fn backtrack_overlay_ctrl_i_copies_selected_prompt() {
     });
 
     assert_eq!(copied, Some("selected prompt".to_string()));
-    let status_cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected copy status history cell, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&status_cell.display_lines(/*width*/ 80));
+    assert!(
+        !std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+    );
+    let rendered =
+        crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80);
     assert_app_snapshot!("backtrack_overlay_ctrl_i_copies_selected_prompt", rendered);
 }
 
@@ -8689,11 +8690,12 @@ async fn backtrack_overlay_copy_shortcut_copies_agent_message_before_selected_pr
     });
 
     assert_eq!(copied, Some("previous **response**".to_string()));
-    let status_cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected copy status history cell, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&status_cell.display_lines(/*width*/ 80));
+    assert!(
+        !std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+    );
+    let rendered =
+        crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80);
     assert_app_snapshot!(
         "backtrack_overlay_copy_shortcut_copies_agent_message_before_selected_prompt",
         rendered

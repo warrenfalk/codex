@@ -15,6 +15,11 @@ conversation-focused history:
 - review-mode markers
 - context-compaction markers
 
+Clipboard copy feedback remains visible in the temporary selection-copy feedback
+area, including copies of the composer input, last response, picker targets, and
+conversation exports. Copies report their result without a separate progress
+notice and do not add transcript history.
+
 Committed tool, command, file-change, status, warning, approval, MCP, web, image, hook, and
 subagent status history is hidden while the mode is enabled. New noisy history produced while the
 mode is enabled is still stored in memory, but it is not inserted into the visible scrollback until

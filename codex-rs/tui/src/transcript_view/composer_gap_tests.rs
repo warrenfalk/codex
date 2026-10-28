@@ -30,7 +30,7 @@ fn pending_copy_feedback_survives_expiry_and_selection_replacement() {
     );
     let mut buffer = Buffer::empty(area);
     let later = Instant::now() + Duration::from_secs(/*secs*/ 10);
-    assert!(view.composer_gap_has_content(area.width, /*hint*/ None, later));
+    assert!(!view.composer_gap_has_content(area.width, /*hint*/ None, later));
     assert_eq!(
         view.render_composer_gap(Some(area), /*hint*/ None, &mut buffer, later),
         None
@@ -94,7 +94,10 @@ fn copy_feedback_is_right_aligned_and_does_not_claim_terminal_delivery() {
         for width in [80, 32, 18] {
             let mut view = TranscriptView::default();
             view.show_copy_feedback(&result, /*characters*/ 24);
-            assert!(view.composer_gap_has_content(width, /*hint*/ None, Instant::now()));
+            assert_eq!(
+                view.composer_gap_has_content(width, /*hint*/ None, Instant::now()),
+                !matches!(result, Ok(CopyStatus::Pending(_)))
+            );
             let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 1);
             let mut buffer = Buffer::empty(area);
             assert_eq!(

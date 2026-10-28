@@ -2450,9 +2450,8 @@ async fn slash_copy_reports_when_no_agent_response_exists() {
 
     chat.dispatch_command(SlashCommand::Copy);
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert_chatwidget_snapshot!("slash_copy_no_output_info_message", rendered);
     assert!(
         rendered.contains("No agent response to copy"),
@@ -2501,9 +2500,8 @@ async fn copy_action_reports_when_no_agent_response_exists() {
     let (code, modifiers) = crate::keymap::RuntimeKeymap::defaults().app.copy[0].parts();
     chat.handle_key_event(KeyEvent::new(code, modifiers));
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
         rendered.contains("No agent response to copy"),
         "expected no-output message, got {rendered:?}"
@@ -2703,9 +2701,8 @@ async fn copy_shortcut_can_be_remapped() {
         chat.handle_key_event(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT)),
         crate::chatwidget::KeyEventAction::None
     );
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
         rendered.contains("No agent response to copy"),
         "expected remapped copy shortcut to run, got {rendered:?}"
@@ -2756,9 +2753,8 @@ async fn ctrl_i_copy_reports_when_no_input_exists() {
         crate::chatwidget::KeyEventAction::None
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert_chatwidget_snapshot!("ctrl_i_copy_no_input_message", rendered);
     assert!(
         rendered.contains("No input to copy"),
@@ -2796,12 +2792,13 @@ async fn ctrl_i_copy_uses_raw_composer_text_with_pending() {
         "current input",
         Ok(crate::clipboard_copy::CopyStatus::Pending(1)),
     );
-    let _pending = drain_insert_history(&mut rx);
+    assert!(drain_insert_history(&mut rx).is_empty());
     chat.finish_clipboard(
         &(1, Ok(crate::clipboard_copy::CopyStatus::Unconfirmed)),
         /*composer_visible*/ true,
     );
-    let rendered = lines_to_single_string(&drain_insert_history(&mut rx)[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = render_bottom_popup(&chat, /*width*/ 80);
     assert_chatwidget_snapshot!("ctrl_i_copy_unconfirmed_message", rendered);
 }
 
@@ -2819,11 +2816,12 @@ async fn copy_shortcut_submits_markdown_and_reports_completion_once() {
         "last message",
         Ok(crate::clipboard_copy::CopyStatus::Pending(1)),
     );
-    let pending = lines_to_single_string(&drain_insert_history(&mut rx)[0]);
-    insta::assert_snapshot!("pending_copy", pending);
+    assert!(drain_insert_history(&mut rx).is_empty());
     let completion = (1, Ok(crate::clipboard_copy::CopyStatus::Confirmed));
     chat.finish_clipboard(&completion, /*composer_visible*/ true);
-    let result = lines_to_single_string(&drain_insert_history(&mut rx)[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let result = render_bottom_popup(&chat, /*width*/ 80);
+    insta::assert_snapshot!("completed_copy", result);
     assert!(result.contains("Copied last message to clipboard"));
     chat.finish_clipboard(&completion, /*composer_visible*/ true);
     assert!(drain_insert_history(&mut rx).is_empty());
@@ -2831,10 +2829,7 @@ async fn copy_shortcut_submits_markdown_and_reports_completion_once() {
         "last message",
         Ok(crate::clipboard_copy::CopyStatus::Unconfirmed),
     );
-    insta::assert_snapshot!(
-        "unconfirmed_copy",
-        lines_to_single_string(&drain_insert_history(&mut rx)[0])
-    );
+    insta::assert_snapshot!("unconfirmed_copy", render_bottom_popup(&chat, /*width*/ 80));
 }
 
 #[tokio::test]
@@ -4062,14 +4057,20 @@ async fn transcript_copy_feedback_stays_in_the_footer_without_history_or_interru
     let (mut chat, mut events, mut operations) =
         make_chatwidget_manual(/*model_override*/ None).await;
     let _ = drain_insert_history(&mut events);
-    chat.show_selection_copy_result(Ok(crate::clipboard_copy::CopyStatus::Confirmed));
+    chat.show_copy_result(
+        "selection",
+        Ok(crate::clipboard_copy::CopyStatus::Confirmed),
+    );
     assert_eq!(drain_insert_history(&mut events).len(), 0);
     assert!(operations.try_recv().is_err());
     insta::assert_snapshot!(
         "transcript_copy_success",
         render_bottom_popup(&chat, /*width*/ 80)
     );
-    chat.show_selection_copy_result(Ok(crate::clipboard_copy::CopyStatus::Unconfirmed));
+    chat.show_copy_result(
+        "selection",
+        Ok(crate::clipboard_copy::CopyStatus::Unconfirmed),
+    );
     assert_eq!(drain_insert_history(&mut events).len(), 0);
     assert!(operations.try_recv().is_err());
     insta::assert_snapshot!(
@@ -4079,7 +4080,7 @@ async fn transcript_copy_feedback_stays_in_the_footer_without_history_or_interru
     chat.open_warnings(&[Arc::new(history_cell::new_warning_event(
         "selected café".into(),
     ))]);
-    chat.show_selection_copy_result(Err("clipboard unavailable".to_string()));
+    chat.show_copy_result("selection", Err("clipboard unavailable".to_string()));
     assert_eq!(drain_insert_history(&mut events).len(), 0);
     assert!(operations.try_recv().is_err());
     insta::assert_snapshot!(

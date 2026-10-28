@@ -1,9 +1,7 @@
 //! Key routing and composer-adjacent UI interaction for `ChatWidget`.
 
-use super::clipboard::PendingCopy;
 use super::*;
 use crate::bottom_pane::BottomPaneView;
-use crate::clipboard_copy::CopyStatus;
 use crate::clipboard_copy::worker::CopyResult;
 
 /// An input action the app must finish before processing the next key.
@@ -471,7 +469,7 @@ impl ChatWidget {
         self.app_event_tx.send(AppEvent::FollowTranscript);
         let input = self.composer_text_with_pending();
         let action = if input.is_empty() {
-            self.add_error_message("No input to copy".into());
+            self.show_copy_result("current input", Err("No input to copy".into()));
             KeyEventAction::None
         } else {
             KeyEventAction::CopyComposerText(input.into())
@@ -488,31 +486,12 @@ impl ChatWidget {
                 KeyEventAction::CopyLastResponse(markdown.into())
             }
             _ => {
-                self.add_error_message("No agent response to copy".into());
+                self.show_copy_result("last message", Err("No agent response to copy".into()));
                 KeyEventAction::None
             }
         };
         self.request_redraw();
         action
-    }
-
-    /// Report a selection copy in the footer without adding history.
-    pub(crate) fn show_selection_copy_result(&mut self, result: CopyResult) {
-        if let Ok(CopyStatus::Pending(id)) = result {
-            self.pending_clipboard = Some(PendingCopy::Selection(id));
-        }
-        self.show_clipboard_flash(&result);
-    }
-
-    pub(crate) fn show_copy_result(&mut self, label: &str, result: CopyResult) {
-        if let Ok(CopyStatus::Pending(id)) = result {
-            self.pending_clipboard = Some(PendingCopy::Message(id, label.into()));
-        }
-        match result {
-            Ok(status) => self.add_info_message(status.message(label), /*hint*/ None),
-            Err(error) => self.add_error_message(format!("Copy failed: {error}")),
-        }
-        self.request_redraw();
     }
 
     #[cfg(test)]

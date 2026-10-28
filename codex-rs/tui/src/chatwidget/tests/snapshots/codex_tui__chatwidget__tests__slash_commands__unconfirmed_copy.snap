@@ -1,6 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
 assertion_line: 2404
-expression: rendered
+expression: "render_bottom_popup(&chat, 80)"
 ---
-• Copy unconfirmed; /export saves chat
+› Ask Codex to do anything
+
+  Copy unconfirmed; /export saves chat

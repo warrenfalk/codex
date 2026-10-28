@@ -2,4 +2,6 @@
 source: tui/src/app/tests.rs
 expression: rendered
 ---
-• Copied selected prompt to clipboard
+› Ask Codex to do anything
+
+  Copied selected prompt to clipboard

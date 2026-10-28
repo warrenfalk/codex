@@ -2,13 +2,14 @@
 //! Pending feedback belongs to this widget, so switching conversations discards it.
 
 use super::*;
+use crate::clipboard_copy::CopyStatus;
 use crate::clipboard_copy::worker::CopyResult;
 
 pub(super) const IMAGE_PASTE_REPEAT_WINDOW: Duration = Duration::from_millis(/*millis*/ 250);
 
-pub(super) enum PendingCopy {
-    Message(u64, String),
-    Selection(u64),
+pub(super) struct PendingCopy {
+    id: u64,
+    label: String,
 }
 
 impl ChatWidget {
@@ -26,9 +27,23 @@ impl ChatWidget {
         Ok(())
     }
 
-    pub(super) fn show_clipboard_flash(&mut self, result: &CopyResult) {
+    /// Track pending copies silently and report their result without adding history.
+    pub(crate) fn show_copy_result(&mut self, label: &str, result: CopyResult) {
+        if let Ok(CopyStatus::Pending(id)) = result {
+            self.pending_clipboard = Some(PendingCopy {
+                id,
+                label: label.into(),
+            });
+        }
+        self.show_clipboard_flash(label, &result);
+    }
+
+    fn show_clipboard_flash(&mut self, label: &str, result: &CopyResult) {
+        if matches!(result, Ok(CopyStatus::Pending(_))) {
+            return;
+        }
         let line = match result {
-            Ok(status) => Line::from(status.message("selection").dim()),
+            Ok(status) => Line::from(status.message(label).dim()),
             Err(error) => Line::from(format!("Copy failed: {error}").red()),
         };
         self.bottom_pane
@@ -40,19 +55,13 @@ impl ChatWidget {
         completion: &(u64, CopyResult),
         composer_visible: bool,
     ) -> Option<usize> {
-        let pending_id = match &self.pending_clipboard {
-            Some(PendingCopy::Message(id, _) | PendingCopy::Selection(id)) => Some(*id),
-            None => None,
-        };
-        if pending_id == Some(completion.0) {
-            match self.pending_clipboard.take() {
-                Some(PendingCopy::Message(_, label)) => match &completion.1 {
-                    Ok(status) => self.add_info_message(status.message(&label), /*hint*/ None),
-                    Err(error) => self.add_error_message(format!("Copy failed: {error}")),
-                },
-                Some(PendingCopy::Selection(_)) => self.show_clipboard_flash(&completion.1),
-                None => {}
-            }
+        if self
+            .pending_clipboard
+            .as_ref()
+            .is_some_and(|pending| pending.id == completion.0)
+            && let Some(pending) = self.pending_clipboard.take()
+        {
+            self.show_clipboard_flash(&pending.label, &completion.1);
         }
         self.bottom_pane
             .finish_composer_copy(completion, composer_visible)

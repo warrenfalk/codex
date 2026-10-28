@@ -2,4 +2,6 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: rendered
 ---
-■ No input to copy
+› Ask Codex to do anything
+
+  Copy failed: No input to copy

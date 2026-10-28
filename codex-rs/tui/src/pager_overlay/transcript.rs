@@ -459,10 +459,11 @@ impl TranscriptOverlay {
             &action,
             crate::clipboard_copy::CopyFormat::Markdown,
         ) {
-            self.notice = Some(match result {
-                Ok(status) => status.message("selection"),
-                Err(error) => error,
-            });
+            self.notice = match result {
+                Ok(crate::clipboard_copy::CopyStatus::Pending(_)) => None,
+                Ok(status) => Some(status.message("selection")),
+                Err(error) => Some(error),
+            };
         } else if let ViewAction::OpenLink(url) = action
             && let Err(error) = webbrowser::open(&url)
         {

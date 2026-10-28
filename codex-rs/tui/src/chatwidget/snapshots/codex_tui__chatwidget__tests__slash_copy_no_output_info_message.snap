@@ -3,4 +3,6 @@ source: tui/src/chatwidget/tests/slash_commands.rs
 assertion_line: 145
 expression: rendered
 ---
-■ No agent response to copy
+› Ask Codex to do anything
+
+  Copy failed: No agent response to copy

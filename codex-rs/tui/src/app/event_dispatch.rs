@@ -436,7 +436,7 @@ impl App {
             }
             AppEvent::CopyWarning(text) => {
                 let result = tui.copy_transcript_selection(&text, crate::clipboard_copy::CopyFormat::PlainText);
-                self.chat_widget.show_selection_copy_result(result);
+                self.chat_widget.show_copy_result("selection", result);
             }
             AppEvent::OpenTranscriptExportFilePrompt => {
                 self.chat_widget.show_transcript_export_file_prompt();
@@ -464,8 +464,9 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::CopySelection { text, label, format } => {
+                let characters = text.chars().count();
                 let result = tui.clipboard.copy(text, format, tui.frame_requester());
-                self.chat_widget.show_copy_result(&label, result);
+                self.show_copy_result(&label, characters, result);
             }
             AppEvent::PromptRewriteCompleted(completion) => {
                 self.finish_prompt_rewrite(completion);

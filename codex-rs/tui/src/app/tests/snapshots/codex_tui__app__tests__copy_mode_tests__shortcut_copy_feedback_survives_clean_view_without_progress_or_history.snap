@@ -1,0 +1,87 @@
+---
+source: tui/src/app/tests/copy_mode_tests.rs
+expression: "snapshots.join(\"\\n\\n\")"
+---
+clean=false, current input
+
+
+
+
+
+
+                                              Copied 24 chars to host clipboard
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
+
+clean=false, last message
+
+
+
+
+
+
+                                        Copy sent to terminal · paste to verify
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
+
+clean=false, picker target
+
+
+
+
+
+
+                                                        Copy failed · try again
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
+
+clean=true, current input
+
+
+
+
+
+
+                                              Copied 24 chars to host clipboard
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
+
+clean=true, last message
+
+
+
+
+
+
+                                        Copy sent to terminal · paste to verify
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
+
+clean=true, picker target
+
+
+
+
+
+
+                                                        Copy failed · try again
+
+› Ask Codex to do anything
+
+  5.6-Sol default · tmp/project
+  ? for shortcuts
