@@ -19,6 +19,7 @@ mod side_conversation;
 mod startup_launch;
 mod thread_list;
 mod thread_unread;
+mod turn_workspace_roots;
 mod web_search;
 
 #[cfg(test)]
@@ -32,6 +33,7 @@ pub(crate) use history::HistoryHydrationScope;
 pub(crate) use history::INITIAL_HISTORY_TURN_LIMIT;
 pub(crate) use history::thread_items_page_params;
 pub(crate) use startup_launch::StartupLaunchChoices;
+pub(crate) use turn_workspace_roots::TurnWorkspaceRoots;
 
 use crate::app_event::PermissionProfileSelection;
 use crate::app_event_sender::AppEventSender;
@@ -1529,7 +1531,7 @@ impl AppServerSession {
         approval_policy: Option<AskForApproval>,
         approvals_reviewer: Option<codex_app_server_protocol::ApprovalsReviewer>,
         permissions_override: TurnPermissionsOverride,
-        workspace_roots: &[AbsolutePathBuf],
+        workspace_roots: TurnWorkspaceRoots<'_>,
         model: String,
         effort: Option<codex_protocol::openai_models::ReasoningEffort>,
         summary: Option<codex_protocol::config_types::ReasoningSummary>,
@@ -1540,12 +1542,22 @@ impl AppServerSession {
     ) -> Result<TurnStartResponse> {
         let request_id = self.next_request_id();
         let additional_context = self.side_turn_context(thread_id, &client_user_message_id);
+        let runtime_workspace_roots = match workspace_roots {
+            TurnWorkspaceRoots::ProjectAttachment(roots) => Some(roots.to_vec()),
+            TurnWorkspaceRoots::Configured(roots)
+                if self.thread_params_mode.settings_owner() == ThreadSettingsOwner::Client =>
+            {
+                Some(roots.to_vec())
+            }
+            TurnWorkspaceRoots::Configured(_) => None,
+        };
         let mut params = TurnStartParams {
             thread_id: thread_id.to_string(),
             turn_trigger: Some(turn_trigger.to_string()),
             client_user_message_id: Some(client_user_message_id),
             input: items,
             additional_context,
+            runtime_workspace_roots,
             output_schema,
             cyber_access_program,
             ..TurnStartParams::default()
@@ -1554,7 +1566,6 @@ impl AppServerSession {
             let (sandbox_policy, permissions) =
                 turn_permissions_overrides(permissions_override, cwd.as_path())?;
             params.cwd = Some(cwd);
-            params.runtime_workspace_roots = Some(workspace_roots.to_vec());
             params.approval_policy = approval_policy;
             params.approvals_reviewer = approvals_reviewer;
             params.sandbox_policy = sandbox_policy;
@@ -3326,7 +3337,7 @@ mod tests {
                 TurnPermissionsOverride::ActiveProfile(ActivePermissionProfile::new(
                     "local-permission-profile".to_string(),
                 )),
-                &workspace_roots,
+                TurnWorkspaceRoots::Configured(&workspace_roots),
                 "local-model".to_string(),
                 Some(ReasoningEffort::High),
                 Some(ReasoningSummary::Detailed),

@@ -16,6 +16,7 @@ pub(crate) fn build_search_catalog(
     skills: Option<&[SkillMetadata]>,
     plugins: Option<&[PluginCapabilitySummary]>,
     tasks: &[TaskMention],
+    projects: &[codex_utils_absolute_path::AbsolutePathBuf],
 ) -> Vec<Candidate> {
     let plugin_ids: HashSet<_> = plugins
         .into_iter()
@@ -61,6 +62,7 @@ pub(crate) fn build_search_catalog(
         }
     }));
 
+    candidates.extend(super::projects::project_candidates(projects));
     candidates
 }
 

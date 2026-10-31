@@ -3,9 +3,9 @@ source: tui/src/bottom_pane/chat_composer/mentions_layout_tests.rs
 expression: buffer_text(&buffer)
 ---
   Mentions
-  Files, directories, plugins, skills and tasks
+  Files, directories, plugins, skills, tasks and projects
 
-   All Results   Filesystem Only   Plugins
+   All Results   Filesystem Only   Plugins   Projects
 
   Type to search mentions
 

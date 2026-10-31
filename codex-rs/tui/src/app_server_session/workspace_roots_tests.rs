@@ -3,6 +3,8 @@
 use super::*;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
+use crate::test_support::PathBufExt;
+use crate::test_support::test_path_buf;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::ServerNotification;
 use core_test_support::responses;
@@ -104,7 +106,9 @@ stream_max_retries = 0
                         /*approval_policy*/ None,
                         /*approvals_reviewer*/ None,
                         TurnPermissionsOverride::Preserve,
-                        config.permissions.user_visible_workspace_roots(),
+                        TurnWorkspaceRoots::Configured(
+                            config.permissions.user_visible_workspace_roots(),
+                        ),
                         "gpt-5.2".to_string(),
                         /*effort*/ None,
                         /*summary*/ None,
@@ -230,6 +234,75 @@ async fn embedded_lifecycle_requests_preserve_explicit_workspace_roots() -> Resu
             fork.runtime_workspace_roots
         ],
         [expected.clone(), expected.clone(), expected]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_project_roots_preserve_cloud_owned_settings() -> Result<()> {
+    let thread_id = ThreadId::new();
+    let roots = vec![test_path_buf("/server/project").abs()];
+    let input = vec![UserInput::Text {
+        text: "Work on the selected project".into(),
+        text_elements: Vec::new(),
+    }];
+    let (client, mut commands, _events) =
+        codex_app_server_client::CloudClient::channel(/*capacity*/ 1);
+    let mut server = AppServerSession::new(
+        crate::backend_id::BackendId::new(),
+        AppServerClient::Cloud(client),
+        ThreadParamsMode::Cloud,
+    );
+    let (turn, sent_params) = tokio::join!(
+        server.turn_start(
+            thread_id,
+            "user",
+            "project-selection".into(),
+            input.clone(),
+            test_path_buf("/client/workspace"),
+            Some(codex_app_server_protocol::AskForApproval::Never),
+            Some(codex_app_server_protocol::ApprovalsReviewer::User),
+            TurnPermissionsOverride::ActiveProfile(ActivePermissionProfile::new("client-profile")),
+            TurnWorkspaceRoots::ProjectAttachment(&roots),
+            "client-model".into(),
+            /*effort*/ None,
+            /*summary*/ None,
+            /*service_tier*/ None,
+            /*collaboration_mode*/ None,
+            /*output_schema*/ None,
+            /*cyber_access_program*/ None,
+        ),
+        async {
+            let command = commands.recv().await.expect("cloud turn start");
+            let codex_app_server_client::CloudOperation::Request(request) = command.operation
+            else {
+                panic!("expected cloud request")
+            };
+            let ClientRequest::TurnStart { params, .. } = *request else {
+                panic!("expected turn/start request")
+            };
+            command
+                .response
+                .send(Ok(Err(JSONRPCErrorError {
+                    code: JSONRPC_INVALID_PARAMS,
+                    data: None,
+                    message: "stop after recording request".into(),
+                })))
+                .expect("turn start awaits its response");
+            params
+        },
+    );
+    let _ = turn.expect_err("recording response stops turn start");
+    assert_eq!(
+        sent_params,
+        TurnStartParams {
+            thread_id: thread_id.to_string(),
+            turn_trigger: Some("user".into()),
+            client_user_message_id: Some("project-selection".into()),
+            input,
+            runtime_workspace_roots: Some(roots),
+            ..TurnStartParams::default()
+        }
     );
     Ok(())
 }

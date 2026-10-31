@@ -209,6 +209,8 @@ mod npm_registry;
 pub(crate) mod onboarding;
 mod oss_selection;
 mod pager_overlay;
+mod project_mentions;
+mod project_references;
 mod projectless;
 mod prompt_rewrite;
 pub(crate) mod public_widgets;

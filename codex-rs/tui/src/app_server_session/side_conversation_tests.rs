@@ -255,7 +255,7 @@ stream_max_retries = 0
                 /*approval_policy*/ None,
                 /*approvals_reviewer*/ None,
                 TurnPermissionsOverride::Preserve,
-                &config.workspace_roots,
+                TurnWorkspaceRoots::Configured(&config.workspace_roots),
                 "gpt-5.2".into(),
                 /*effort*/ None,
                 /*summary*/ None,

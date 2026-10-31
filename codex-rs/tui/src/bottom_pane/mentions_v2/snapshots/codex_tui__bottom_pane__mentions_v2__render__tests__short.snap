@@ -4,7 +4,7 @@ assertion_line: 71
 expression: text(&buffer)
 ---
   Mentions
-  Files, directories, plugins, skills
+  Files, directories, plugins, skills,
    All Results   Filesystem Only     ›
   Type to search mentions
   界.rs      src/                 File

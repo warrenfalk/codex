@@ -9,6 +9,7 @@ const TAG_WIDTH: usize = "Plugin".len();
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Selection {
     File(PathBuf),
+    BrowseProjects,
     Tool {
         insert_text: String,
         path: Option<String>,
@@ -22,6 +23,7 @@ pub(super) enum MentionType {
     Task,
     File,
     Directory,
+    Project,
 }
 
 impl MentionType {
@@ -36,6 +38,7 @@ impl MentionType {
             Self::Task => base_style.cyan(),
             Self::File => base_style.cyan(),
             Self::Directory => base_style,
+            Self::Project => base_style.green(),
         };
         format!("{:<width$}", self.label(), width = TAG_WIDTH).set_style(style)
     }
@@ -47,6 +50,7 @@ impl MentionType {
             Self::Task => "Task",
             Self::File => "File",
             Self::Directory => "Dir",
+            Self::Project => "Project",
         }
     }
 }

@@ -322,7 +322,8 @@ pub(crate) fn is_common_env_var(name: &str) -> bool {
 }
 
 fn is_tool_path(path: &str) -> bool {
-    path.starts_with("app://")
+    crate::project_mentions::project_path(path).is_some()
+        || path.starts_with("app://")
         || path.starts_with("mcp://")
         || path.starts_with("plugin://")
         || path.starts_with("skill://")
