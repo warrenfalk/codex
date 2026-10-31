@@ -198,12 +198,11 @@ async fn listener_shutdown_releases_runtime_and_preserves_other_subscribers(
         )
         .await;
         loop {
-            if let OutgoingEnvelope::ToConnection {
-                connection_id: recipient,
+            if let OutgoingEnvelope::ToConnections {
+                connection_ids: recipients,
                 message: OutgoingMessage::AppServerNotification(notification),
-                ..
             } = outgoing_rx.recv().await.expect("outgoing channel closed")
-                && recipient == remaining_connection_id
+                && recipients == [remaining_connection_id]
                 && matches!(
                     &notification.notification,
                     ServerNotification::ServerRequestResolved(resolved)

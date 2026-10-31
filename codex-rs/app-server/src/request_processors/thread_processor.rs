@@ -3900,6 +3900,15 @@ impl ThreadRequestProcessor {
         self.thread_watch_manager.subscribe_running_turn_count()
     }
 
+    pub(crate) async fn connection_has_thread_subscriptions(
+        &self,
+        connection_id: ConnectionId,
+    ) -> bool {
+        self.thread_state_manager
+            .connection_has_thread_subscriptions(connection_id)
+            .await
+    }
+
     pub(crate) async fn try_attach_thread_listener(
         &self,
         thread_id: ThreadId,

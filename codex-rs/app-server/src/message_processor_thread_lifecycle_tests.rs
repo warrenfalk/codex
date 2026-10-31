@@ -496,6 +496,8 @@ async fn disconnected_v2_child_lifecycle(unload_delay_secs: u64, ephemeral: bool
                 if loaded.is_empty() && child_runtime.upgrade().is_none() {
                     break;
                 }
+                // Model the transport draining events even without thread subscribers.
+                while outgoing.try_recv().is_ok() {}
                 tokio::task::yield_now().await;
             }
         })
