@@ -20,6 +20,12 @@ impl App {
                     .copy(text, CopyFormat::Markdown, tui.frame_requester());
                 self.chat_widget.show_copy_result("last message", result);
             }
+            KeyEventAction::CopyComposerText(text) => {
+                let result = tui
+                    .clipboard
+                    .copy(text, CopyFormat::PlainText, tui.frame_requester());
+                self.chat_widget.show_copy_result("current input", result);
+            }
             KeyEventAction::PasteImage { text_fallback } => {
                 if text_fallback.is_some()
                     && self
