@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: result
+---
+› Ask Codex to do anything
+
+  Copied last message to clipboard

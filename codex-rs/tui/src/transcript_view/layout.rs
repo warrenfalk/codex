@@ -65,7 +65,13 @@ fn cell_content_layout(
     presentation: CellPresentation,
     shortcut: Option<ShortcutHint>,
 ) -> TextLayout {
-    let mut layout = if presentation.disclosure {
+    let mut layout = if presentation.clean_scrollback_enabled && presentation.detailed {
+        TextLayout::new(cell.clean_transcript_hyperlink_lines(width), width)
+    } else if presentation.clean_scrollback_enabled
+        && cell.history_visibility_kind() == crate::history_cell::HistoryVisibilityKind::Noise
+    {
+        TextLayout::new(Vec::new(), width)
+    } else if presentation.disclosure {
         activity_layout(
             ActivityTranscriptLines {
                 activity: if presentation.expanded {
@@ -133,6 +139,7 @@ pub(super) struct CellPresentation {
     expanded: bool,
     disclosure: bool,
     detailed: bool,
+    clean_scrollback_enabled: bool,
     image_protocol: Option<crate::pets::ImageProtocol>,
 }
 
@@ -144,7 +151,10 @@ impl TranscriptView {
         mode: HistoryRenderMode,
     ) -> CellPresentation {
         let ids = cell.activity_ids();
-        let disclosure = !self.detailed && mode == HistoryRenderMode::Rich && !ids.is_empty();
+        let disclosure = !self.clean_scrollback_enabled
+            && !self.detailed
+            && mode == HistoryRenderMode::Rich
+            && !ids.is_empty();
         let manually_expanded = self.disclosure.is_expanded(&ids);
         let reveal_image = ids.is_empty() || manually_expanded || self.detailed;
         if manually_expanded {
@@ -157,9 +167,14 @@ impl TranscriptView {
             expanded: disclosure && (full_content || manually_expanded),
             disclosure,
             detailed: full_content,
-            image_protocol: self
-                .image_protocol
-                .filter(|_| mode == HistoryRenderMode::Rich && reveal_image),
+            clean_scrollback_enabled: self.clean_scrollback_enabled,
+            image_protocol: self.image_protocol.filter(|_| {
+                mode == HistoryRenderMode::Rich
+                    && reveal_image
+                    && !(self.clean_scrollback_enabled
+                        && cell.history_visibility_kind()
+                            == crate::history_cell::HistoryVisibilityKind::Noise)
+            }),
         }
     }
 
@@ -231,8 +246,11 @@ impl TranscriptView {
         let width = self.area.width.max(/*other*/ 1);
         // Session information belongs before all history, including pages not loaded yet.
         // Pinned displayed revisions above remain visible; hidden headers never enter the cache.
-        if self.history.has_unloaded_history()
-            && cell.as_any().is::<crate::history_cell::SessionInfoCell>()
+        if (self.clean_scrollback_enabled
+            && !self.detailed
+            && cell.history_visibility_kind() == crate::history_cell::HistoryVisibilityKind::Noise)
+            || (self.history.has_unloaded_history()
+                && cell.as_any().is::<crate::history_cell::SessionInfoCell>())
         {
             return Some(Arc::new(TextLayout::new(Vec::new(), width)));
         }
@@ -362,6 +380,8 @@ impl LayoutCache {
                 && entry.presentation.expanded == presentation.expanded
                 && entry.presentation.disclosure == presentation.disclosure
                 && entry.presentation.detailed == presentation.detailed
+                && entry.presentation.clean_scrollback_enabled
+                    == presentation.clean_scrollback_enabled
                 && entry.presentation.image_protocol == presentation.image_protocol
                 && entry.source.ptr_eq(&source)
                 && (entry.rendered_frame == self.frame

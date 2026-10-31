@@ -1,0 +1,29 @@
+---
+source: tui/src/transcript_view/layout_tests.rs
+expression: "format!(\"All history\\n{}\\n\\nClean view\\n{}\\n\\nRestored\\n{}\", frames[0],\nframes[1], frames[2],)"
+---
+All history
+
+› First prompt
+
+
+Tool output
+
+
+› Second prompt
+
+Clean view
+
+› First prompt
+
+› Second prompt
+
+Restored
+
+› First prompt
+
+
+Tool output
+
+
+› Second prompt

@@ -52,6 +52,11 @@ impl TranscriptOverlay {
         self.view.is_detailed()
     }
 
+    pub(crate) fn set_clean_scrollback_enabled(&mut self, clean_scrollback_enabled: bool) {
+        self.view
+            .set_clean_scrollback_enabled(clean_scrollback_enabled);
+    }
+
     pub(crate) fn new(cells: Vec<Arc<dyn HistoryCell>>, keymap: PagerKeymap) -> Self {
         let mut view = TranscriptView::default();
         view.set_presentation(/*detailed*/ true, HistoryRenderMode::Rich);
@@ -545,10 +550,11 @@ impl TranscriptOverlay {
                     | Err(_) => {}
                 }
             }
-            self.notice = Some(match result {
-                Ok(status) => status.message("selection"),
-                Err(error) => error,
-            });
+            self.notice = match result {
+                Ok(crate::clipboard_copy::CopyStatus::Pending(_)) => None,
+                Ok(status) => Some(status.message("selection")),
+                Err(error) => Some(error),
+            };
         } else if let ViewAction::OpenLink(url) = action
             && let Err(error) = webbrowser::open(&url)
         {

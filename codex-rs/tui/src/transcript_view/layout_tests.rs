@@ -52,6 +52,7 @@ fn layouts_refresh_for_width_animation_and_mutable_frames() {
                     expanded: false,
                     disclosure: false,
                     detailed: false,
+                    clean_scrollback_enabled: false,
                     image_protocol: None,
                 },
                 || TextLayout::new(history.transcript_hyperlink_lines(width), width),
@@ -110,6 +111,7 @@ fn recent_entries_are_reused_and_old_entries_are_evicted() {
                 expanded: false,
                 disclosure: false,
                 detailed: false,
+                clean_scrollback_enabled: false,
                 image_protocol: None,
             },
             || {
@@ -132,6 +134,7 @@ fn recent_entries_are_reused_and_old_entries_are_evicted() {
                 expanded: false,
                 disclosure: false,
                 detailed: false,
+                clean_scrollback_enabled: false,
                 image_protocol: None,
             },
             || {
@@ -145,6 +148,59 @@ fn recent_entries_are_reused_and_old_entries_are_evicted() {
     assert_eq!(
         [99, 98, 0].map(|index| cells[index].renders.load(Ordering::Relaxed)),
         [1, 1, 2]
+    );
+}
+
+#[test]
+fn clean_view_keeps_prompt_grouping_across_hidden_cells() {
+    use crate::history_cell::HistoryVisibilityKind;
+    use crate::history_cell::PlainHistoryCell;
+    use crate::history_cell::new_user_prompt;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![
+        Arc::new(new_user_prompt(
+            "First prompt".into(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )),
+        Arc::new(PlainHistoryCell::new_with_visibility_kind(
+            vec!["Tool output".into()],
+            HistoryVisibilityKind::Noise,
+        )),
+        Arc::new(new_user_prompt(
+            "Second prompt".into(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )),
+    ];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 12,
+    );
+    let mut view = TranscriptView::default();
+    let mut frames = Vec::new();
+    for clean in [false, true, false] {
+        view.set_clean_scrollback_enabled(clean);
+        let mut buffer = Buffer::empty(area);
+        view.render(area, &mut buffer, &cells);
+        assert_eq!(
+            view.layout(&cells, /*index*/ 1).unwrap().text().is_empty(),
+            clean,
+        );
+        frames.push(
+            crate::transcript_view::tests::text(&buffer)
+                .trim_end()
+                .to_string(),
+        );
+    }
+    assert_eq!(frames[0], frames[2]);
+    insta::assert_snapshot!(
+        "clean_view_prompt_grouping",
+        format!(
+            "All history\n{}\n\nClean view\n{}\n\nRestored\n{}",
+            frames[0], frames[1], frames[2],
+        ),
     );
 }
 
@@ -226,6 +282,30 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
         assert_eq!(pinned_restored.row_count(), layout.row_count());
         assert!(pinned_restored.visible_image().is_some());
     }
+    // Clean View hides cached tool images in normal and detailed browsing, then restores them.
+    view.set_clean_scrollback_enabled(true);
+    for detailed in [false, true] {
+        view.set_presentation(detailed, HistoryRenderMode::Rich);
+        view.render(area, &mut buf, &cells);
+        assert!(view.image_placements().is_empty());
+        assert!((0..cells.len()).all(|index| {
+            view.entry_layout(&cells, index, /*full_content*/ true)
+                .unwrap()
+                .image
+                .is_none()
+        }));
+    }
+    view.set_clean_scrollback_enabled(false);
+    view.set_presentation(/*detailed*/ false, HistoryRenderMode::Rich);
+    view.render(area, &mut buf, &cells);
+    assert_eq!(
+        view.image_placements()
+            .iter()
+            .map(|p| p.area)
+            .collect::<Vec<_>>(),
+        expanded_areas
+    );
+
     // Short, inset viewports may begin in an image. Its placement stays inside the viewport.
     let short = Rect::new(
         /*x*/ 7, /*y*/ 5, /*width*/ 16, /*height*/ 3,

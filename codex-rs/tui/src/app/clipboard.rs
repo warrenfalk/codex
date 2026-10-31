@@ -7,6 +7,19 @@ use crate::clipboard_copy::worker::PasteSource;
 use crate::clipboard_paste::PasteImageError;
 
 impl App {
+    pub(super) fn show_copy_result(
+        &mut self,
+        label: &str,
+        characters: usize,
+        result: crate::clipboard_copy::worker::CopyResult,
+    ) {
+        if self.local_settings.transcript_mode.is_owned() {
+            self.transcript_view.show_copy_feedback(&result, characters);
+        } else {
+            self.chat_widget.show_copy_result(label, result);
+        }
+    }
+
     pub(super) fn handle_clipboard_key_action(
         &mut self,
         tui: &mut tui::Tui,
@@ -15,16 +28,18 @@ impl App {
         match action {
             KeyEventAction::None => {}
             KeyEventAction::CopyLastResponse(text) => {
+                let characters = text.chars().count();
                 let result = tui
                     .clipboard
                     .copy(text, CopyFormat::Markdown, tui.frame_requester());
-                self.chat_widget.show_copy_result("last message", result);
+                self.show_copy_result("last message", characters, result);
             }
             KeyEventAction::CopyComposerText(text) => {
+                let characters = text.chars().count();
                 let result = tui
                     .clipboard
                     .copy(text, CopyFormat::PlainText, tui.frame_requester());
-                self.chat_widget.show_copy_result("current input", result);
+                self.show_copy_result("current input", characters, result);
             }
             KeyEventAction::PasteImage { text_fallback } => {
                 if text_fallback.is_some()

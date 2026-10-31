@@ -1,0 +1,24 @@
+---
+source: tui/src/app/tests.rs
+expression: text
+---
+visible before
+
+hidden tool output
+
+visible after
+
+• new hidden status
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-5.6-Sol default · /tmp/project
+  ? for shortcuts

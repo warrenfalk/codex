@@ -49,4 +49,18 @@ impl ActivityDetails {
             })
             .collect()
     }
+
+    pub(crate) fn clean_transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        let mut lines = Vec::new();
+        for (_, cell) in &self.entries {
+            let detail = cell.clean_transcript_hyperlink_lines(width);
+            if !detail.is_empty() {
+                if !lines.is_empty() {
+                    lines.push(HyperlinkLine::from(""));
+                }
+                lines.extend(detail);
+            }
+        }
+        lines
+    }
 }

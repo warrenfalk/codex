@@ -33,6 +33,47 @@ fn render(cell: &ComputerActivityCell, width: u16) -> String {
 }
 
 #[test]
+fn clean_scrollback_keeps_reasoning_inside_computer_activity() {
+    let mut cell = ComputerActivityCell::default();
+    cell.complete(
+        call("1", "Open browser"),
+        Duration::ZERO,
+        result("tool output"),
+    );
+    cell.append_reasoning(Box::new(ReasoningSummaryCell::new(
+        "Reasoning".to_string(),
+        "Preserved reasoning".to_string(),
+        &crate::test_support::test_path_buf("/tmp/project"),
+        /*transcript_only*/ true,
+    )))
+    .expect("group reasoning");
+    let mut view = crate::transcript_view::TranscriptView::default();
+    view.set_presentation(/*detailed*/ true, HistoryRenderMode::Rich);
+    view.set_clean_scrollback_enabled(true);
+    let area = ratatui::layout::Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 8,
+    );
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    view.render(area, &mut buffer, &[std::sync::Arc::new(cell)]);
+    let text = buffer
+        .content()
+        .chunks(usize::from(area.width))
+        .map(|row| {
+            row.iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Preserved reasoning"));
+    assert!(!text.contains("Open browser"));
+    assert!(!text.contains("tool output"));
+    insta::assert_snapshot!("clean_scrollback_grouped_reasoning", text);
+}
+
+#[test]
 fn prepending_completed_history_preserves_the_pending_call_clock() {
     let mut older = ComputerActivityCell::default();
     older.complete(

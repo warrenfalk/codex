@@ -13,11 +13,10 @@ use std::sync::Arc;
 
 #[test]
 fn wheel_at_hidden_session_header_keeps_the_loaded_message_anchor() {
-    let header: Arc<dyn HistoryCell> = Arc::new(SessionInfoCell(CompositeHistoryCell {
-        parts: vec![Box::new(PlainHistoryCell::new(vec![
-            "session announcement".into(),
-        ]))],
-    }));
+    let header: Arc<dyn HistoryCell> =
+        Arc::new(SessionInfoCell(CompositeHistoryCell::new(vec![Box::new(
+            PlainHistoryCell::new(vec!["session announcement".into()]),
+        )])));
     let recent: Arc<dyn HistoryCell> = Arc::new(PlainHistoryCell::new(
         (0..6)
             .map(|row| format!("recent row {row}").into())
@@ -62,11 +61,10 @@ fn wheel_at_hidden_session_header_keeps_the_loaded_message_anchor() {
 
 #[test]
 fn session_information_waits_for_older_pages_and_reappears_after_completion() {
-    let header: Arc<dyn HistoryCell> = Arc::new(SessionInfoCell(CompositeHistoryCell {
-        parts: vec![Box::new(PlainHistoryCell::new(vec![
-            "session announcement".into(),
-        ]))],
-    }));
+    let header: Arc<dyn HistoryCell> =
+        Arc::new(SessionInfoCell(CompositeHistoryCell::new(vec![Box::new(
+            PlainHistoryCell::new(vec!["session announcement".into()]),
+        )])));
     let cells = vec![header];
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 30, /*height*/ 2,

@@ -55,6 +55,10 @@ pub(crate) struct WarningHistoryCell {
 }
 
 impl HistoryCell for WarningHistoryCell {
+    fn history_visibility_kind(&self) -> super::HistoryVisibilityKind {
+        super::HistoryVisibilityKind::Noise
+    }
+
     fn live_raw_lines(&self) -> Vec<Line<'static>> {
         if self.visible_in_transcript {
             self.details.raw_lines()

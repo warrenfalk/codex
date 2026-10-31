@@ -2,4 +2,7 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: rendered
 ---
-• Copy unconfirmed; /export saves chat
+› first line [Pasted Content]
+  last line
+
+  Copy unconfirmed; /export saves chat

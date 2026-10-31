@@ -156,6 +156,10 @@ impl HistoryCell for WebSearchCell {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         plain_lines(vec![self.summary()])
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 pub(crate) fn new_active_web_search_call(

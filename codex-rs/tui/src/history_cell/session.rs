@@ -108,6 +108,10 @@ impl HistoryCell for SessionNoticeCell {
 pub(crate) struct ForkedThreadHistoryCell(pub(crate) PlainHistoryCell);
 
 impl HistoryCell for ForkedThreadHistoryCell {
+    fn history_visibility_kind(&self) -> super::HistoryVisibilityKind {
+        self.0.history_visibility_kind()
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         self.0.display_lines(width)
     }
@@ -247,7 +251,7 @@ pub(crate) fn new_session_info(
             ]),
         ];
 
-        parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
+        parts.push(Box::new(PlainHistoryCell::new(help_lines)));
     } else {
         if local_settings.tui.show_tooltips
             && let Some(tooltips) = tooltip_override
@@ -262,11 +266,11 @@ pub(crate) fn new_session_info(
                 format!("requested: {requested_model}").into(),
                 format!("used: {}", session.model).into(),
             ];
-            parts.push(Box::new(PlainHistoryCell { lines }));
+            parts.push(Box::new(PlainHistoryCell::new(lines)));
         }
     }
 
-    SessionInfoCell(CompositeHistoryCell { parts })
+    SessionInfoCell(CompositeHistoryCell::new(parts))
 }
 
 pub(crate) fn is_yolo_mode(config: &Config) -> bool {

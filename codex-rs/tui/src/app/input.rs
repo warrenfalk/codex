@@ -595,6 +595,17 @@ impl App {
             return;
         }
 
+        if app_keymap_shortcuts_available
+            && self
+                .keymap
+                .app
+                .toggle_clean_scrollback
+                .is_pressed(key_event)
+        {
+            self.toggle_clean_scrollback(tui);
+            return;
+        }
+
         let find_transcript = self.keymap.app.find_transcript.is_pressed(key_event);
         let select_transcript = self.keymap.app.select_transcript.is_pressed(key_event);
         if app_keymap_shortcuts_available

@@ -22,11 +22,10 @@ impl TranscriptView {
         hint: Option<&HyperlinkLine>,
         now: Instant,
     ) -> bool {
-        if let Some(feedback) = self
-            .copy_feedback
-            .as_ref()
-            .filter(|feedback| feedback.expires_at.is_none_or(|expiry| expiry > now))
-        {
+        if let Some(feedback) = self.copy_feedback.as_ref().filter(|feedback| {
+            !matches!(feedback.result, Ok(CopyStatus::Pending(_)))
+                && feedback.expires_at.is_none_or(|expiry| expiry > now)
+        }) {
             return feedback.line(width.saturating_sub(/*rhs*/ 1)).width() > 0;
         }
         self.follow_control_label(width).is_some()
@@ -86,7 +85,9 @@ impl TranscriptView {
             self.render_follow_control(/*area*/ None, buffer);
             return None;
         };
-        if let Some(feedback) = &self.copy_feedback {
+        if let Some(feedback) = &self.copy_feedback
+            && !matches!(feedback.result, Ok(CopyStatus::Pending(_)))
+        {
             let line = feedback.line(area.width.saturating_sub(/*rhs*/ 1));
             let delay = feedback
                 .expires_at
@@ -123,11 +124,7 @@ impl CopyFeedback {
                 format!("Copied {characters} chars"),
                 "Copied".into(),
             ],
-            Ok(CopyStatus::Pending(_)) => [
-                format!("Copying {characters} chars…"),
-                "Copying…".into(),
-                "Copying…".into(),
-            ],
+            Ok(CopyStatus::Pending(_)) => return Line::default(),
             Ok(CopyStatus::Busy) => [
                 "Copy already in progress".into(),
                 "Copy in progress".into(),
