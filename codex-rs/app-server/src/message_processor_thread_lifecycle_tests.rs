@@ -302,12 +302,13 @@ async fn disconnected_v2_child_lifecycle(unload_delay_secs: u64, ephemeral: bool
         .enable_feature(Feature::Collab)
         .enable_feature(Feature::MultiAgentV2);
     config.write(home.path())?;
-    let config = Arc::new(
-        ConfigBuilder::default()
-            .codex_home(home.path().to_path_buf())
-            .build()
-            .await?,
-    );
+    let mut config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .build()
+        .await?;
+    // Keep response gates tied to parent/child turns rather than metadata requests.
+    config.auto_thread_title = false;
+    let config = Arc::new(config);
     let auth =
         AuthManager::shared_from_config(config.as_ref(), /*enable_codex_api_key_env*/ false)
             .await?;

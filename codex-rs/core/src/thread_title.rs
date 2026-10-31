@@ -17,6 +17,7 @@ use tracing::warn;
 use crate::Prompt;
 use crate::parse_turn_item;
 use crate::responses_metadata::CodexResponsesRequestKind;
+use crate::session::AutoThreadTitleApplyMode;
 use crate::session::session::Session;
 use crate::session::thread_title_from_thread_store;
 use crate::session::turn_context::TurnContext;
@@ -42,12 +43,60 @@ struct ThreadTitleOutput {
     title: String,
 }
 
-pub(crate) async fn maybe_generate_and_set_thread_title(
+pub(crate) async fn maybe_start_initial_thread_title(
+    session: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+) {
+    if !auto_thread_title_enabled(turn_context.as_ref()) {
+        return;
+    }
+    if !session.mark_auto_thread_title_initial_requested().await {
+        return;
+    }
+
+    tokio::spawn(async move {
+        maybe_generate_and_set_thread_title(
+            session,
+            turn_context,
+            /*last_agent_message*/ None,
+            AutoThreadTitleApplyMode::Initial,
+        )
+        .await;
+    });
+}
+
+pub(crate) async fn maybe_start_revision_thread_title(
     session: Arc<Session>,
     turn_context: Arc<TurnContext>,
     last_agent_message: Option<String>,
 ) {
-    if has_distinct_thread_title(session.as_ref()).await {
+    if !auto_thread_title_enabled(turn_context.as_ref()) {
+        return;
+    }
+    if !session.mark_auto_thread_title_revision_requested().await {
+        return;
+    }
+
+    tokio::spawn(async move {
+        maybe_generate_and_set_thread_title(
+            session,
+            turn_context,
+            last_agent_message,
+            AutoThreadTitleApplyMode::Revision,
+        )
+        .await;
+    });
+}
+
+pub(crate) async fn maybe_generate_and_set_thread_title(
+    session: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+    last_agent_message: Option<String>,
+    mode: AutoThreadTitleApplyMode,
+) {
+    if mode == AutoThreadTitleApplyMode::Initial
+        && has_distinct_thread_title(session.as_ref()).await
+    {
         return;
     }
 
@@ -83,10 +132,14 @@ pub(crate) async fn maybe_generate_and_set_thread_title(
         return;
     }
 
-    match Session::apply_thread_name_update_if_unnamed(&session, generated_title).await {
+    match Session::apply_auto_thread_title_update(&session, generated_title, mode).await {
         Ok(true) | Ok(false) => {}
         Err(err) => warn!("failed to persist auto-generated thread title: {err:#}"),
     }
+}
+
+fn auto_thread_title_enabled(turn_context: &TurnContext) -> bool {
+    turn_context.config.auto_thread_title && !auto_thread_title_disabled_for_tests()
 }
 
 pub(crate) fn auto_thread_title_disabled_for_tests() -> bool {

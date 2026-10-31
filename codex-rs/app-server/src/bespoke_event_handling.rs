@@ -55,6 +55,7 @@ use codex_app_server_protocol::StrictReviewRequiredNotification;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadItemPayload;
+use codex_app_server_protocol::ThreadNameUpdatedNotification;
 use codex_app_server_protocol::ThreadRealtimeClosedNotification;
 use codex_app_server_protocol::ThreadRealtimeErrorNotification;
 use codex_app_server_protocol::ThreadRealtimeItemAddedNotification;
@@ -1257,6 +1258,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &thread_state,
             )
             .await;
+        }
+        EventMsg::ThreadNameUpdated(thread_name_event) => {
+            let notification = ThreadNameUpdatedNotification {
+                thread_id: thread_name_event.thread_id.to_string(),
+                thread_name: thread_name_event.thread_name,
+            };
+            outgoing
+                .send_server_notification(ServerNotification::ThreadNameUpdated(notification))
+                .await;
         }
         EventMsg::ThreadGoalUpdated(thread_goal_event) => {
             let notification = ThreadGoalUpdatedNotification {
