@@ -1026,6 +1026,7 @@ async fn execute_inner(
                                     })),
                                     ThreadItemPayload::UserMessage { .. }
                                     | ThreadItemPayload::FunctionCallOutput { .. }
+                                    | ThreadItemPayload::NoteToSelf { .. }
                                     | ThreadItemPayload::HookPrompt { .. }
                                     | ThreadItemPayload::AgentMessage { .. }
                                     | ThreadItemPayload::Plan { .. }
@@ -1390,6 +1391,11 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
                     UserInput::Skill { name, path } => json!({"type": "skill", "name": name, "path": path}),
                     UserInput::Mention { name, path } => json!({"type": "mention", "name": name, "path": path}),
                 }).collect::<Vec<_>>()
+            }),
+            ThreadItemPayload::NoteToSelf { id, note } => json!({
+                "type": "noteToSelf",
+                "id": id,
+                "note": truncate(note, DEFAULT_OUTPUT_CHARS)
             }),
             ThreadItemPayload::HookPrompt { id, fragments } => json!({
                 "type": "hookPrompt", "id": id, "fragmentCount": fragments.len()

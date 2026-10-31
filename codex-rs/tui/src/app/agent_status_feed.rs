@@ -204,6 +204,7 @@ fn activity_summary(item: &ThreadItemPayload) -> Option<String> {
             return Some("Compacted context".to_string());
         }
         ThreadItemPayload::UserMessage { .. }
+        | ThreadItemPayload::NoteToSelf { .. }
         | ThreadItemPayload::HookPrompt { .. }
         | ThreadItemPayload::FunctionCallOutput { .. }
         | ThreadItemPayload::Sleep(_) => {
