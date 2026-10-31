@@ -113,6 +113,8 @@ impl PermissionsToml {
 pub struct PermissionProfileToml {
     pub description: Option<String>,
     pub extends: Option<String>,
+    /// Linux PID namespace. Inherited when omitted; defaults to `isolated`.
+    pub pid_namespace: Option<codex_protocol::PidNamespace>,
     pub workspace_roots: Option<WorkspaceRootsToml>,
     pub filesystem: Option<FilesystemPermissionsToml>,
     pub network: Option<NetworkToml>,

@@ -420,138 +420,141 @@ async fn startup_resume_rejects_guardian_thread() -> color_eyre::Result<()> {
 
 #[tokio::test]
 async fn startup_resume_and_fork_use_configured_or_explicit_cwd() -> color_eyre::Result<()> {
-    let backend_id = crate::backend_id::BackendId::new();
-    for (action, configured_mode, has_explicit_cwd, expected_directory) in [
-        (CwdPromptAction::Resume, "current", false, "launch"),
-        (CwdPromptAction::Resume, "session", false, "session"),
-        (CwdPromptAction::Resume, "session", true, "explicit"),
-        (CwdPromptAction::Fork, "current", false, "launch"),
-        (CwdPromptAction::Fork, "session", false, "session"),
-        (CwdPromptAction::Fork, "session", true, "explicit"),
-    ] {
-        let temp_dir = TempDir::new()?;
-        let codex_home = temp_dir.path().join("codex-home");
-        let launch_cwd = temp_dir.path().join("launch");
-        let session_cwd = temp_dir.path().join("session");
-        let explicit_cwd = temp_dir.path().join("explicit");
-        std::fs::create_dir_all(&codex_home)?;
-        std::fs::create_dir_all(&launch_cwd)?;
-        std::fs::create_dir_all(&session_cwd)?;
-        std::fs::create_dir_all(&explicit_cwd)?;
-        std::fs::write(
-            codex_home.join("config.toml"),
-            format!("[tui]\nresume_cwd = \"{configured_mode}\"\n"),
-        )?;
-        let cwd_override = has_explicit_cwd.then_some(explicit_cwd.as_path());
-        let config = ConfigBuilder::default()
-            .codex_home(codex_home.clone())
-            .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
-            .harness_overrides(ConfigOverrides {
-                cwd: Some(cwd_override.unwrap_or(launch_cwd.as_path()).to_path_buf()),
-                ..Default::default()
-            })
-            .build()
+    Box::pin(async {
+        let backend_id = crate::backend_id::BackendId::new();
+        for (action, configured_mode, has_explicit_cwd, expected_directory) in [
+            (CwdPromptAction::Resume, "current", false, "launch"),
+            (CwdPromptAction::Resume, "session", false, "session"),
+            (CwdPromptAction::Resume, "session", true, "explicit"),
+            (CwdPromptAction::Fork, "current", false, "launch"),
+            (CwdPromptAction::Fork, "session", false, "session"),
+            (CwdPromptAction::Fork, "session", true, "explicit"),
+        ] {
+            let temp_dir = TempDir::new()?;
+            let codex_home = temp_dir.path().join("codex-home");
+            let launch_cwd = temp_dir.path().join("launch");
+            let session_cwd = temp_dir.path().join("session");
+            let explicit_cwd = temp_dir.path().join("explicit");
+            std::fs::create_dir_all(&codex_home)?;
+            std::fs::create_dir_all(&launch_cwd)?;
+            std::fs::create_dir_all(&session_cwd)?;
+            std::fs::create_dir_all(&explicit_cwd)?;
+            std::fs::write(
+                codex_home.join("config.toml"),
+                format!("[tui]\nresume_cwd = \"{configured_mode}\"\n"),
+            )?;
+            let cwd_override = has_explicit_cwd.then_some(explicit_cwd.as_path());
+            let config = ConfigBuilder::default()
+                .codex_home(codex_home.clone())
+                .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+                .harness_overrides(ConfigOverrides {
+                    cwd: Some(cwd_override.unwrap_or(launch_cwd.as_path()).to_path_buf()),
+                    ..Default::default()
+                })
+                .build()
+                .await?;
+            let filename_timestamp = "2025-01-05T12-00-00";
+            let thread_id = write_session_rollout(
+                &codex_home,
+                filename_timestamp,
+                "2025-01-05T12:00:00Z",
+                "Saved user message",
+                &config.model_provider_id,
+                &session_cwd,
+            )?;
+            let rollout_path = codex_home
+                .join("sessions/2025/01/05")
+                .join(format!("rollout-{filename_timestamp}-{thread_id}.jsonl"));
+            let state_db =
+                init_state_db_for_app_server_target(&config, &AppServerTarget::Embedded).await?;
+            let target_session = resume_picker::SessionTarget {
+                backend_id,
+                path: Some(rollout_path),
+                thread_id,
+                cwd: Some(session_cwd.clone()),
+                history_mode: None,
+            };
+            let session_selection = match action {
+                CwdPromptAction::Resume => resume_picker::SessionSelection::Resume(target_session),
+                CwdPromptAction::Fork => resume_picker::SessionSelection::Fork(target_session),
+            };
+            let mut tui = tui::test_support::make_test_tui()?;
+
+            let fallback_cwd = match resolve_startup_resume_or_fork_cwd(
+                backend_id,
+                &mut tui,
+                &config,
+                /*app_server*/ None,
+                &session_selection,
+                cwd_override,
+                /*uses_remote_workspace*/ false,
+                /*uses_remote_workspace_or_environment*/ false,
+            )
+            .await?
+            {
+                ResolveCwdOutcome::Continue(cwd) => cwd,
+                ResolveCwdOutcome::ContinueAfterPrompt(_) => {
+                    panic!("configured cwd should not prompt during startup")
+                }
+                ResolveCwdOutcome::Exit => panic!("configured cwd should not exit startup"),
+            };
+            let final_config = ConfigBuilder::default()
+                .codex_home(codex_home)
+                .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+                .harness_overrides(ConfigOverrides {
+                    cwd: cwd_override.map(Path::to_path_buf),
+                    ..Default::default()
+                })
+                .fallback_cwd(fallback_cwd)
+                .build()
+                .await?;
+            let expected_cwd = temp_dir.path().join(expected_directory);
+            assert!(!session_resume::cwds_differ(
+                final_config.cwd.as_path(),
+                &expected_cwd,
+            ));
+            let mut app_server = start_app_server_for_picker(
+                crate::backend_id::BackendId::new(),
+                &final_config,
+                &AppServerTarget::Embedded,
+                Vec::new(),
+                LoaderOverrides::without_managed_config_for_tests(),
+                state_db,
+                Arc::new(EnvironmentManager::default_for_tests()),
+            )
             .await?;
-        let filename_timestamp = "2025-01-05T12-00-00";
-        let thread_id = write_session_rollout(
-            &codex_home,
-            filename_timestamp,
-            "2025-01-05T12:00:00Z",
-            "Saved user message",
-            &config.model_provider_id,
-            &session_cwd,
-        )?;
-        let rollout_path = codex_home
-            .join("sessions/2025/01/05")
-            .join(format!("rollout-{filename_timestamp}-{thread_id}.jsonl"));
-        let state_db =
-            init_state_db_for_app_server_target(&config, &AppServerTarget::Embedded).await?;
-        let target_session = resume_picker::SessionTarget {
-            backend_id,
-            path: Some(rollout_path),
-            thread_id,
-            cwd: Some(session_cwd.clone()),
-            history_mode: None,
-        };
-        let session_selection = match action {
-            CwdPromptAction::Resume => resume_picker::SessionSelection::Resume(target_session),
-            CwdPromptAction::Fork => resume_picker::SessionSelection::Fork(target_session),
-        };
-        let mut tui = tui::test_support::make_test_tui()?;
+            let started = match action {
+                CwdPromptAction::Resume => {
+                    app_server
+                        .resume_thread(
+                            &crate::local_settings::LocalSettings::from(&final_config),
+                            final_config,
+                            thread_id,
+                            app_server_session::ResumeModelSettings::RestoreFromThread,
+                        )
+                        .await?
+                }
+                CwdPromptAction::Fork => {
+                    app_server
+                        .fork_thread(
+                            &crate::local_settings::LocalSettings::from(&final_config),
+                            final_config,
+                            thread_id,
+                        )
+                        .await?
+                }
+            };
 
-        let fallback_cwd = match resolve_startup_resume_or_fork_cwd(
-            backend_id,
-            &mut tui,
-            &config,
-            /*app_server*/ None,
-            &session_selection,
-            cwd_override,
-            /*uses_remote_workspace*/ false,
-            /*uses_remote_workspace_or_environment*/ false,
-        )
-        .await?
-        {
-            ResolveCwdOutcome::Continue(cwd) => cwd,
-            ResolveCwdOutcome::ContinueAfterPrompt(_) => {
-                panic!("configured cwd should not prompt during startup")
-            }
-            ResolveCwdOutcome::Exit => panic!("configured cwd should not exit startup"),
-        };
-        let final_config = ConfigBuilder::default()
-            .codex_home(codex_home)
-            .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
-            .harness_overrides(ConfigOverrides {
-                cwd: cwd_override.map(Path::to_path_buf),
-                ..Default::default()
-            })
-            .fallback_cwd(fallback_cwd)
-            .build()
-            .await?;
-        let expected_cwd = temp_dir.path().join(expected_directory);
-        assert!(!session_resume::cwds_differ(
-            final_config.cwd.as_path(),
-            &expected_cwd,
-        ));
-        let mut app_server = start_app_server_for_picker(
-            crate::backend_id::BackendId::new(),
-            &final_config,
-            &AppServerTarget::Embedded,
-            Vec::new(),
-            LoaderOverrides::without_managed_config_for_tests(),
-            state_db,
-            Arc::new(EnvironmentManager::default_for_tests()),
-        )
-        .await?;
-        let started = match action {
-            CwdPromptAction::Resume => {
-                app_server
-                    .resume_thread(
-                        &crate::local_settings::LocalSettings::from(&final_config),
-                        final_config,
-                        thread_id,
-                        app_server_session::ResumeModelSettings::RestoreFromThread,
-                    )
-                    .await?
-            }
-            CwdPromptAction::Fork => {
-                app_server
-                    .fork_thread(
-                        &crate::local_settings::LocalSettings::from(&final_config),
-                        final_config,
-                        thread_id,
-                    )
-                    .await?
-            }
-        };
+            assert!(!session_resume::cwds_differ(
+                started.session.cwd.as_path(),
+                &expected_cwd,
+            ));
+            app_server.shutdown().await?;
+        }
 
-        assert!(!session_resume::cwds_differ(
-            started.session.cwd.as_path(),
-            &expected_cwd,
-        ));
-        app_server.shutdown().await?;
-    }
-
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
@@ -1426,121 +1429,124 @@ async fn embedded_app_server_supports_thread_start_rpc() -> color_eyre::Result<(
 
 #[tokio::test]
 async fn resume_picker_loads_complete_paginated_and_legacy_transcripts() -> color_eyre::Result<()> {
-    let temp_dir = TempDir::new()?;
-    let mut config = build_config(&temp_dir).await?;
-    config.terminal_resize_reflow.max_rows =
-        crate::legacy_core::config::TerminalResizeReflowMaxRows::Limit(2);
-    let mut app_server = AppServerSession::new(
-        crate::backend_id::BackendId::new(),
-        AppServerClient::InProcess(start_test_embedded_app_server(config.clone()).await?),
-        ThreadParamsMode::Embedded,
-    );
-    let filename_ts = "2025-01-05T12-00-00";
-    let rollout_line = |ordinal: usize, payload: serde_json::Value| {
-        serde_json::json!({
-            "timestamp": "2025-01-05T12:00:00Z",
-            "type": "event_msg",
-            "payload": payload,
-            "ordinal": ordinal,
-        })
-    };
-    for (history_mode, create_rollout) in [
-        app_test_support::create_fake_rollout,
-        app_test_support::create_fake_paginated_rollout,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let thread_id = create_rollout(
-            temp_dir.path(),
-            filename_ts,
-            "2025-01-05T12:00:00Z",
-            "message 0",
-            Some(config.model_provider_id.as_str()),
-            /*git_info*/ None,
-        )
-        .expect("create session rollout");
-        let path = app_test_support::rollout_path(temp_dir.path(), filename_ts, &thread_id);
-        let mut contents = std::fs::read_to_string(&path)?;
-        let started = rollout_line(
-            /*ordinal*/ 3,
-            serde_json::json!({ "type": "task_started", "turn_id": "history-turn", "model_context_window": null }),
+    Box::pin(async {
+        let temp_dir = TempDir::new()?;
+        let mut config = build_config(&temp_dir).await?;
+        config.terminal_resize_reflow.max_rows =
+            crate::legacy_core::config::TerminalResizeReflowMaxRows::Limit(2);
+        let mut app_server = AppServerSession::new(
+            crate::backend_id::BackendId::new(),
+            AppServerClient::InProcess(start_test_embedded_app_server(config.clone()).await?),
+            ThreadParamsMode::Embedded,
         );
-        contents.push_str(&format!("{started}\n"));
-        for index in 0..=100 {
-            let message = format!("message {index}");
-            let payload = if history_mode == 1 {
-                serde_json::json!({
-                    "type": "item_completed",
-                    "thread_id": thread_id,
-                    "turn_id": "history-turn",
-                    "item": { "type": "UserMessage", "id": format!("user-{index}"),
-                        "content": [{ "type": "text", "text": message }] },
-                })
-            } else {
-                serde_json::json!({ "type": "user_message", "message": message })
-            };
-            let item = rollout_line(index + 4, payload);
-            contents.push_str(&format!("{item}\n"));
-        }
-        if history_mode == 1 {
-            for index in 0..125 {
-                let item = rollout_line(
-                    index + 105,
+        let filename_ts = "2025-01-05T12-00-00";
+        let rollout_line = |ordinal: usize, payload: serde_json::Value| {
+            serde_json::json!({
+                "timestamp": "2025-01-05T12:00:00Z",
+                "type": "event_msg",
+                "payload": payload,
+                "ordinal": ordinal,
+            })
+        };
+        for (history_mode, create_rollout) in [
+            app_test_support::create_fake_rollout,
+            app_test_support::create_fake_paginated_rollout,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let thread_id = create_rollout(
+                temp_dir.path(),
+                filename_ts,
+                "2025-01-05T12:00:00Z",
+                "message 0",
+                Some(config.model_provider_id.as_str()),
+                /*git_info*/ None,
+            )
+            .expect("create session rollout");
+            let path = app_test_support::rollout_path(temp_dir.path(), filename_ts, &thread_id);
+            let mut contents = std::fs::read_to_string(&path)?;
+            let started = rollout_line(
+                /*ordinal*/ 3,
+                serde_json::json!({ "type": "task_started", "turn_id": "history-turn", "model_context_window": null }),
+            );
+            contents.push_str(&format!("{started}\n"));
+            for index in 0..=100 {
+                let message = format!("message {index}");
+                let payload = if history_mode == 1 {
                     serde_json::json!({
                         "type": "item_completed",
                         "thread_id": thread_id,
                         "turn_id": "history-turn",
-                        "item": { "type": "Reasoning", "id": format!("hidden-{index}"),
-                            "summary_text": [], "raw_content": [] },
-                    }),
-                );
+                        "item": { "type": "UserMessage", "id": format!("user-{index}"),
+                            "content": [{ "type": "text", "text": message }] },
+                    })
+                } else {
+                    serde_json::json!({ "type": "user_message", "message": message })
+                };
+                let item = rollout_line(index + 4, payload);
                 contents.push_str(&format!("{item}\n"));
             }
-        }
-        std::fs::write(path, contents)?;
-        let thread_id = ThreadId::from_string(&thread_id)?;
-        let started = app_server
-            .resume_thread(
-                &crate::local_settings::LocalSettings::from(&config),
-                config.clone(),
-                thread_id,
-                app_server_session::ResumeModelSettings::RestoreFromThread,
-            )
-            .await?;
-        if history_mode == 1 {
-            assert!(
-                started
-                    .turns
-                    .iter()
-                    .flat_map(Turn::item_payloads)
-                    .any(|item| {
-                        matches!(
-                            item,
-                            codex_app_server_protocol::ThreadItemPayload::UserMessage { .. }
-                        )
-                    })
-            );
-            let preview = crate::resume_picker::load_transcript_preview(
+            if history_mode == 1 {
+                for index in 0..125 {
+                    let item = rollout_line(
+                        index + 105,
+                        serde_json::json!({
+                            "type": "item_completed",
+                            "thread_id": thread_id,
+                            "turn_id": "history-turn",
+                            "item": { "type": "Reasoning", "id": format!("hidden-{index}"),
+                                "summary_text": [], "raw_content": [] },
+                        }),
+                    );
+                    contents.push_str(&format!("{item}\n"));
+                }
+            }
+            std::fs::write(path, contents)?;
+            let thread_id = ThreadId::from_string(&thread_id)?;
+            let started = app_server
+                .resume_thread(
+                    &crate::local_settings::LocalSettings::from(&config),
+                    config.clone(),
+                    thread_id,
+                    app_server_session::ResumeModelSettings::RestoreFromThread,
+                )
+                .await?;
+            if history_mode == 1 {
+                assert!(
+                    started
+                        .turns
+                        .iter()
+                        .flat_map(Turn::item_payloads)
+                        .any(|item| {
+                            matches!(
+                                item,
+                                codex_app_server_protocol::ThreadItemPayload::UserMessage { .. }
+                            )
+                        })
+                );
+                let preview = crate::resume_picker::load_transcript_preview(
+                    &mut app_server,
+                    thread_id,
+                    /*config*/ None,
+                )
+                .await?;
+                assert!(!preview.is_empty());
+            }
+            let cells = crate::thread_transcript::load_session_transcript(
                 &mut app_server,
                 thread_id,
+                crate::thread_transcript::RawReasoningVisibility::Hidden,
                 /*config*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             )
             .await?;
-            assert!(!preview.is_empty());
+            assert!(cells.len() > 100);
         }
-        let cells = crate::thread_transcript::load_session_transcript(
-            &mut app_server,
-            thread_id,
-            crate::thread_transcript::RawReasoningVisibility::Hidden,
-            /*config*/ None,
-            codex_config::types::UriBasedFileOpener::None,
-        )
-        .await?;
-        assert!(cells.len() > 100);
-    }
-    app_server.shutdown().await?;
-    Ok(())
+        app_server.shutdown().await?;
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

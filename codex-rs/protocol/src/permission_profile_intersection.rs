@@ -4,6 +4,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_preserving_symlinks;
 use thiserror::Error;
 
+use crate::PidNamespace;
 use crate::models::PermissionProfile;
 use crate::permissions::FileSystemAccessMode;
 use crate::permissions::FileSystemPath;
@@ -83,28 +84,39 @@ pub fn intersect_effective_permission_profiles(
     } else {
         NetworkSandboxPolicy::Restricted
     };
+    let pid_namespace = match (authority, requested) {
+        (PermissionProfile::Disabled, requested) => requested.pid_namespace(),
+        (authority, PermissionProfile::Disabled) => authority.pid_namespace(),
+        (authority, requested) => {
+            if authority.pid_namespace().is_isolated() || requested.pid_namespace().is_isolated() {
+                PidNamespace::Isolated
+            } else {
+                PidNamespace::Host
+            }
+        }
+    };
     if matches!(authority, PermissionProfile::Disabled)
         && matches!(requested, PermissionProfile::Disabled)
     {
         return Ok(PermissionProfile::Disabled);
     }
     if authority_policy == requested_policy {
-        return Ok(PermissionProfile::from_runtime_permissions(
-            &authority_policy,
-            network,
-        ));
+        return Ok(
+            PermissionProfile::from_runtime_permissions(&authority_policy, network)
+                .with_pid_namespace(pid_namespace),
+        );
     }
     if matches!(authority_policy.kind, FileSystemSandboxKind::Unrestricted) {
-        return Ok(PermissionProfile::from_runtime_permissions(
-            &requested_policy,
-            network,
-        ));
+        return Ok(
+            PermissionProfile::from_runtime_permissions(&requested_policy, network)
+                .with_pid_namespace(pid_namespace),
+        );
     }
     if matches!(requested_policy.kind, FileSystemSandboxKind::Unrestricted) {
-        return Ok(PermissionProfile::from_runtime_permissions(
-            &authority_policy,
-            network,
-        ));
+        return Ok(
+            PermissionProfile::from_runtime_permissions(&authority_policy, network)
+                .with_pid_namespace(pid_namespace),
+        );
     }
 
     normalize_policy(&mut authority_policy)?;
@@ -266,10 +278,10 @@ pub fn intersect_effective_permission_profiles(
     if let Some(temp) = common_temp {
         intersection.entries.push(temp);
     }
-    Ok(PermissionProfile::from_runtime_permissions(
-        &intersection,
-        network,
-    ))
+    Ok(
+        PermissionProfile::from_runtime_permissions(&intersection, network)
+            .with_pid_namespace(pid_namespace),
+    )
 }
 
 fn normalize_policy(

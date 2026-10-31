@@ -104,6 +104,7 @@ mod tests {
     #[test]
     fn warns_when_profile_can_write_elsewhere_but_not_cwd() {
         let profile: PermissionProfile = PermissionProfile::Managed {
+            pid_namespace: Default::default(),
             network: NetworkSandboxPolicy::Restricted,
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![

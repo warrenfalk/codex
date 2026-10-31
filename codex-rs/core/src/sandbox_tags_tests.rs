@@ -76,6 +76,7 @@ fn profile_sandbox_tag_distinguishes_disabled_from_external() {
 #[test]
 fn unrestricted_managed_profile_with_enabled_network_is_untagged() {
     let profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         file_system: ManagedFileSystemPermissions::Unrestricted,
         network: NetworkSandboxPolicy::Enabled,
     };
@@ -93,6 +94,7 @@ fn unrestricted_managed_profile_with_enabled_network_is_untagged() {
 #[test]
 fn root_write_managed_profile_with_enabled_network_is_untagged() {
     let profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![FileSystemSandboxEntry {
                 path: FileSystemPath::Special {
@@ -119,6 +121,7 @@ fn root_write_managed_profile_with_enabled_network_is_untagged() {
 #[test]
 fn managed_network_enforcement_tags_unrestricted_profiles_as_sandboxed() {
     let profile = PermissionProfile::Managed {
+        pid_namespace: Default::default(),
         file_system: ManagedFileSystemPermissions::Unrestricted,
         network: NetworkSandboxPolicy::Enabled,
     };

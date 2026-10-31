@@ -594,14 +594,9 @@ impl Permissions {
         ) {
             return permission_profile;
         }
-        let enforcement = permission_profile.enforcement();
         let (mut file_system_policy, network_policy) = permission_profile.to_runtime_permissions();
         file_system_policy.preserve_deny_read_restrictions_from(managed_deny_read_policy);
-        PermissionProfile::from_runtime_permissions_with_enforcement(
-            enforcement,
-            &file_system_policy,
-            network_policy,
-        )
+        permission_profile.with_runtime_permissions(&file_system_policy, network_policy)
     }
 }
 
@@ -3980,11 +3975,7 @@ impl Config {
         if let Some(saved) = persisted_permission_profile {
             let (mut saved_file_system, saved_network) = saved.to_runtime_permissions();
             saved_file_system.preserve_deny_read_restrictions_from(&file_system_sandbox_policy);
-            let restored = PermissionProfile::from_runtime_permissions_with_enforcement(
-                saved.enforcement(),
-                &saved_file_system,
-                saved_network,
-            );
+            let restored = saved.with_runtime_permissions(&saved_file_system, saved_network);
             if permission_profile_catalog::permission_profile_satisfies_requirements(
                 &config_layer_stack,
                 &restored,
@@ -4509,8 +4500,7 @@ impl Config {
         }
         let effective_file_system_sandbox_policy = effective_file_system_sandbox_policy
             .with_additional_readable_roots(resolved_cwd.as_path(), &helper_readable_roots);
-        let effective_permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
-            effective_permission_profile.enforcement(),
+        let effective_permission_profile = effective_permission_profile.with_runtime_permissions(
             &effective_file_system_sandbox_policy,
             effective_network_sandbox_policy,
         );
