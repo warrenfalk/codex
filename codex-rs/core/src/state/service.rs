@@ -35,6 +35,7 @@ use codex_login::AuthManager;
 use codex_mcp::McpRuntime;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
+use codex_project_env::ProjectEnvManager;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::AdditionalPermissionProfile;
@@ -55,6 +56,7 @@ pub(crate) struct SessionServices {
     pub(crate) mcp_handler_cache: McpHandlerCache,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,
     pub(crate) elicitations: ElicitationService,
+    pub(crate) project_env_manager: ProjectEnvManager,
     pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) hooks: ArcSwap<Hooks>,
     pub(crate) rollout_thread_trace: ThreadTraceContext,

@@ -6,8 +6,8 @@ Scenario: A prepares a child. After A and its manager shut down, a second manage
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (2; hash=e03063c2cb6ece3a):
-        - namespace/functions; hash=e58195dea5c51dea
+00:additional_tools/developer (2; hash=b4591a408426943d):
+        - namespace/functions; hash=c07946ae328a83e5
           - custom/exec
           - function/wait
           - function/request_user_input
@@ -34,8 +34,8 @@ Scenario: A prepares a child. After A and its manager shut down, a second manage
 
 ## Window 2 (after request 2: input diverged at item 00)
 -- request 3 (turn) --
-00:additional_tools/developer (2; hash=adec8e1bf249cb8f):
-        - namespace/functions; hash=00aa6cf7871d56b9
+00:additional_tools/developer (2; hash=8076f75c34f0bf88):
+        - namespace/functions; hash=354d6be6269f5fe2
           - custom/exec
           - function/wait
           - function/request_user_input

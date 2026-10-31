@@ -335,7 +335,7 @@ async fn startup_submission_waits_for_protected_view_and_preserves_paste_provena
             assert!(op_rx.try_recv().is_err());
             assert_eq!(chat.bottom_pane.composer_text(), payload);
             chat.handle_key_event(KeyCode::Enter.into());
-            assert_matches!(op_rx.try_recv(), Ok(Op::RunUserShellCommand { command })
+            assert_matches!(op_rx.try_recv(), Ok(Op::RunUserShellCommand { command, .. })
                 if command == payload.trim_start().trim_start_matches('!'));
         } else {
             assert_matches!(next_submit_op(&mut op_rx), Op::UserTurn { items, .. } if items == vec![UserInput::Text {

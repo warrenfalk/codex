@@ -346,6 +346,7 @@ async fn start_listener(
     let is_v2_child = conversation.multi_agent_version() == Some(MultiAgentVersion::V2)
         && matches!(config_snapshot.session_source, SessionSource::SubAgent(_));
     let thread_settings_baseline = thread_settings_from_config_snapshot(&config_snapshot);
+    let mut project_env_status_rx = conversation.subscribe_project_env_status();
     let thread_state = Arc::clone(listener_state.state());
     let (mut listener_command_rx, listener_generation, mut unloading_state, attached) = {
         let (created, connection_ids, raw_events_enabled) = match &startup {
@@ -524,6 +525,29 @@ async fn start_listener(
                         listener_command,
                     )
                     .await;
+                }
+                project_env_status = project_env_status_rx.recv() => {
+                    match project_env_status {
+                        Ok(status) => {
+                            emit_project_env_status_changed(
+                                conversation_id,
+                                &thread_state_manager,
+                                &outgoing_for_task,
+                                status,
+                            )
+                            .await;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            emit_project_env_status_changed(
+                                conversation_id,
+                                &thread_state_manager,
+                                &outgoing_for_task,
+                                conversation.project_env_status().await,
+                            )
+                            .await;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {}
+                    }
                 }
                 event = conversation.next_event() => {
                     let event = match event {
@@ -840,6 +864,29 @@ async fn start_listener(
         }
     });
     ListenerStartOutcome::Started { attached }
+}
+
+async fn emit_project_env_status_changed(
+    conversation_id: ThreadId,
+    thread_state_manager: &ThreadStateManager,
+    outgoing: &Arc<OutgoingMessageSender>,
+    status: codex_project_env::ProjectEnvStatus,
+) {
+    let subscribed_connection_ids = thread_state_manager
+        .subscribed_connection_ids(conversation_id)
+        .await;
+    let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+        Arc::clone(outgoing),
+        subscribed_connection_ids,
+        conversation_id,
+    );
+    let project_env =
+        super::thread_processor::map_project_env_status(conversation_id.to_string(), status);
+    thread_outgoing
+        .send_server_notification(ServerNotification::ThreadProjectEnvStatusChanged(
+            ThreadProjectEnvStatusChangedNotification { project_env },
+        ))
+        .await;
 }
 
 pub(super) async fn wait_for_thread_shutdown(thread: &Arc<CodexThread>) -> ThreadShutdownResult {

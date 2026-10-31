@@ -1205,6 +1205,7 @@ impl Session {
             }
         };
         let mut configuration = commit.configuration;
+        Box::pin(self.reload_shell_environment(&mut configuration, &sub_id)).await;
         // Apply the override only to the turn's copy, after persisting thread settings.
         if let Some(service_tier) = service_tier_for_turn {
             Arc::make_mut(&mut configuration.step_settings).service_tier = Some(service_tier);
@@ -1486,9 +1487,11 @@ impl Session {
     pub(crate) async fn new_turn_with_configuration(
         &self,
         sub_id: String,
-        session_configuration: SessionConfiguration,
+        mut session_configuration: SessionConfiguration,
         options: NewTurnContextOptions,
     ) -> Arc<TurnContext> {
+        self.reload_shell_environment(&mut session_configuration, &sub_id)
+            .await;
         let turn_environments = self
             .activate_turn_environments(&session_configuration)
             .await;

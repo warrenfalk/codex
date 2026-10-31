@@ -73,6 +73,7 @@ async fn user_shell_cmd_ls_and_cat_in_temp_dir() {
         .submit(Op::RunUserShellCommand {
             command: list_cmd,
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await
         .unwrap();
@@ -97,6 +98,7 @@ async fn user_shell_cmd_ls_and_cat_in_temp_dir() {
         .submit(Op::RunUserShellCommand {
             command: cat_cmd,
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await
         .unwrap();
@@ -138,6 +140,7 @@ async fn user_shell_command_without_local_environment_emits_error() -> anyhow::R
         .submit(Op::RunUserShellCommand {
             command: "echo shell".to_string(),
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -168,6 +171,7 @@ async fn user_shell_cmd_can_be_interrupted() {
         .submit(Op::RunUserShellCommand {
             command: slow_user_shell_command().to_string(),
             timeout_ms: Some(28_800_000),
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await
         .unwrap();
@@ -228,6 +232,7 @@ async fn user_shell_command_honors_default_and_extended_deadlines() -> anyhow::R
             .submit(Op::RunUserShellCommand {
                 command: slow_user_shell_command().to_string(),
                 timeout_ms,
+                project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
             })
             .await?;
         wait_for_event(&fixture.codex, |event| {
@@ -357,6 +362,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
         .submit(Op::RunUserShellCommand {
             command: user_shell_command,
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -423,6 +429,7 @@ async fn user_shell_command_history_is_persisted_and_shared_with_model() -> anyh
         .submit(Op::RunUserShellCommand {
             command: command.clone(),
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -511,6 +518,7 @@ async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Re
         .submit(Op::RunUserShellCommand {
             command,
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 
@@ -554,6 +562,7 @@ async fn user_shell_command_output_is_truncated_in_history() -> anyhow::Result<(
         .submit(Op::RunUserShellCommand {
             command: command.clone(),
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
 

@@ -231,6 +231,7 @@ async fn standalone_user_shell_omits_uncaptured_path() -> anyhow::Result<()> {
         .submit(Op::RunUserShellCommand {
             command: "sleep 30".to_string(),
             timeout_ms: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         })
         .await?;
     wait_for_event(&test.codex, |event| {

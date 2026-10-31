@@ -78,7 +78,7 @@ pub struct UnifiedExecRequest<'a> {
     pub env: HashMap<String, String>,
     pub exec_server_env_config: Option<ExecServerEnvConfig>,
     pub shell_snapshot: Option<codex_exec_server::ShellSnapshotRequest>,
-    pub explicit_env_overrides: HashMap<String, String>,
+    pub snapshot_env_overrides: HashMap<String, String>,
     pub network: Option<NetworkProxy>,
     pub exec_approval_requirement: ExecApprovalRequirement,
 }
@@ -425,7 +425,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
                 env.insert(format!("{prefix}{key}"), value);
             }
         }
-        let mut explicit_env_overrides = req.explicit_env_overrides.clone();
+        let mut snapshot_env_overrides = req.snapshot_env_overrides.clone();
         if let Some(network) = managed_network
             && !environment_is_remote
         {
@@ -438,7 +438,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
                 if !codex_network_proxy::is_credential_broker_provider_env_key(&key)
                     && let Some(value) = env.get(&key)
                 {
-                    explicit_env_overrides.insert(key, value.clone());
+                    snapshot_env_overrides.insert(key, value.clone());
                 }
             }
         }
@@ -472,7 +472,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
         let mut command = base_command.to_vec();
         if ctx.session.enabled(Feature::LoginShellPackagePath)
             && prepared.resolved.shell.is_posix_login()
-            && !explicit_env_overrides.contains_key("PATH")
+            && !snapshot_env_overrides.contains_key("PATH")
             && let Ok(info) = prepared.turn_environment.environment.info().await
             && let Some(command_with_path_prepends) =
                 prepared.resolved.shell.derive_exec_args_with_path_prepends(
@@ -488,7 +488,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
                 &command,
                 shell,
                 shell_snapshot_location.as_ref(),
-                &explicit_env_overrides,
+                &snapshot_env_overrides,
                 &env,
                 &runtime_path_prepends,
             );
@@ -527,7 +527,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
         }
         if req.shell_snapshot.is_some() {
             let exports =
-                runtime_path_prepends.shell_exports_after_snapshot(&explicit_env_overrides);
+                runtime_path_prepends.shell_exports_after_snapshot(&snapshot_env_overrides);
             if !exports.is_empty()
                 && let Some(script) = command.get_mut(2)
             {
@@ -854,6 +854,7 @@ mod tests {
             yield_time_ms: 10_000,
             max_output_tokens: None,
             completion_timeout: None,
+            project_env: codex_protocol::protocol::ProjectEnvMode::Auto,
         }
     }
 
@@ -864,7 +865,7 @@ mod tests {
             env: HashMap::new(),
             exec_server_env_config: None,
             shell_snapshot: None,
-            explicit_env_overrides: HashMap::new(),
+            snapshot_env_overrides: HashMap::new(),
             network: None,
             exec_approval_requirement: ExecApprovalRequirement::Skip {
                 bypass_sandbox: false,
