@@ -741,7 +741,7 @@ impl App {
                     }
                 }
             } else if let ViewAction::OpenLink(url) = action {
-                self.open_url_in_browser(url);
+                super::desktop_links::open(url, self.app_event_tx.clone());
             }
         }
         if was_select_mode && !self.transcript_view.is_select_mode() {

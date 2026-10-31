@@ -229,6 +229,7 @@ mod config_persistence;
 mod connector_mentions;
 mod daemon_menu;
 mod daybreak;
+mod desktop_links;
 mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;

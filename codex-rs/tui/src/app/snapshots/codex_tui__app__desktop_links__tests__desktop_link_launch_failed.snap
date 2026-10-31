@@ -1,0 +1,5 @@
+---
+source: tui/src/app/desktop_links_tests.rs
+expression: rendered
+---
+■ Failed to open vscode://file/tmp/example.rs:132 with the desktop handler: URL handler exited with code 3
