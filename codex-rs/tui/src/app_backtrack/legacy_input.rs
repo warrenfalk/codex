@@ -187,6 +187,19 @@ impl App {
             }
             return true;
         }
+        if key.kind == KeyEventKind::Press
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'i'))
+        {
+            self.copy_selected_backtrack_prompt_with(|text| {
+                tui.clipboard.copy(
+                    text.into(),
+                    crate::clipboard_copy::CopyFormat::PlainText,
+                    tui.frame_requester(),
+                )
+            });
+            return true;
+        }
         if key.modifiers != KeyModifiers::NONE {
             return false;
         }
