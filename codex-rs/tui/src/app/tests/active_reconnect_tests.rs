@@ -158,6 +158,7 @@ async fn reconnect_restores_history_permissions_and_resumes_unsent_input() -> Re
                     "thread/read" => Some(json!({"result": {"thread": thread}})),
                     "thread/list" | "thread/loaded/list" => Some(json!({"result": {"data": [], "nextCursor": null}})),
                     "thread/goal/get" => Some(json!({"result": {"goal": null}})),
+                    "command/exec" => Some(json!({"result": {"exitCode": 0, "stdout": "", "stderr": ""}})),
                     "turn/start" => {
                         assert!(!edit_offline);
                         let params = request.params.as_ref().unwrap();
@@ -562,6 +563,7 @@ async fn reconnect_reconciles_offscreen_pending_profile_before_restoring_permiss
                 "thread/list" | "thread/loaded/list" =>
                     json!({"result": {"data": [], "nextCursor": null}}),
                 "thread/goal/get" => json!({"result": {"goal": null}}),
+                "command/exec" => json!({"result": {"exitCode": 0, "stdout": "", "stderr": ""}}),
                 method => panic!("unexpected reconnect request: {method}"),
             }))
         })
