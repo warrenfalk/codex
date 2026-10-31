@@ -1,0 +1,11 @@
+---
+source: tui/src/app/tests/prompt_edit_tests.rs
+expression: "render_bottom_popup(&app.chat_widget, 45)"
+---
+  Edit previous prompt
+
+
+› 1. Edit this conversation
+  2. Edit in a new conversation
+
+  enter select · esc back
