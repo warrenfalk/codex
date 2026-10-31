@@ -45,6 +45,8 @@ pub(crate) struct ConfigManager {
     codex_home: PathBuf,
     cli_overrides: Arc<RwLock<Vec<(String, TomlValue)>>>,
     runtime_feature_enablement: Arc<RwLock<BTreeMap<String, bool>>>,
+    /// Runtime-only override inherited from an in-process caller's resolved config.
+    pub(super) auto_thread_title_override: Option<bool>,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: Arc<RwLock<CloudConfigBundleLoader>>,
@@ -104,6 +106,7 @@ impl ConfigManager {
             codex_home,
             cli_overrides: Arc::new(RwLock::new(cli_overrides)),
             runtime_feature_enablement: Arc::new(RwLock::new(BTreeMap::new())),
+            auto_thread_title_override: None,
             loader_overrides,
             strict_config,
             cloud_config_bundle: Arc::new(RwLock::new(cloud_config_bundle)),
@@ -278,8 +281,7 @@ impl ConfigManager {
             .await?;
         self.check_application_policy_load(&policy_load)?;
         self.apply_network_policy(&mut config);
-        self.apply_runtime_feature_enablement(&mut config);
-        self.apply_arg0_paths(&mut config);
+        self.apply_runtime_config_overrides(&mut config);
         config.config_layer_stack = config
             .config_layer_stack
             .with_mcp_ema_cancellation(mcp_ema_cancellation);
@@ -304,8 +306,7 @@ impl ConfigManager {
         )
         .await?;
         self.apply_network_policy(&mut config);
-        self.apply_runtime_feature_enablement(&mut config);
-        self.apply_arg0_paths(&mut config);
+        self.apply_runtime_config_overrides(&mut config);
         config.config_layer_stack = config
             .config_layer_stack
             .with_mcp_ema_cancellation(mcp_ema_cancellation);
@@ -333,8 +334,7 @@ impl ConfigManager {
         )
         .await?;
         self.apply_network_policy(&mut config);
-        self.apply_runtime_feature_enablement(&mut config);
-        self.apply_arg0_paths(&mut config);
+        self.apply_runtime_config_overrides(&mut config);
         config.config_layer_stack = config
             .config_layer_stack
             .with_mcp_ema_cancellation(mcp_ema_cancellation);
@@ -494,8 +494,7 @@ impl ConfigManager {
             .build()
             .await?;
         self.apply_network_policy(&mut config);
-        self.apply_runtime_feature_enablement(&mut config);
-        self.apply_arg0_paths(&mut config);
+        self.apply_runtime_config_overrides(&mut config);
         config.config_layer_stack = config
             .config_layer_stack
             .with_mcp_ema_cancellation(mcp_ema_cancellation);
@@ -724,8 +723,7 @@ impl ConfigManager {
         let mut config = result?;
         self.check_application_policy_load(&policy_load)?;
         self.apply_network_policy(&mut config);
-        self.apply_runtime_feature_enablement(&mut config);
-        self.apply_arg0_paths(&mut config);
+        self.apply_runtime_config_overrides(&mut config);
         config.config_layer_stack = config
             .config_layer_stack
             .with_mcp_ema_cancellation(mcp_ema_cancellation);
@@ -764,6 +762,14 @@ impl ConfigManager {
 
     fn apply_runtime_feature_enablement(&self, config: &mut Config) {
         apply_runtime_feature_enablement(config, &self.current_runtime_feature_enablement());
+    }
+
+    fn apply_runtime_config_overrides(&self, config: &mut Config) {
+        if let Some(auto_thread_title) = self.auto_thread_title_override {
+            config.auto_thread_title = auto_thread_title;
+        }
+        self.apply_runtime_feature_enablement(config);
+        self.apply_arg0_paths(config);
     }
 
     fn current_runtime_feature_enablement(&self) -> BTreeMap<String, bool> {
