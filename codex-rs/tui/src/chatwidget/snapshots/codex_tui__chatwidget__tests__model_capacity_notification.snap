@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/notifications.rs
+expression: notification.display()
+---
+Model at capacity for five minutes. Still retrying.

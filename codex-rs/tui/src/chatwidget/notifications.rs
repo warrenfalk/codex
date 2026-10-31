@@ -30,6 +30,7 @@ pub(crate) enum Notification {
     EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
     ElicitationRequested { server_name: String },
     FocusRequested,
+    ModelCapacityWarning,
     PlanModePrompt { title: String },
     AsyncQuestion { title: String },
 }
@@ -62,6 +63,9 @@ impl Notification {
                 format!("Approval requested by {server_name}")
             }
             Notification::FocusRequested => "Click to focus this Codex session".to_string(),
+            Notification::ModelCapacityWarning => {
+                "Model at capacity for five minutes. Still retrying.".to_string()
+            }
             Notification::PlanModePrompt { title } => {
                 format!("Plan mode prompt: {title}")
             }
@@ -78,6 +82,7 @@ impl Notification {
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. } => "approval-requested",
             Notification::FocusRequested => "focus-requested",
+            Notification::ModelCapacityWarning => "model-capacity",
             Notification::PlanModePrompt { .. } => "plan-mode-prompt",
             Notification::AsyncQuestion { .. } => "async-question",
         }
@@ -85,7 +90,9 @@ impl Notification {
 
     fn priority(&self) -> u8 {
         match self {
-            Notification::AgentTurnComplete { .. } | Notification::FocusRequested => 0,
+            Notification::AgentTurnComplete { .. }
+            | Notification::FocusRequested
+            | Notification::ModelCapacityWarning => 0,
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
             | Notification::ElicitationRequested { .. }
