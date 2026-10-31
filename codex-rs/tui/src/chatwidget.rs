@@ -293,6 +293,7 @@ mod interrupts;
 mod project_mentions;
 mod questions;
 mod startup_submission;
+mod thread_control;
 use self::interrupts::InterruptManager;
 mod keymap_picker;
 mod mcp_startup;

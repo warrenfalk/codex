@@ -44,6 +44,9 @@ impl ChatWidget {
             self.restore_retry_status_header_if_present();
         }
         match notification {
+            ServerNotification::ThreadControlChanged(changed) => {
+                self.set_thread_control_state(Some(changed.state));
+            }
             ServerNotification::McpServerOauthLoginCompleted(notification) => {
                 if notification.success {
                     self.add_info_message(

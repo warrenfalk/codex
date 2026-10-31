@@ -43,6 +43,7 @@ pub enum SlashCommand {
     InitUpdate,
     Compact,
     Config,
+    Control,
     Recap,
     Plan,
     Voice,
@@ -159,6 +160,9 @@ impl SlashCommand {
                 "start a side conversation in an ephemeral fork"
             }
             SlashCommand::Permissions => "choose what Codex is allowed to do",
+            SlashCommand::Control => {
+                "manage external control: approve, deny, revoke, lock, unlock, grant <agent>"
+            }
             SlashCommand::Keymap => "remap TUI shortcuts",
             SlashCommand::Vim => "toggle Vim mode for the composer",
             SlashCommand::ElevateSandbox => "set up elevated agent sandbox",
@@ -189,6 +193,7 @@ impl SlashCommand {
                 | SlashCommand::Permissions
                 | SlashCommand::Title
                 | SlashCommand::Statusline
+                | SlashCommand::Control
                 | SlashCommand::Rename
                 | SlashCommand::New
                 | SlashCommand::Clear
@@ -292,6 +297,7 @@ impl SlashCommand {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,
             SlashCommand::Diff
+            | SlashCommand::Control
             | SlashCommand::Ack
             | SlashCommand::Unread
             | SlashCommand::Resume

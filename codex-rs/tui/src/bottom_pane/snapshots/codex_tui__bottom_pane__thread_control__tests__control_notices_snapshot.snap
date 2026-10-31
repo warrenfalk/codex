@@ -1,0 +1,14 @@
+---
+source: tui/src/bottom_pane/thread_control_tests.rs
+expression: snapshots
+---
+Dot requests control · auto-grants in 45s
+Finish the build and report the result.
+/control approve · /control deny · /control lock
+
+Dot requests control · explicit approval required
+Finish the build and report the result.
+/control approve · /control deny · /control lock
+External control locked · /control unlock
+
+Controlled by Dot · /control revoke · /control lock

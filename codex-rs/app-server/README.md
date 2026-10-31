@@ -6,6 +6,12 @@ resolved memory version, including thread-specific configuration overrides.
 It is `null` when memory use is disabled or the selected summary is missing,
 unreadable, or blank. It never falls back to the other memory version.
 
+# External thread control
+
+See [External thread control API](thread-control.md) for connecting an external
+MCP bridge, requesting revocable control of threads, and implementing the
+interactive permission UI.
+
 # Thread list exclusions
 
 `thread/list` accepts `excludedThreadIds`, an optional array of up to 100
