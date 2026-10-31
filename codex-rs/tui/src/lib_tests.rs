@@ -12,6 +12,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::Turn;
+use codex_inference_profiles::KIMI_K3_MODEL_ID;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -58,18 +59,23 @@ requires_openai_auth = {requires_openai_auth}
         let server_config = build_config(&home).await?;
         let mut server = AppServerSession::new(
             crate::backend_id::BackendId::new(),
-            AppServerClient::InProcess(start_test_embedded_app_server(server_config).await?),
+            AppServerClient::InProcess(
+                start_test_embedded_app_server(server_config.clone()).await?,
+            ),
             ThreadParamsMode::Embedded,
         );
         let (login_status, account) = get_login_status(&mut server).await?;
         assert_eq!(account.requires_openai_auth, requires_openai_auth);
         assert_eq!(
-            should_show_login_screen(login_status, account.requires_openai_auth),
+            should_show_login_screen(
+                login_status,
+                requires_openai_login(&server_config, &account)
+            ),
             requires_openai_auth
         );
         assert!(!should_show_login_screen(
             LoginStatus::AuthMode(AuthMode::Chatgpt),
-            account.requires_openai_auth
+            requires_openai_login(&server_config, &account)
         ));
         server.shutdown().await?;
     }
@@ -1734,3 +1740,20 @@ mod daemon_startup_tests;
 pub(crate) mod test_backend;
 #[path = "test_support.rs"]
 pub(crate) mod test_support;
+
+#[tokio::test]
+async fn kimi_profile_skips_openai_login() -> std::io::Result<()> {
+    let temp_dir = TempDir::new()?;
+    let mut config = build_config(&temp_dir).await?;
+    config.model = Some(KIMI_K3_MODEL_ID.to_string());
+    let account = GetAccountResponse {
+        account: None,
+        requires_openai_auth: true,
+        workspace_routing: None,
+    };
+    assert!(!should_show_login_screen(
+        LoginStatus::NotAuthenticated,
+        requires_openai_login(&config, &account)
+    ));
+    Ok(())
+}

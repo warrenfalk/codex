@@ -50,6 +50,7 @@ pub use provider::create_model_provider;
 pub use provider::provider_uses_first_party_auth_path;
 pub use provider::resolve_api_provider;
 
+pub use provider::create_model_provider_with_capabilities;
 pub use runtime_auth::select_runtime_auth;
 pub use runtime_auth::validate_runtime_destination;
 pub use runtime_auth::validate_runtime_provider;

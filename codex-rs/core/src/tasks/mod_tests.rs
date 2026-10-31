@@ -158,9 +158,10 @@ async fn turn_completion_metrics_follow_model_switch(scenario: UsageScenario) {
     };
     let previous_context = turn_context;
     let turn_context = Arc::new(
-        previous_context
-            .with_model(next_model.to_string(), &session.services.models_manager)
-            .await,
+        session
+            .turn_context_with_model(&previous_context, next_model.to_string())
+            .await
+            .expect("model switch should preserve the baseline provider"),
     );
     // Earlier session usage must not leak into this turn's per-model samples.
     session

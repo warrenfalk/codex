@@ -60,6 +60,7 @@ codex-file-watcher = { workspace = true }
 codex-hooks = { workspace = true }
 codex-history-notes-extension = { workspace = true }
 codex-http-client = { workspace = true }
+codex-inference-profiles = { workspace = true }
 codex-otel = { workspace = true }
 codex-plugin = { workspace = true }
 codex-project-env = { workspace = true }

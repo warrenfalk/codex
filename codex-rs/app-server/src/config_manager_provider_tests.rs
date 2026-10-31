@@ -301,12 +301,18 @@ name = "Gateway"
         .await?;
     assert_eq!(current.model_provider_id, "gateway");
     manager
-        .check_thread_model_provider_for_input(&current)
+        .check_thread_model_provider_for_input(
+            &current,
+            current.model.as_deref().unwrap_or_default(),
+        )
         .await?;
     let default_manager =
         ConfigManager::without_managed_config_for_tests(home.path().to_path_buf());
     let error = default_manager
-        .check_thread_model_provider_for_input(&current)
+        .check_thread_model_provider_for_input(
+            &current,
+            current.model.as_deref().unwrap_or_default(),
+        )
         .await
         .unwrap_err();
     assert_eq!(

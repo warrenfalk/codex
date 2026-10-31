@@ -194,3 +194,6 @@ mod workspace_routing;
 
 mod user_verification;
 mod user_verification_mcp;
+
+#[cfg(unix)]
+mod inference_profile_resume;

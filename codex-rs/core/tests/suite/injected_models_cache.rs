@@ -24,6 +24,7 @@ use codex_models_manager::manager::ModelsEndpointResponse;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
+use codex_models_manager::model_info::kimi_k3_model_info;
 use codex_models_manager::model_info::model_info_from_slug;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::error::Result as CoreResult;
@@ -397,10 +398,11 @@ async fn account_switch_during_cache_store_preserves_new_catalog_for_next_turn()
             codex_core::test_support::default_http_client_factory(),
         )
         .await;
-    assert_eq!(manager.get_remote_models().await, vec![new_model.clone()]);
+    let expected_models = vec![new_model, kimi_k3_model_info()];
+    assert_eq!(manager.get_remote_models().await, expected_models);
     release_store.send(()).unwrap();
     timeout(Duration::from_secs(10), old_refresh).await??;
-    assert_eq!(manager.get_remote_models().await, vec![new_model]);
+    assert_eq!(manager.get_remote_models().await, expected_models);
     for (mock, account) in [(old_request, "account_id"), (new_request, "second-account")] {
         let requests = mock.requests();
         assert_eq!(requests.len(), 1);
