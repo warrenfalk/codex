@@ -23,6 +23,7 @@
       # truth used by the release workflow).
       cargoToml = builtins.fromTOML (builtins.readFile ./codex-rs/Cargo.toml);
       cargoVersion = cargoToml.workspace.package.version;
+      rustChannel = (builtins.fromTOML (builtins.readFile ./codex-rs/rust-toolchain.toml)).toolchain.channel;
 
       # When building from a release commit the Cargo.toml already carries the
       # real version (e.g. "0.101.0").  On the main branch it is the placeholder
@@ -42,8 +43,8 @@
           codex-rs = pkgs.callPackage ./codex-rs {
             inherit version;
             rustPlatform = pkgs.makeRustPlatform {
-              cargo = pkgs.rust-bin.stable.latest.minimal;
-              rustc = pkgs.rust-bin.stable.latest.minimal;
+              cargo = pkgs.rust-bin.stable.${rustChannel}.minimal;
+              rustc = pkgs.rust-bin.stable.${rustChannel}.minimal;
             };
           };
         in
@@ -65,7 +66,7 @@
           #   inherit nixpkgs;
           #   version = "9.0.0";
           # };
-          rust = pkgs.rust-bin.stable.latest.minimal.override {
+          rust = pkgs.rust-bin.stable.${rustChannel}.minimal.override {
             extensions = [ "clippy" "rust-src" "rust-analyzer" "rustfmt" ];
           };
         in
