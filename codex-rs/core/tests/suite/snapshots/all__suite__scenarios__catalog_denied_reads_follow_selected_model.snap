@@ -35,7 +35,7 @@ Settings:
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model A roots: <BOUNDED_ROOT_LIST>.
     Model A denied reads:
-    The active permission profile denies reading these paths/globs. Do not request escalation or additional ... to read them; these denials are policy restrictions. [hash=46af8c20fb529219]
+    The active permission profile blocks reading these paths/globs inside the sandbox. When the approval pol...ons; subsequent sandboxed commands remain restricted. [hash=c93d5f71d06292b6]
     - path `<CWD>/catalog-denied`
     - glob `<CWD>/catalog-secrets/*.key`
     </permissions instructions>
@@ -74,7 +74,7 @@ Settings: relative to window 1
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model A roots: <BOUNDED_ROOT_LIST>.
     Model A denied reads:
-    The active permission profile denies reading these paths/globs. Do not request escalation or additional ... to read them; these denials are policy restrictions. [hash=46af8c20fb529219]
+    The active permission profile blocks reading these paths/globs inside the sandbox. When the approval pol...ons; subsequent sandboxed commands remain restricted. [hash=c93d5f71d06292b6]
     - path `<CWD>/catalog-denied`
     - glob `<CWD>/catalog-secrets/*.key`
     </permissions instructions>
@@ -98,7 +98,7 @@ Settings: relative to window 1
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model B roots: <BOUNDED_ROOT_LIST>.
     Model B denied reads:
-    The active permission profile denies reading these paths/globs. Do not request escalation or additional ... to read them; these denials are policy restrictions. [hash=46af8c20fb529219]
+    The active permission profile blocks reading these paths/globs inside the sandbox. When the approval pol...ons; subsequent sandboxed commands remain restricted. [hash=c93d5f71d06292b6]
     - path `<CWD>/catalog-denied`
     - glob `<CWD>/catalog-secrets/*.key`
     </permissions instructions>
