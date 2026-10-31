@@ -14,6 +14,10 @@ mod projectless_directory_tests;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(test)]
+#[path = "permission_instructions_tests.rs"]
+mod permission_instructions_tests;
+
 pub use application::LocalApplicationRequirements;
 pub use application::load_local_application_requirements;
 
