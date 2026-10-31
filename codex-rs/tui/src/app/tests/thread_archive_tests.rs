@@ -151,7 +151,8 @@ async fn archive_current_thread_respects_mode_on_shared_servers() -> Result<()> 
             );
             assert_eq!(
                 recorded_params(&requests, "thread/unsubscribe"),
-                vec![serde_json::json!({"threadId": side_id.to_string()})]
+                vec![serde_json::json!({"threadId": side_id.to_string()})],
+                "target: {target:?}, attachment: {attachment:?}, side_exists: {side_exists}",
             );
             assert_eq!(
                 recorded_params(&requests, "turn/interrupt"),

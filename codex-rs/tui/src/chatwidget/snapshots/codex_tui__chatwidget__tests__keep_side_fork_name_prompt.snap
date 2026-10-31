@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+expression: "render_bottom_popup(&chat, 80)"
+---
+  Keep as a fork
+
+› Name the fork and press Enter to return to the parent
+
+  enter submit · esc back

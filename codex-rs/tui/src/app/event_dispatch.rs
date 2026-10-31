@@ -3000,6 +3000,18 @@ impl App {
                     user_message,
                 });
             }
+            AppEvent::KeepSideForkAndReturn { thread_id, name } => {
+                if self.current_displayed_thread_id() == Some(thread_id)
+                    && let Some(parent_id) = self.active_side_parent_thread_id()
+                    && self.keep_side_conversation_as_fork(
+                        app_server,
+                        name,
+                        crate::app_event::SideForkDestination::Parent,
+                    ).await?
+                {
+                    self.select_agent_thread(tui, app_server, parent_id).await?;
+                }
+            }
             AppEvent::SideConversationCloseSelected(choice) => {
                 self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::CloseSide(choice));
             }

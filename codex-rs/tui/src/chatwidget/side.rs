@@ -10,6 +10,28 @@ use crate::app_event::SideConversationCloseChoice;
 pub(crate) const SIDE_CLOSE_PROMPT_VIEW_ID: &str = "side-conversation-close";
 
 impl ChatWidget {
+    pub(crate) fn open_keep_side_fork_name_prompt(&mut self) {
+        let Some(thread_id) = self.thread_id else {
+            return;
+        };
+        let tx = self.app_event_tx.clone();
+        self.bottom_pane.show_text_prompt(CustomPromptView::new(
+            "Keep as a fork".to_string(),
+            "Name the fork and press Enter to return to the parent".to_string(),
+            /*initial_text*/ String::new(),
+            /*context_label*/ None,
+            Box::new(move |name| {
+                let Some(name) = normalize_thread_name(&name) else {
+                    tx.send(AppEvent::InsertHistoryCell(Box::new(
+                        history_cell::new_error_event("Thread name cannot be empty.".to_string()),
+                    )));
+                    return;
+                };
+                tx.send(AppEvent::KeepSideForkAndReturn { thread_id, name });
+            }),
+        ));
+    }
+
     pub(crate) fn submit_user_message_as_plain_user_turn(
         &mut self,
         user_message: UserMessage,
@@ -35,6 +57,13 @@ impl ChatWidget {
         self.active_side_conversation
     }
 
+    pub(crate) fn keep_side_conversation_as_fork(&mut self, session: &ThreadSessionState) {
+        self.forked_from = session.forked_from_id;
+        self.daybreak_enabled =
+            self.config.features.enabled(Feature::CliDaybreak) && session.daybreak_enabled;
+        self.set_daybreak_enabled(self.daybreak_enabled);
+    }
+
     pub(crate) fn set_side_conversation_context_label(&mut self, label: Option<String>) {
         self.bottom_pane.set_side_conversation_context_label(label);
     }
@@ -55,7 +84,7 @@ impl ChatWidget {
         self.show_selection_view(SelectionViewParams {
             view_id: Some(SIDE_CLOSE_PROMPT_VIEW_ID),
             title: Some("Close side conversation".to_string()),
-            subtitle: Some("Choose what to do with this ephemeral side thread.".to_string()),
+            subtitle: Some("Choose what to do with this side conversation.".to_string()),
             items: vec![
                 item(
                     SideConversationCloseChoice::Cancel,
@@ -73,9 +102,14 @@ impl ChatWidget {
                     "Save the summary as a note to self in the parent.",
                 ),
                 item(
+                    SideConversationCloseChoice::KeepAsFork,
+                    "Keep as a fork",
+                    "Name and keep this fork, then return to the parent.",
+                ),
+                item(
                     SideConversationCloseChoice::Leave,
                     "Leave",
-                    "Discard the side conversation without saving a summary.",
+                    "Delete the side conversation without saving a summary.",
                 ),
             ],
             initial_selected_idx: Some(0),

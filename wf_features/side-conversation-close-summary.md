@@ -2,15 +2,16 @@
 
 ## Intent
 
-Side conversations are ephemeral forks for lightweight exploration. Closing one should avoid accidental loss while still letting useful findings move back into the parent thread.
+Side conversations are forks for lightweight exploration. Closing one should avoid accidental loss while still letting useful findings move back into the parent thread. Persistence and keeping a side as an ordinary fork are specified in `keep-side-conversation-as-fork.md`.
 
 ## Behavior
 
-When the user presses Ctrl+C in an idle side conversation with an empty composer and no active overlay or popup, the TUI opens a close prompt instead of immediately returning to the parent. The prompt has four choices:
+When the user presses Ctrl+C in an idle side conversation with an empty composer and no active overlay or popup, the TUI opens a close prompt instead of immediately returning to the parent. The prompt has five choices:
 
 - Cancel: dismisses the prompt and keeps the side conversation active.
 - Summarize: asks the side agent to summarize the side conversation and saves that summary into the parent thread as model-visible assistant history.
 - Summarize for me: asks the side agent to summarize the side conversation and saves that summary into the parent thread as a personal `Note to self`.
+- Keep as a fork: retains the conversation and continues in it as an ordinary fork.
 - Leave: discards the side conversation without saving a summary and returns to the parent.
 
 Cancel is selected by default. Pressing Enter accepts the highlighted choice. Pressing Esc or Ctrl+C while the prompt is open acts like Cancel.

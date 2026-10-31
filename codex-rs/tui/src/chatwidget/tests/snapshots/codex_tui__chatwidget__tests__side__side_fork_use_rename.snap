@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+expression: text
+---
+■ '/fork' is unavailable in side conversations. Use /rename to keep this side conversation as a fork.

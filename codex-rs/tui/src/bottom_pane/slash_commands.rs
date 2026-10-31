@@ -339,6 +339,7 @@ mod tests {
             commands,
             vec![
                 SlashCommand::Ide,
+                SlashCommand::Rename,
                 SlashCommand::Speak,
                 SlashCommand::Agents,
                 SlashCommand::Copy,

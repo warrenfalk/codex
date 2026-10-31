@@ -915,9 +915,6 @@ impl ChatWidget {
                 _ => self.add_error_message(RAW_USAGE.to_string()),
             },
             SlashCommand::Rename if !trimmed.is_empty() => {
-                if !self.ensure_thread_rename_allowed() {
-                    return;
-                }
                 self.session_telemetry
                     .counter("codex.thread.rename", /*inc*/ 1, &[]);
                 let Some(name) = normalize_thread_name(&args) else {
@@ -1398,8 +1395,13 @@ impl ChatWidget {
         if !self.active_side_conversation || cmd.available_in_side_conversation() {
             return true;
         }
+        let hint = if cmd == SlashCommand::Fork {
+            "Use /rename to keep this side conversation as a fork."
+        } else {
+            SIDE_SLASH_COMMAND_UNAVAILABLE_HINT
+        };
         self.add_error_message(format!(
-            "'/{}' is unavailable in side conversations. {SIDE_SLASH_COMMAND_UNAVAILABLE_HINT}",
+            "'/{}' is unavailable in side conversations. {hint}",
             cmd.command()
         ));
         self.bottom_pane.drain_pending_submission_state();
