@@ -2432,13 +2432,7 @@ impl ThreadRequestProcessor {
             };
             match retirement {
                 Ok(true) => {
-                    super::thread_read_state::notify(
-                        db,
-                        &self.thread_state_manager,
-                        &self.outgoing,
-                        thread_id,
-                    )
-                    .await;
+                    super::thread_read_state::notify(db, &self.outgoing, thread_id).await;
                 }
                 Ok(false) => {}
                 Err(err) => {
@@ -6794,6 +6788,7 @@ fn thread_from_stored_thread(
         created_at: thread.created_at.timestamp(),
         updated_at: thread.updated_at.timestamp(),
         recency_at: Some(thread.recency_at.timestamp()),
+        unread: thread.unread,
         status: ThreadStatus::NotLoaded,
         path,
         cwd,
@@ -6993,6 +6988,7 @@ fn build_thread_from_snapshot(
         git_info: None,
         name: None,
         daybreak_enabled: None,
+        unread: false,
         turns: Vec::new(),
     }
 }

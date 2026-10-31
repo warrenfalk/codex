@@ -7007,6 +7007,14 @@ class ThreadUnarchivedNotification(BaseModel):
     thread_id: Annotated[str, Field(alias="threadId")]
 
 
+class ThreadUnreadChangedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+    unread: bool
+
+
 class ThreadStartThreadUnreadPosition(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -7024,6 +7032,29 @@ class TurnThreadUnreadPosition(BaseModel):
 
 class ThreadUnreadPosition(RootModel[ThreadStartThreadUnreadPosition | TurnThreadUnreadPosition]):
     root: ThreadStartThreadUnreadPosition | TurnThreadUnreadPosition
+
+
+class ThreadUnreadSetParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    thread_id: Annotated[str, Field(alias="threadId")]
+    unread: Annotated[
+        bool,
+        Field(
+            description="Set unread explicitly, or acknowledge it. Acknowledgement is ignored during an active turn, including a turn waiting for approval or input. Ignored attempts are never deferred."
+        ),
+    ]
+
+
+class ThreadUnreadSetResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    unread: Annotated[
+        bool,
+        Field(description="Authoritative unread state after applying or ignoring the request."),
+    ]
 
 
 class ThreadUnsubscribeParams(BaseModel):
@@ -7764,6 +7795,15 @@ class ThreadNameSetRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/name/set"], Field(title="Thread/name/setRequestMethod")]
     params: ThreadSetNameParams
+
+
+class ThreadUnreadSetRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["thread/unread/set"], Field(title="Thread/unread/setRequestMethod")]
+    params: ThreadUnreadSetParams
 
 
 class ThreadGoalGetRequest(BaseModel):
@@ -10240,6 +10280,23 @@ class ThreadStatusChangedServerNotification(BaseModel):
         Literal["thread/status/changed"], Field(title="Thread/status/changedNotificationMethod")
     ]
     params: ThreadStatusChangedNotification
+
+
+class ThreadUnreadChangedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/unread/changed"], Field(title="Thread/unread/changedNotificationMethod")
+    ]
+    params: ThreadUnreadChangedNotification
 
 
 class ThreadProjectEnvStatusChangedServerNotification(BaseModel):
@@ -13806,6 +13863,12 @@ class Thread(BaseModel):
             description="Only populated on `thread/resume`, `thread/fork`, and `thread/read` (when `includeTurns` is true) responses. For all other responses and notifications returning a Thread, the turns field will be an empty list."
         ),
     ]
+    unread: Annotated[
+        bool | None,
+        Field(
+            description="Persistent acknowledgement state. New user prompts set this even while the thread is active. Runtime stops and turn completion do not change it."
+        ),
+    ] = False
     updated_at: Annotated[
         int,
         Field(
@@ -14208,6 +14271,7 @@ class ClientRequest(
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
         | ThreadNameSetRequest
+        | ThreadUnreadSetRequest
         | ThreadGoalSetRequest
         | ThreadGoalGetRequest
         | ThreadGoalClearRequest
@@ -14320,6 +14384,7 @@ class ClientRequest(
         | ThreadDeleteRequest
         | ThreadUnsubscribeRequest
         | ThreadNameSetRequest
+        | ThreadUnreadSetRequest
         | ThreadGoalSetRequest
         | ThreadGoalGetRequest
         | ThreadGoalClearRequest
@@ -14688,6 +14753,7 @@ class ServerNotification(
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
         | ThreadReadStateChangedServerNotification
+        | ThreadUnreadChangedServerNotification
         | ThreadProjectEnvStatusChangedServerNotification
         | ThreadArchivedServerNotification
         | ThreadDeletedServerNotification
@@ -14779,6 +14845,7 @@ class ServerNotification(
         | ThreadStartedServerNotification
         | ThreadStatusChangedServerNotification
         | ThreadReadStateChangedServerNotification
+        | ThreadUnreadChangedServerNotification
         | ThreadProjectEnvStatusChangedServerNotification
         | ThreadArchivedServerNotification
         | ThreadDeletedServerNotification

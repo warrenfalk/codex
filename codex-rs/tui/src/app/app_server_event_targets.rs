@@ -51,6 +51,9 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadStatusChanged(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadUnreadChanged(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadProjectEnvStatusChanged(notification) => {
             Some(notification.project_env.thread_id.as_str())
         }

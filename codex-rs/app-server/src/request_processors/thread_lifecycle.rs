@@ -601,8 +601,7 @@ async fn start_listener(
                         ).await
                     {
                         super::thread_read_state::notify(
-                            &db, &thread_state_manager,
-                            &outgoing_for_task, conversation_id,
+                            &db, &outgoing_for_task, conversation_id,
                         ).await;
                     }
                     let is_shutdown_complete = matches!(event.msg, EventMsg::ShutdownComplete);

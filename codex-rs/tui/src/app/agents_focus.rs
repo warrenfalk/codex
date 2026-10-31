@@ -38,6 +38,7 @@ impl App {
     pub(super) async fn handle_agents_focus(
         &mut self,
         tui: &mut tui::Tui,
+        app_server: &mut AppServerSession,
         pending: PendingRequest,
     ) {
         let PendingRequest {
@@ -64,7 +65,16 @@ impl App {
                         };
                         tui.resume_events();
                         match result {
-                            Some(Ok(())) => Reply::Focused,
+                            Some(Ok(())) => {
+                                if let Ok(thread_id) = ThreadId::from_string(&request.session_id)
+                                    && let Err(error) = app_server
+                                        .thread_unread_set(thread_id, /*unread*/ false)
+                                        .await
+                                {
+                                    tracing::warn!(%error, "failed to acknowledge focused session");
+                                }
+                                Reply::Focused
+                            }
                             Some(Err(error)) => Reply::Unavailable(format!("{error:#}")),
                             None => return,
                         }

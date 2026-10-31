@@ -45,6 +45,9 @@ mod test_support;
 #[cfg(test)]
 #[path = "timestamp_metadata_tests.rs"]
 mod timestamp_metadata_tests;
+#[cfg(test)]
+#[path = "unread_metadata_tests.rs"]
+mod unread_metadata_tests;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;

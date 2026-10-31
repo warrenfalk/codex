@@ -30,6 +30,26 @@ use crate::StoredThread;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
+pub(super) async fn resolve_thread_unread(store: &LocalThreadStore, threads: &mut [StoredThread]) {
+    let Some(runtime) = store.state_db().await else {
+        return;
+    };
+    let ids = threads
+        .iter()
+        .map(|thread| thread.thread_id)
+        .collect::<Vec<_>>();
+    let unread = runtime
+        .unread_thread_ids(&ids)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to read thread unread state");
+            Default::default()
+        });
+    for thread in threads {
+        thread.unread = unread.contains(&thread.thread_id);
+    }
+}
+
 pub(super) fn scoped_rollout_path(
     root: PathBuf,
     rollout_path: &Path,
@@ -163,6 +183,7 @@ pub(super) fn stored_thread_from_rollout_item(
         section_entered_at: None,
         project_id: item.project_id,
         daybreak_enabled: item.daybreak_enabled,
+        unread: false,
         cwd: item.cwd.unwrap_or_default(),
         cli_version: item.cli_version.unwrap_or_default(),
         originator: item.originator,

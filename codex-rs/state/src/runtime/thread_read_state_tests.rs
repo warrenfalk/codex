@@ -9,6 +9,52 @@ use crate::runtime::test_support::test_thread_metadata;
 use crate::runtime::test_support::unique_temp_dir;
 
 #[tokio::test]
+async fn boolean_acknowledgements_share_receipts_and_keep_terminal_deduplication()
+-> anyhow::Result<()> {
+    let home = unique_temp_dir();
+    let runtime = StateRuntime::init(
+        SqliteConfig::new_for_testing(home.as_path().abs()),
+        "test-provider".to_string(),
+    )
+    .await?;
+    let id = ThreadId::new();
+    runtime
+        .upsert_thread(&test_thread_metadata(&home, id, home.clone()))
+        .await?;
+    assert!(
+        runtime
+            .publish_thread_attention(id, "accepted-turn")
+            .await?
+    );
+    let before = runtime.thread_read_states(&[id]).await?[&id].clone();
+    assert!(runtime.set_thread_unread(id, /*unread*/ true).await?);
+    let marked = runtime.thread_read_states(&[id]).await?[&id].clone();
+    assert_eq!(marked.first_unread_turn, before.first_unread_turn);
+    assert_ne!(marked.revision, before.revision);
+    assert_eq!(
+        runtime
+            .update_thread_read_state(id, &before.revision, ReadStateOperation::Read)
+            .await?,
+        ReadStateUpdate::Conflict(marked.clone())
+    );
+    assert!(runtime.set_thread_unread(id, /*unread*/ false).await?);
+    let acknowledged = runtime.thread_read_states(&[id]).await?[&id].clone();
+    assert_eq!(acknowledged.first_unread_turn, None);
+    assert!(
+        !runtime
+            .publish_thread_attention(id, "accepted-turn")
+            .await?
+    );
+    assert_eq!(runtime.thread_read_states(&[id]).await?[&id], acknowledged);
+    let changed = runtime
+        .update_thread_read_state(id, &acknowledged.revision, ReadStateOperation::Unread)
+        .await?;
+    assert!(matches!(changed, ReadStateUpdate::Applied(_)));
+    assert_eq!(runtime.unread_thread_ids(&[id]).await?, [id].into());
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_stale_read_cannot_erase_a_later_completion_or_another_mark() -> anyhow::Result<()> {
     let home = unique_temp_dir();
     let runtime = StateRuntime::init(

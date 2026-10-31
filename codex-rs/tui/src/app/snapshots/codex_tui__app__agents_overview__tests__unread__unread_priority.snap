@@ -1,0 +1,28 @@
+---
+source: tui/src/app/agents_overview_unread_tests.rs
+expression: "normalize_agent_center_snapshot(render_bottom_popup(&app.chat_widget, 110))"
+---
+  Agent command center  Group: Status  g
+   All 6   Needs you 1   Unread 2   Working 2   Ready 1   Inactive 0                         tab/⇧tab filter
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+      Tasks                                 Status         Updated  │ Task details
+  Needs input  1                                                    │
+  › ● Approval needed                       Needs input     2m ago  │ Approval needed
+                                                                    │ ● Needs input
+  Unread  2                                                         │
+    ● Unread result                         Unread          2m ago  │ Model: Unknown
+    ● Unloaded unread                       Unread          2m ago  │ Reasoning: Unknown
+                                                                    │
+  Working  2                                                        │ Project
+    ● Still working                         Working         2m ago  │ /tmp/project
+    ● Working child                         Working         2m ago  │
+                                                                    │ Needs attention
+  Ready  1                                                          │ Open task to review.
+    ○ Acknowledged                          Ready           2m ago  │ Waiting for approval.
+                                                                    │
+                                                                    │ Prompt
+                                                                    │ Approval needed
+                                                                    │
+                                                                    │
+                                                                    │
+  ? help  esc back  ↑/↓ move  enter open  n new

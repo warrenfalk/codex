@@ -126,6 +126,7 @@ define_keymap_actions! {
         toggle_side_conversation => "Switch between a side conversation and its parent.",
         leader => "Set the prefix used by shared leader shortcuts.",
         toggle_clean_scrollback => "Toggle clean scrollback mode.",
+        toggle_unread => "Mark the displayed session read or unread without changing the draft.",
     }
     chat "Chat" {
         interrupt_turn => "Interrupt the active turn.",

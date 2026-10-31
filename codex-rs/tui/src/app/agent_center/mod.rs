@@ -12,6 +12,7 @@ use super::*;
 pub(super) const TASK_FILTERS: &[(&str, Option<AgentsOverviewGroup>)] = &[
     ("All", None),
     ("Needs you", Some(AgentsOverviewGroup::NeedsYou)),
+    ("Unread", Some(AgentsOverviewGroup::Unread)),
     ("Working", Some(AgentsOverviewGroup::Working)),
     ("Ready", Some(AgentsOverviewGroup::Ready)),
     ("Inactive", Some(AgentsOverviewGroup::Finished)),

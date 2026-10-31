@@ -33,6 +33,36 @@ pub enum ReadStateUpdate {
 }
 
 impl StateRuntime {
+    /// Project the canonical receipts for a bounded thread-store page.
+    pub async fn unread_thread_ids(
+        &self,
+        ids: &[ThreadId],
+    ) -> anyhow::Result<std::collections::HashSet<ThreadId>> {
+        Ok(self
+            .thread_read_states(ids)
+            .await?
+            .into_iter()
+            .filter_map(|(id, state)| state.first_unread_turn.is_some().then_some(id))
+            .collect())
+    }
+
+    /// Apply the stable whole-thread acknowledgement operation to the same receipts.
+    /// Callers serialize prompt acceptance and active-family checks before clearing it.
+    pub async fn set_thread_unread(&self, id: ThreadId, unread: bool) -> anyhow::Result<bool> {
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let Some(before) = read_states(&mut tx, &[id]).await?.remove(&id) else {
+            return Ok(false);
+        };
+        let first_unread = if unread {
+            before.first_unread_turn.as_deref().or(Some(""))
+        } else {
+            None
+        };
+        write_read_state(&mut tx, id, first_unread).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+
     /// Read just the requested page. Only durable metadata rows are eligible.
     pub async fn thread_read_states(
         &self,
@@ -88,23 +118,32 @@ impl StateRuntime {
             ReadStateOperation::Read => None,
             ReadStateOperation::Unread => Some(""),
         };
-        let revision = Uuid::new_v4().to_string();
-        sqlx::query(
-            "INSERT INTO thread_read_receipts(thread_id,first_unread_turn,revision)
-             VALUES(?,?,?) ON CONFLICT(thread_id) DO UPDATE
-             SET first_unread_turn=excluded.first_unread_turn, revision=excluded.revision",
-        )
-        .bind(id.to_string())
-        .bind(first_unread)
-        .bind(&revision)
-        .execute(&mut *tx)
-        .await?;
+        let state = write_read_state(&mut tx, id, first_unread).await?;
         tx.commit().await?;
-        Ok(ReadStateUpdate::Applied(ThreadReadState {
-            first_unread_turn: first_unread.map(str::to_owned),
-            revision,
-        }))
+        Ok(ReadStateUpdate::Applied(state))
     }
+}
+
+async fn write_read_state(
+    conn: &mut SqliteConnection,
+    id: ThreadId,
+    first_unread: Option<&str>,
+) -> anyhow::Result<ThreadReadState> {
+    let revision = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO thread_read_receipts(thread_id,first_unread_turn,revision)
+         VALUES(?,?,?) ON CONFLICT(thread_id) DO UPDATE
+         SET first_unread_turn=excluded.first_unread_turn, revision=excluded.revision",
+    )
+    .bind(id.to_string())
+    .bind(first_unread)
+    .bind(&revision)
+    .execute(conn)
+    .await?;
+    Ok(ThreadReadState {
+        first_unread_turn: first_unread.map(str::to_owned),
+        revision,
+    })
 }
 
 async fn read_states(
