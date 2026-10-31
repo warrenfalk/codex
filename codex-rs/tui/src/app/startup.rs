@@ -245,6 +245,7 @@ impl App {
         is_first_run: bool,
         should_prompt_windows_sandbox_nux_at_startup: bool,
         app_server_target: AppServerTarget,
+        initial_app_server_footer_state: Option<ConnectedModeFooterState>,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
         startup_elapsed_before_app: Duration,
@@ -961,6 +962,10 @@ See the Codex keymap documentation for supported actions and examples."
         let runtime_keymap = startup_try!(runtime_keymap);
         #[cfg(not(debug_assertions))]
         let upgrade_version = crate::updates::get_upgrade_version(&config);
+        let app_server_footer_state = initial_app_server_footer_state.or_else(|| {
+            (!matches!(app_server_target, AppServerTarget::Embedded))
+                .then_some(ConnectedModeFooterState::Connected)
+        });
 
         let agents_overview =
             agents_overview::AgentsOverviewState::new(local_settings.tui.agents_overview_grouping);
@@ -1026,6 +1031,7 @@ See the Codex keymap documentation for supported actions and examples."
                 ..Default::default()
             },
             daemon_cli_executable,
+            app_server_footer_state,
             pending_update_action: None,
             daemon_restart: None,
             pending_shutdown_exit_thread_id: None,
@@ -1114,8 +1120,17 @@ See the Codex keymap documentation for supported actions and examples."
         if let Some(entry) = startup_hooks_browser {
             app.chat_widget.open_hooks_browser(entry);
         }
-        if !matches!(app.app_server_target, AppServerTarget::Embedded) {
-            app.chat_widget.show_connected_mode_footer();
+        match app.app_server_footer_state {
+            Some(ConnectedModeFooterState::Connected) => {
+                app.chat_widget.show_connected_mode_footer();
+            }
+            Some(ConnectedModeFooterState::Disconnected) => {
+                app.chat_widget.show_disconnected_mode_footer();
+            }
+            Some(ConnectedModeFooterState::LocalFallback) => {
+                app.chat_widget.show_local_fallback_mode_footer();
+            }
+            None => {}
         }
         app.update_visible_history_rows(tui.terminal.last_known_screen_size);
         let initial_session_started_at = Instant::now();

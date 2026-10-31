@@ -83,6 +83,7 @@ pub(crate) async fn make_test_app() -> Box<App> {
         },
         reconnect: Default::default(),
         daemon_cli_executable: None,
+        app_server_footer_state: None,
         pending_update_action: None,
         daemon_restart: None,
         pending_shutdown_exit_thread_id: None,

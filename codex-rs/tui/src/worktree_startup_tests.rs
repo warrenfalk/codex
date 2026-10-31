@@ -28,6 +28,7 @@ async fn explicit_remote_worktree_rejection_is_snapshotted() -> anyhow::Result<(
         cli,
         Arg0DispatchPaths::default(),
         LoaderOverrides::default(),
+        /*local_endpoint*/ None,
         Some(endpoint),
     )
     .await
