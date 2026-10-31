@@ -302,7 +302,8 @@ impl ChatWidget {
                     &turn_id,
                 );
             }
-            ThreadItemPayload::NoteToSelf { note, .. } => {
+            ThreadItemPayload::NoteToSelf { id, note } => {
+                self.record_note(id, note.clone());
                 self.add_to_history(history_cell::new_note_to_self(note));
             }
             ThreadItemPayload::AgentMessage {
