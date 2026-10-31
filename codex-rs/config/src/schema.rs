@@ -26,6 +26,14 @@ pub(crate) enum ConfigAskForApproval {
     /// The model decides when to ask the user for approval.
     OnRequest,
 
+    /// Like `on-request`, but dangerous unmatched command-shape heuristics do
+    /// not prompt while a managed restricted sandbox is active.
+    TrustSandbox,
+
+    /// Like `trust-sandbox`, but sandbox-override command prompts may be
+    /// auto-approved after a timeout.
+    TrustSandboxTimeout,
+
     /// Fine-grained controls for individual approval flows.
     ///
     /// When a field is `true`, commands in that category are allowed. When it

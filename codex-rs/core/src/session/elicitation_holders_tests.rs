@@ -105,6 +105,7 @@ async fn command_approval_holds_an_elicitation_until_response(capture: bool, pro
                     /*additional_permissions*/ None,
                     /*available_decisions*/ None,
                     /*plugin_attribution_override*/ Some(plugin_attribution),
+                    /*auto_approve_after*/ None,
                 )
                 .await
         }

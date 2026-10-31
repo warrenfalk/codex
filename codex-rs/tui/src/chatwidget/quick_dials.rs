@@ -388,6 +388,8 @@ impl ChatWidget {
                 let approval_policy = match approval_policy {
                     AskForApproval::UnlessTrusted => "untrusted".to_string(),
                     AskForApproval::OnRequest => "on-request".to_string(),
+                    AskForApproval::TrustSandbox => "trust-sandbox".to_string(),
+                    AskForApproval::TrustSandboxTimeout => "trust-sandbox-timeout".to_string(),
                     AskForApproval::Never => "never".to_string(),
                     granular @ AskForApproval::Granular { .. } => serde_json::to_string(&granular)
                         .map_err(|_| "The approval policy cannot be recalled.")?,

@@ -135,6 +135,28 @@ async fn current_settings_offer_model_permissions_and_status_layouts() {
             "/permissions 'team review' --approval-policy='{policy}' --reviewer=user"
         )
     );
+
+    for (policy, name) in [
+        (AskForApproval::TrustSandbox, "trust-sandbox"),
+        (AskForApproval::TrustSandboxTimeout, "trust-sandbox-timeout"),
+    ] {
+        chat.config
+            .permissions
+            .approval_policy
+            .set(policy.to_core())
+            .expect("set sandbox-trusting approval policy");
+        chat.open_quick_dial_prefills();
+        chat.handle_key_event(KeyCode::Enter.into());
+        assert_matches!(
+            events.try_recv(),
+            Ok(AppEvent::OpenQuickDialEditor {
+                target: QuickDialEditorTarget::PickSlot,
+                dial: Some(QuickDial { input, label: None }),
+            }) if input == format!(
+                "/permissions 'team review' --approval-policy={name} --reviewer=user"
+            )
+        );
+    }
 }
 
 #[tokio::test]

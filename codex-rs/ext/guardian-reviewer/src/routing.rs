@@ -59,7 +59,10 @@ pub fn routes_approval_policy_to_guardian(
 ) -> bool {
     matches!(
         policy,
-        AskForApproval::OnRequest | AskForApproval::Granular(_)
+        AskForApproval::OnRequest
+            | AskForApproval::TrustSandbox
+            | AskForApproval::TrustSandboxTimeout
+            | AskForApproval::Granular(_)
     ) && reviewer == ApprovalsReviewer::AutoReview
 }
 
