@@ -20,6 +20,7 @@
 //! buffers the entire fence body before deciding, only unwraps fences whose
 //! info string is `md` or `markdown` AND whose body contains a
 //! header+delimiter pair, and degrades gracefully on unclosed fences.
+use codex_config::types::UriBasedFileOpener;
 use pulldown_cmark::CodeBlockKind;
 use pulldown_cmark::Event;
 use pulldown_cmark::Tag;
@@ -41,10 +42,11 @@ use crate::terminal_hyperlinks::HyperlinkLine;
 pub(crate) fn render_markdown_for_viewport(input: &str, width: u16) -> Vec<HyperlinkLine> {
     let width = usize::from(width.max(1));
     let lines =
-        crate::markdown_render::render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+        crate::markdown_render::render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
             input,
             Some(width),
             /*cwd*/ None,
+            UriBasedFileOpener::None,
             &crate::markdown_render::hide_web_link_destination,
         );
     let mut rows = Vec::with_capacity(lines.len());
@@ -105,11 +107,13 @@ pub(crate) fn render_markdown_agent_with_links_and_cwd(
     markdown_source: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
 ) -> Vec<HyperlinkLine> {
     render_markdown_agent_with_list_spacing(
         markdown_source,
         width,
         cwd,
+        file_opener,
         /*inline_visualization_context*/ None,
         ListSpacing::AfterMultiline,
     )
@@ -119,6 +123,7 @@ pub(crate) fn render_markdown_agent_with_list_spacing(
     markdown_source: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
     inline_visualization_context: Option<&InlineVisualizationContext>,
     list_spacing: ListSpacing,
 ) -> Vec<HyperlinkLine> {
@@ -137,6 +142,7 @@ pub(crate) fn render_markdown_agent_with_list_spacing(
         &normalized,
         width,
         cwd,
+        file_opener,
         &is_hidden_link_destination,
         list_spacing,
         code_sources,
@@ -159,16 +165,19 @@ pub(crate) fn render_streaming_markdown_agent_with_links_and_cwd(
     markdown_source: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
     list_spacing: ListSpacing,
 ) -> crate::markdown_render::StreamingMarkdownRender {
     let normalized = normalize_markdown_for_rendering(markdown_source);
-    let mut rendered = crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd(
-        &normalized,
-        width,
-        cwd,
-        &crate::markdown_render::hide_web_link_destination,
-        list_spacing,
-    );
+    let mut rendered =
+        crate::markdown_render::render_streaming_markdown_lines_with_width_cwd_and_file_opener(
+            &normalized,
+            width,
+            cwd,
+            file_opener,
+            &crate::markdown_render::hide_web_link_destination,
+            list_spacing,
+        );
     if normalized != markdown_source {
         // Fence unwrapping removes opening/closing lines. A normalized tail that is still a raw
         // suffix necessarily begins after those removed lines, so its boundary can safely be

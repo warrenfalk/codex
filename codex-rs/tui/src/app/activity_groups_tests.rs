@@ -66,6 +66,7 @@ fn project(
         items.iter().map(|entry| entry.borrow().clone()),
         RawReasoningVisibility::Hidden,
         Some(&app.config),
+        app.config.file_opener,
     )
 }
 

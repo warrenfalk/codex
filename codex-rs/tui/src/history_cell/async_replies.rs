@@ -4,7 +4,7 @@ use super::messages::sanitize_user_text;
 use crate::async_question_reply::AsyncQuestionReply;
 use crate::line_truncation::truncate_line_to_width;
 use crate::markdown_render::hide_web_link_destination;
-use crate::markdown_render::render_markdown_lines_with_width_cwd_and_hidden_link_destinations;
+use crate::markdown_render::render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations;
 use crate::style::accent_color_on;
 use crate::style::history_prompt_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
@@ -14,6 +14,7 @@ use crate::terminal_hyperlinks::remap_source_wrapped_line;
 use crate::terminal_hyperlinks::retain_initial_prefix;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line_to_width;
+use codex_config::types::UriBasedFileOpener;
 use ratatui::style::Stylize;
 use std::path::Path;
 
@@ -25,10 +26,11 @@ pub(super) fn render(
     let surface = history_prompt_style();
     let accent = accent_color_on(surface.bg);
     let markdown = |text: &str, width| {
-        render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+        render_markdown_lines_with_width_cwd_file_opener_and_hidden_link_destinations(
             text,
             width,
             Some(cwd),
+            UriBasedFileOpener::None,
             &hide_web_link_destination,
         )
     };

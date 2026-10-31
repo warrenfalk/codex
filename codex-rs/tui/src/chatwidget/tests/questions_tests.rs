@@ -1028,6 +1028,7 @@ async fn desktop_async_answer_dismisses_only_its_question_and_preserves_the_othe
             [item],
             crate::thread_transcript::RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         );
         crate::terminal_palette::with_test_default_colors(
             crate::terminal_probe::DefaultColors {
@@ -1095,6 +1096,7 @@ async fn async_question_markdown_matches_loaded_history() {
                 [item],
                 crate::thread_transcript::RawReasoningVisibility::Hidden,
                 /*config*/ None,
+                codex_config::types::UriBasedFileOpener::None,
             );
             assert_eq!(cells, [paged[0].transcript_lines(/*width*/ 80)]);
             insta::assert_debug_snapshot!("async_question_transcript", cells[0]);

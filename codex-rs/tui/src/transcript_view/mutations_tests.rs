@@ -395,6 +395,7 @@ fn folding_a_reasoning_only_page_retains_its_find_and_copy_revision() {
             items.iter().map(|entry| entry.payload.clone()),
             RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         )
     };
     for selecting in [false, true] {

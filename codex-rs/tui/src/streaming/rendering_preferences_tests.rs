@@ -17,6 +17,7 @@ fn empty_list_item_stays_mutable_until_finalization() {
             Some(24),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         stream.push_delta(marker);
@@ -31,6 +32,7 @@ fn empty_list_item_stays_mutable_until_finalization() {
                 Some(24),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             ),
             "marker={marker:?}"
@@ -45,6 +47,7 @@ fn resizing_does_not_drop_held_list_marker() {
         Some(10),
         &cwd,
         HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
         /*inline_visualization_context*/ None,
     );
     stream.push_delta("Long prose with enough words to wrap.\n\n");
@@ -76,6 +79,7 @@ fn lists_match_incremental_and_emitted_responses() {
             Some(24),
             &cwd,
             HistoryRenderMode::Rich,
+            codex_config::types::UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         let render = |source: &str| {
@@ -84,6 +88,7 @@ fn lists_match_incremental_and_emitted_responses() {
                 Some(24),
                 &cwd,
                 HistoryRenderMode::Rich,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             )
         };
@@ -147,6 +152,7 @@ fn rendering_preferences_match_incremental_final_and_emitted_responses() {
                     Some(80),
                     &cwd,
                     HistoryRenderMode::Rich,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                 );
                 let render = |source: &str| {
@@ -155,6 +161,7 @@ fn rendering_preferences_match_incremental_final_and_emitted_responses() {
                         Some(80),
                         &cwd,
                         HistoryRenderMode::Rich,
+                        codex_config::types::UriBasedFileOpener::None,
                         /*inline_visualization_context*/ None,
                     )
                 };

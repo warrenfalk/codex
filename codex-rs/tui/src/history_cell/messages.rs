@@ -11,6 +11,7 @@ use crate::terminal_hyperlinks::lines_with_sources_eq;
 use crate::terminal_hyperlinks::remap_source_wrapped_line;
 use crate::wrapping::url_preserving_wrap_options;
 use crate::wrapping::word_wrap_line_with_source;
+use codex_config::types::UriBasedFileOpener;
 use std::borrow::Cow;
 
 #[derive(Debug)]
@@ -576,6 +577,7 @@ pub(crate) struct AgentMarkdownCell {
     rendered_lines: Option<MarkdownRenderCache>,
     spoken_artifacts: bool,
     question_titles: Vec<std::ops::Range<usize>>,
+    file_opener: UriBasedFileOpener,
 }
 
 impl AgentMarkdownCell {
@@ -591,16 +593,34 @@ impl AgentMarkdownCell {
     /// stale wrapping instead of repairing it.
     #[cfg(test)]
     pub(crate) fn new(markdown_source: String, cwd: &Path) -> Self {
-        Self::new_with_inline_visualizations(
+        Self::new_with_file_opener_and_inline_visualizations(
             markdown_source,
             cwd,
+            UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_inline_visualizations(
         markdown_source: String,
         cwd: &Path,
+        inline_visualization_context: Option<
+            crate::inline_visualization::InlineVisualizationContext,
+        >,
+    ) -> Self {
+        Self::new_with_file_opener_and_inline_visualizations(
+            markdown_source,
+            cwd,
+            UriBasedFileOpener::None,
+            inline_visualization_context,
+        )
+    }
+
+    pub(crate) fn new_with_file_opener_and_inline_visualizations(
+        markdown_source: String,
+        cwd: &Path,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<
             crate::inline_visualization::InlineVisualizationContext,
         >,
@@ -616,6 +636,7 @@ impl AgentMarkdownCell {
             rendered_lines,
             spoken_artifacts: false,
             question_titles: Vec::new(),
+            file_opener,
         }
     }
 
@@ -629,9 +650,10 @@ impl AgentMarkdownCell {
     }
 
     pub(crate) fn new_spoken(markdown_source: String, cwd: &Path) -> Self {
-        let mut cell = Self::new_with_inline_visualizations(
+        let mut cell = Self::new_with_file_opener_and_inline_visualizations(
             markdown_source,
             cwd,
+            UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         );
         cell.spoken_artifacts = true;
@@ -682,6 +704,7 @@ impl AgentMarkdownCell {
                     source,
                     Some(wrap_width),
                     Some(self.cwd.as_path()),
+                    self.file_opener,
                     self.inline_visualization_context.as_ref(),
                     list_spacing,
                 )

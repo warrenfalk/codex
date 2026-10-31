@@ -13,6 +13,7 @@ use super::Parser;
 use super::Tag;
 use super::Writer;
 use super::math::MathMarkdown;
+use codex_config::types::UriBasedFileOpener;
 use std::ops::Range;
 use std::path::Path;
 
@@ -43,10 +44,29 @@ pub(crate) fn render_streaming_markdown_lines_with_width_and_cwd(
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
     list_spacing: ListSpacing,
 ) -> StreamingMarkdownRender {
+    render_streaming_markdown_lines_with_width_cwd_and_file_opener(
+        input,
+        width,
+        cwd,
+        UriBasedFileOpener::None,
+        is_hidden_link_destination,
+        list_spacing,
+    )
+}
+
+pub(crate) fn render_streaming_markdown_lines_with_width_cwd_and_file_opener(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
+    is_hidden_link_destination: &dyn Fn(&str) -> bool,
+    list_spacing: ListSpacing,
+) -> StreamingMarkdownRender {
     render_with_copy_sources(
         input,
         width,
         cwd,
+        file_opener,
         is_hidden_link_destination,
         list_spacing,
         Vec::new(),
@@ -57,6 +77,7 @@ pub(crate) fn render_with_copy_sources(
     input: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    file_opener: UriBasedFileOpener,
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
     list_spacing: ListSpacing,
     code_sources: Vec<crate::markdown_copy::SourceBlock>,
@@ -83,7 +104,7 @@ pub(crate) fn render_with_copy_sources(
         first_is_html: false,
         mutable_fence_start: None,
     };
-    let mut writer = Writer::new(input, width, cwd, is_hidden_link_destination);
+    let mut writer = Writer::new(input, width, cwd, file_opener, is_hidden_link_destination);
     // Drop the consumed parser before the rendering state, including on unwind.
     let mut parser = parser;
     writer.list_spacing = list_spacing;

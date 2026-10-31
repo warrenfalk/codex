@@ -118,6 +118,7 @@ async fn older_tool_projection_matches_initial_replay() {
         items.clone(),
         RawReasoningVisibility::Hidden,
         Some(&chat.config),
+        chat.config.file_opener,
     );
     chat.replay_thread_turns(
         vec![AppServerTurn {
@@ -200,6 +201,7 @@ async fn snapshot_formatter_reasoning_matches_compact_and_detailed_replay() {
             [item.clone()],
             visibility,
             Some(&chat.config),
+            chat.config.file_opener,
         );
         chat.replay_thread_item(item.clone(), "turn".to_string(), ReplayKind::ThreadSnapshot);
         let replayed = take_history_cells(&mut rx);
@@ -258,6 +260,7 @@ fn raw_reasoning_keeps_its_own_heading() {
         }],
         RawReasoningVisibility::Visible,
         /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     );
     insta::assert_snapshot!(lines_to_single_string(&projected[0].transcript_lines(/*width*/ 80)), @"
     • Raw investigation
@@ -280,6 +283,7 @@ async fn snapshot_formatter_completed_patch_needs_no_started_notification() {
             [item.clone()],
             RawReasoningVisibility::Hidden,
             Some(&chat.config),
+            chat.config.file_opener,
         );
         chat.replay_thread_item(item, "turn".to_string(), replay_kind);
         let replayed = take_history_cells(&mut rx);

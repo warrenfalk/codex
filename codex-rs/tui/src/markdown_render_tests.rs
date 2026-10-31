@@ -790,6 +790,7 @@ fn inline_code_and_file_paths_follow_syntax_theme() {
                 markdown,
                 /*wrap_width*/ Some(24),
                 /*cwd*/ None,
+                codex_config::types::UriBasedFileOpener::None,
                 &|_| false,
             );
             writer.styles = styles;

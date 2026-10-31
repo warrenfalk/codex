@@ -42,6 +42,7 @@ fn project(items: &[impl std::borrow::Borrow<ThreadItemPayload>]) -> TranscriptC
         items.iter().map(|entry| entry.borrow().clone()),
         RawReasoningVisibility::Hidden,
         /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
     )
 }
 
