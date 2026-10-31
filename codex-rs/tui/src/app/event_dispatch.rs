@@ -27,7 +27,19 @@ use codex_app_server_protocol::WindowsSandboxSetupMode;
 pub(super) const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
-    pub(crate) async fn handle_event(
+    // Construct and box the large dispatcher future outside the event loop's poll frame.
+    // Boxing at the await site still reserves stack space for the unboxed temporary.
+    #[inline(never)]
+    pub(crate) fn handle_event<'a>(
+        &'a mut self,
+        tui: &'a mut tui::Tui,
+        app_server: &'a mut AppServerSession,
+        event: AppEvent,
+    ) -> std::pin::Pin<Box<impl std::future::Future<Output = Result<AppRunControl>> + 'a>> {
+        Box::pin(self.handle_event_inner(tui, app_server, event))
+    }
+
+    async fn handle_event_inner(
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
@@ -207,14 +219,7 @@ impl App {
             AppEvent::PluginMentionsLoaded { ref cwd, .. }
                 if cwds_differ(cwd, self.config.cwd.as_path()) => {}
             AppEvent::NewSession { name } => {
-                self.start_fresh_session(
-                    tui, app_server, /*session_start_source*/ None,
-                    /*initial_user_message*/ None, name,
-                )
-                .await;
-                if self.chat_widget.has_misalignment_policy_violation() {
-                    self.chat_widget.show_misalignment_policy_precaution();
-                }
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::NewSession { name });
             }
             AppEvent::StartManagedWorktree { mode, name } => {
                 if self.pending_start_managed_worktree.is_some() {
@@ -459,14 +464,10 @@ impl App {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();
 
-                self.start_fresh_session(
-                    tui,
-                    app_server,
-                    Some(ThreadStartSource::Clear),
-                    /*initial_user_message*/ None,
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::ClearSession {
+                    user_message: None,
                     name,
-                )
-                .await;
+                });
             }
             AppEvent::RawOutputModeChanged { enabled } => {
                 self.apply_raw_output_mode(tui, enabled, /*notify*/ false);
@@ -479,18 +480,14 @@ impl App {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();
 
-                self.start_fresh_session(
-                    tui,
-                    app_server,
-                    Some(ThreadStartSource::Clear),
-                    crate::chatwidget::create_initial_user_message(
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::ClearSession {
+                    user_message: crate::chatwidget::create_initial_user_message(
                         Some(text),
                         Vec::new(),
                         Vec::new(),
                     ),
-                    /*new_thread_name*/ None,
-                )
-                .await;
+                    name: None,
+                });
             }
             AppEvent::OpenResumePicker => {
                 self.pending_open_resume_picker = true;
@@ -2914,7 +2911,7 @@ impl App {
             AppEvent::OpenAgentsOverview => self.open_agents_overview(app_server),
             AppEvent::ShowMoreAgentsOverview => self.show_more_agents_overview(app_server),
             AppEvent::NewAgentsOverviewSession { cwd } => {
-                return Box::pin(self.new_agents_overview_session(tui, app_server, cwd)).await;
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::NewAgentsOverviewSession { cwd });
             }
             AppEvent::AgentsOverviewThreadsLoaded { request_id, result } => {
                 self.apply_agents_overview_thread_refresh(app_server, request_id, result);
@@ -3132,9 +3129,13 @@ impl App {
                 parent_thread_id,
                 user_message,
             } => {
-                return self
-                    .handle_start_side(tui, app_server, parent_thread_id, user_message)
-                    .await;
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::StartSide {
+                    parent_thread_id,
+                    user_message,
+                });
+            }
+            AppEvent::SideConversationCloseSelected(choice) => {
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::CloseSide(choice));
             }
             AppEvent::OpenSkillsList => {
                 self.chat_widget.open_skills_list();

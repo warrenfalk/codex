@@ -1054,6 +1054,8 @@ See the Codex keymap documentation for supported actions and examples."
             agents_overview,
             side_threads: HashMap::new(),
             abandoned_side_threads: HashSet::new(),
+            pending_side_summary: None,
+            pending_session_transition: None,
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,
@@ -1327,6 +1329,23 @@ See the Codex keymap documentation for supported actions and examples."
                     )
                     .await
                     {
+                        Ok(AppRunControl::Continue) => {}
+                        Ok(AppRunControl::Exit(reason)) => break Ok(reason),
+                        Err(err) if app.recover_transport_error(&err) => {}
+                        Err(err) => break Err(err),
+                    }
+                    continue;
+                }
+                // Session starts and side transitions share this stack boundary so folder
+                // consent and widget reconstruction run after the dispatcher frame returns.
+                if let Some(transition) = app.pending_session_transition.take() {
+                    let control = Box::pin(transition.run(
+                        &mut app,
+                        tui,
+                        backends.session_at_mut(displayed_session),
+                    ))
+                    .await;
+                    match control {
                         Ok(AppRunControl::Continue) => {}
                         Ok(AppRunControl::Exit(reason)) => break Ok(reason),
                         Err(err) if app.recover_transport_error(&err) => {}
