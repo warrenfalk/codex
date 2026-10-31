@@ -37,7 +37,7 @@ async fn agents_navigation_requires_shared_app_server() -> Result<()> {
         assert_eq!(composer.contains("← for agents"), enabled);
         if matches!(app.app_server_target, AppServerTarget::Remote { .. }) {
             let footer = composer.lines().last().expect("composer footer").trim();
-            insta::assert_snapshot!(normalize_snapshot_paths(footer), @"GPT-5.6-Sol default · /tmp/project · ← for agents");
+            insta::assert_snapshot!(normalize_snapshot_paths(footer), @"GPT-5.6-Sol default · /tmp/project · [R] · ← for agents");
         }
         app.handle_tui_event(
             &mut tui,
