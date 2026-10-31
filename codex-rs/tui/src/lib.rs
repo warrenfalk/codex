@@ -4,6 +4,9 @@
 #![recursion_limit = "256"]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+pub use crate::latest_session::LastSessionScope;
+use crate::latest_session::LatestSessionLookupMode;
+use crate::latest_session::latest_session_lookup_params;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
@@ -44,9 +47,6 @@ use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::GetAccountResponse;
 use codex_app_server_protocol::Thread as AppServerThread;
-use codex_app_server_protocol::ThreadListCwdFilter;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSortKey as AppServerThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
 use codex_cloud_config::managed_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
@@ -178,6 +178,7 @@ mod footer_hint;
 mod key_hint;
 mod keymap;
 mod keymap_setup;
+mod latest_session;
 mod line_truncation;
 pub(crate) mod live_wrap;
 mod local_settings;
@@ -887,6 +888,7 @@ async fn lookup_latest_session_target_with_app_server(
     app_server: &mut AppServerSession,
     config: &Config,
     cwd_filter: Option<&Path>,
+    scope: LastSessionScope,
     include_non_interactive: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
     let uses_remote_workspace = app_server.uses_remote_workspace();
@@ -897,7 +899,9 @@ async fn lookup_latest_session_target_with_app_server(
     ] {
         let response = app_server
             .thread_list(latest_session_lookup_params(
+                uses_remote_workspace,
                 model_provider.clone(),
+                scope,
                 cwd_filter,
                 include_non_interactive,
                 lookup_mode,
@@ -921,42 +925,6 @@ async fn lookup_latest_session_target_with_app_server(
         }
     }
     Ok(None)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LatestSessionLookupMode {
-    StateDbOnly,
-    ScanAndRepair,
-}
-
-fn latest_session_lookup_params(
-    model_provider: Option<String>,
-    cwd_filter: Option<&Path>,
-    include_non_interactive: bool,
-    lookup_mode: LatestSessionLookupMode,
-) -> ThreadListParams {
-    ThreadListParams {
-        excluded_thread_ids: None,
-        attached_to_thread_id: None,
-        originators: None,
-        cursor: None,
-        limit: Some(1),
-        sort_key: Some(AppServerThreadSortKey::UpdatedAt),
-        sort_direction: None,
-        model_providers: model_provider.map(|provider| vec![provider]),
-        source_kinds: Some(resume_source_kinds(include_non_interactive)),
-        archived: Some(false),
-        section_id: None,
-        project_id: None,
-        parent_thread_id: None,
-        ancestor_thread_id: None,
-        cwd: cwd_filter.map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
-        use_state_db_only: match lookup_mode {
-            LatestSessionLookupMode::StateDbOnly => true,
-            LatestSessionLookupMode::ScanAndRepair => false,
-        },
-        search_term: None,
-    }
 }
 
 fn config_cwd_for_app_server_target(
@@ -1588,6 +1556,7 @@ async fn run_ratatui_app(
                         startup_app_server,
                         &config,
                         filter_cwd,
+                        LastSessionScope::Cwd,
                         /*include_non_interactive*/ false,
                     ),
                 )
@@ -1669,7 +1638,7 @@ async fn run_ratatui_app(
                 );
             }
         }
-    } else if cli.resume_last {
+    } else if let Some(scope) = cli.resume_last {
         let filter_cwd = latest_session_cwd_filter(
             uses_remote_workspace,
             remote_cwd_override.as_deref(),
@@ -1686,6 +1655,7 @@ async fn run_ratatui_app(
                     startup_app_server,
                     &config,
                     filter_cwd,
+                    scope,
                     cli.resume_include_non_interactive,
                 ),
             )
