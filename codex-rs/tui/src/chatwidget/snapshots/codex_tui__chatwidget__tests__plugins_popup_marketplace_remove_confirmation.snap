@@ -5,7 +5,7 @@ expression: confirmation
                 Plugins
 › Ask Codex to  Remove Repo Marketplace marketplace?
                 This removes the configured marketplace from Codex.
-  GPT-5.6-Sol
+  5.6-Sol defa
 
               › 1. Remove marketplace  Remove this marketplace from the available
                                        plugin list

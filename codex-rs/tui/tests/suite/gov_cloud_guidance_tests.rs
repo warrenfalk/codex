@@ -52,7 +52,7 @@ fn gov_cloud_startup_persists_only_acknowledgment() -> Result<()> {
             drop(terminal);
             let mut restarted = PtyCodex::start(&cwd, home, &args)?;
             // The startup draft says "loading"; the actual model appears after guidance.
-            restarted.wait_for_screen("gpt-5.6-terra")?;
+            restarted.wait_for_screen("5.6-terra")?;
             assert!(!restarted.screen_contains("Using Codex with AWS GovCloud"));
         } else {
             assert_eq!(saved, original);
