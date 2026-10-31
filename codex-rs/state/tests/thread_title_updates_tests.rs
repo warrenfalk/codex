@@ -55,5 +55,28 @@ async fn stale_rollout_upsert_preserves_manual_title() -> anyhow::Result<()> {
     let actual = runtime.get_thread(thread_id).await?.expect("thread exists");
     corrected.updated_at = actual.updated_at;
     assert_eq!(actual, corrected);
+
+    // A stale read can contain an older explicit title, not just a derived fallback.
+    // Reconciliation must preserve a later rename or clear while applying other fields.
+    for current_title in ["New manual name", ""] {
+        runtime
+            .update_thread_title(thread_id, "Older automatic title")
+            .await?;
+        let mut stale = runtime.get_thread(thread_id).await?.expect("thread exists");
+        stale.cli_version = "reconciled-version".to_string();
+        runtime
+            .update_thread_title(thread_id, current_title)
+            .await?;
+        let mut expected = runtime.get_thread(thread_id).await?.expect("thread exists");
+        expected.cli_version = stale.cli_version.clone();
+
+        runtime
+            .upsert_thread_with_observed_title(&stale, &stale.title)
+            .await?;
+
+        let actual = runtime.get_thread(thread_id).await?.expect("thread exists");
+        expected.updated_at = actual.updated_at;
+        assert_eq!(actual, expected);
+    }
     Ok(())
 }
