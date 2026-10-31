@@ -142,6 +142,7 @@ define_keymap_actions! {
     }
     composer "Composer" {
         submit => "Submit the current composer draft.",
+        rewrite_prompt => "Rewrite the draft for clarity and concision.",
         queue => "Queue the draft while a task is running.",
         toggle_shortcuts => "Show or hide the composer shortcut overlay.",
         history_search_previous => "Open history search or move to the previous match.",

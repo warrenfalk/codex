@@ -80,6 +80,8 @@ mod history_hydration_tests;
 #[path = "tests/permission_shortcuts_tests.rs"]
 mod permission_shortcuts_tests;
 mod plugin_catalog;
+#[path = "tests/prompt_rewrite_request_tests.rs"]
+mod prompt_rewrite_requests;
 mod rate_limits;
 #[path = "tests/realtime_handoff_e2e.rs"]
 mod realtime_handoff_e2e;
@@ -6734,6 +6736,8 @@ async fn make_test_app() -> Box<App> {
         abandoned_side_threads: HashSet::new(),
         pending_side_summary: None,
         pending_session_transition: None,
+        pending_prompt_rewrite: None,
+        prompt_rewrite_thread_tombstones: HashSet::new(),
         active_thread_id: None,
         active_thread_rx: None,
         primary_thread_id: None,
@@ -6864,6 +6868,8 @@ pub(super) async fn make_test_app_with_channels() -> (
             abandoned_side_threads: HashSet::new(),
             pending_side_summary: None,
             pending_session_transition: None,
+            pending_prompt_rewrite: None,
+            prompt_rewrite_thread_tombstones: HashSet::new(),
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,

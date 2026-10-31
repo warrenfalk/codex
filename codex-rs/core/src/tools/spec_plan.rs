@@ -129,6 +129,17 @@ pub(crate) fn build_tool_router(
     tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> CodexResult<ToolRouter> {
+    if turn_context.model_only {
+        return Ok(ToolRouter::from_parts(
+            ToolRegistry::default(),
+            Vec::new(),
+            ToolMode::Direct,
+            BTreeMap::new(),
+            /*tool_namespaces_info*/ None,
+            &[],
+        ));
+    }
+
     let default_agent_type_description =
         crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
     let wait_for_environment_tool_config = session
