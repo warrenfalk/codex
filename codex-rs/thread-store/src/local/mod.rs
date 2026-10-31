@@ -32,6 +32,9 @@ mod compression_writer_tests;
 #[path = "daybreak_metadata_tests.rs"]
 mod daybreak_metadata_tests;
 #[cfg(test)]
+#[path = "metadata_title_tests.rs"]
+mod metadata_title_tests;
+#[cfg(test)]
 #[path = "pending_thread_metadata_tests.rs"]
 mod pending_thread_metadata_tests;
 #[cfg(test)]
