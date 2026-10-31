@@ -1,0 +1,7 @@
+---
+source: tui/src/app/tests/active_reconnect_tests.rs
+expression: notice
+---
+• Connected to a new app-server session because the previous session was not yet saved. Unconfirmed input was not resent; review the retained draft before submitting.
+⚠ A background Codex service is running v2.0.0, different from your Codex CLI
+  v0.0.0.

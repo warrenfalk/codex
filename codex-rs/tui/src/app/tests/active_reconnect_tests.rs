@@ -635,6 +635,133 @@ async fn reconnect_reconciles_offscreen_pending_profile_before_restoring_permiss
 }
 
 #[tokio::test]
+async fn reconnect_starts_fresh_when_the_thread_was_not_materialized() -> Result<()> {
+    let (mut app, mut events, _) = make_test_app_with_channels().await;
+    let replaced_id = ThreadId::new();
+    let replacement_id = ThreadId::new();
+    let cwd = app.config.cwd.clone();
+    app.config.model = Some("gpt-test".into());
+    app.active_thread_id = Some(replaced_id);
+    app.primary_thread_id = Some(replaced_id);
+    let session_state = test_thread_session(replaced_id, cwd.to_path_buf());
+    app.primary_session_configured = Some(session_state.clone());
+    app.ensure_thread_channel(replaced_id)
+        .store
+        .lock()
+        .await
+        .set_session(session_state.clone(), Vec::new());
+    app.chat_widget.handle_thread_session(session_state);
+    app.chat_widget
+        .restore_user_message_to_composer("retained draft".into());
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
+    app.app_server_target = AppServerTarget::Remote {
+        endpoint: endpoint.clone(),
+    };
+    let replacement_thread = json!({
+        "id": replacement_id,
+        "sessionId": replacement_id,
+        "preview": "",
+        "ephemeral": false,
+        "modelProvider": "test-provider",
+        "createdAt": 1,
+        "updatedAt": 2,
+        "status": {"type": "idle"},
+        "cwd": cwd,
+        "cliVersion": "0.0.0",
+        "source": "cli",
+        "turns": [],
+    });
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        serve_reconnect_requests(
+            tokio_tungstenite::accept_async(stream).await?,
+            move |request| {
+                std::future::ready(match request.method.as_str() {
+                    "thread/resume" => Some(json!({"error": {
+                        "code": -32600,
+                        "message": format!("no rollout found for thread id {replaced_id}"),
+                    }})),
+                    "thread/start" => Some(json!({"result": {
+                        "thread": replacement_thread,
+                        "model": "gpt-test",
+                        "modelProvider": "test-provider",
+                        "serviceTier": null,
+                        "cwd": cwd,
+                        "approvalPolicy": "never",
+                        "approvalsReviewer": "user",
+                        "sandbox": {"type": "dangerFullAccess"},
+                        "reasoningEffort": null,
+                    }})),
+                    "command/exec" => {
+                        Some(json!({"result": {"exitCode": 0, "stdout": "", "stderr": ""}}))
+                    }
+                    method => panic!("unexpected reconnect request: {method}"),
+                })
+            },
+        )
+        .await
+    });
+
+    let mut session = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    assert!(app.begin_reconnect());
+    let connected = reconnect(
+        session.backend_id(),
+        app.app_server_target.clone(),
+        app.config.clone(),
+        app.local_settings.clone(),
+        Some(replaced_id),
+        /*remote_cwd*/ None,
+        crate::dynamic_tools_mcp::ThreadToolTransport::Dynamic,
+        ReconnectPresentation::Conversation,
+    )
+    .await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    app.finish_reconnect(
+        &mut tui,
+        &mut session,
+        &mut events,
+        connected,
+        CODEX_CLI_VERSION,
+    )
+    .await?;
+
+    assert_eq!(
+        (
+            app.primary_thread_id,
+            app.current_displayed_thread_id(),
+            app.chat_widget.thread_id(),
+        ),
+        (
+            Some(replacement_id),
+            Some(replacement_id),
+            Some(replacement_id),
+        )
+    );
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "retained draft"
+    );
+    let history = drain_history(&mut app, &mut tui, &mut session, &mut events).await?;
+    let notice = &history[history
+        .find("• Connected to a new app-server session")
+        .expect("unsaved thread recovery notice should be rendered")..];
+    assert_snapshot!("reconnect_unsaved_thread_recovery", notice);
+
+    session.shutdown().await?;
+    let methods = server.await??;
+    assert_eq!(
+        methods
+            .into_iter()
+            .filter(|method| matches!(method.as_str(), "thread/resume" | "thread/start"))
+            .collect::<Vec<_>>(),
+        vec!["thread/resume", "thread/start"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn reconnect_exhaustion_and_unknown_initial_thread_stay_offline() -> Result<()> {
     let (mut app, _, _) = make_test_app_with_channels().await;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
