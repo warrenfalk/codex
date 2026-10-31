@@ -313,6 +313,7 @@ pub(crate) use interaction::KeyEventAction;
 mod skills;
 mod slash_command_args;
 mod slash_dispatch;
+mod thread_archive;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;

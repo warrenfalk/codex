@@ -238,37 +238,7 @@ impl ChatWidget {
                 self.show_session_checkout_picker(ManagedWorktreeMode::New, /*name*/ None);
             }
             SlashCommand::Archive => {
-                self.bottom_pane.show_selection_view(SelectionViewParams {
-                    title: Some("Archive this session?".to_string()),
-                    subtitle: Some(
-                        if self.bottom_pane.is_task_running() {
-                            "This will stop the current turn and archive the session."
-                        } else {
-                            "Are you sure? This will archive the current session"
-                        }
-                        .to_string(),
-                    ),
-                    footer_hint: Some(standard_popup_hint_line()),
-                    items: vec![
-                        SelectionItem {
-                            name: "No, don't archive".to_string(),
-                            description: Some("Return to the current session".to_string()),
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                        SelectionItem {
-                            name: "Yes, archive".to_string(),
-                            description: Some("Archive this session now".to_string()),
-                            actions: vec![Box::new(|tx| {
-                                tx.send(AppEvent::ArchiveCurrentThread);
-                            })],
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                    ],
-                    ..SelectionViewParams::confirmation()
-                });
-                self.request_redraw();
+                self.dispatch_archive("");
             }
             SlashCommand::Delete => {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -696,6 +666,11 @@ impl ChatWidget {
         let trimmed = args.trim();
         if trimmed.is_empty() {
             self.dispatch_command(cmd);
+            return;
+        }
+
+        if cmd == SlashCommand::Archive {
+            self.dispatch_archive(trimmed);
             return;
         }
 
