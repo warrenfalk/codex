@@ -456,6 +456,14 @@ impl ChatWidget {
             }
         }
         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
+        if !from_replay
+            && self.speech.mode() != codex_config::types::TtsMode::Off
+            && (self.speech.mode() == codex_config::types::TtsMode::ProgressAndFinal
+                || item.phase != Some(MessagePhase::Commentary)
+                || item.questions.is_some())
+        {
+            self.speak_text(turn_id, &item.id, &parsed.visible_markdown);
+        }
         let questions = item.questions.as_deref().unwrap_or_default();
         if (from_replay || !questions.is_empty())
             && self.stream_controller.is_none()
