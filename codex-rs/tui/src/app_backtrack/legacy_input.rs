@@ -200,6 +200,16 @@ impl App {
             });
             return true;
         }
+        if self.keymap.app.copy.is_pressed(key) {
+            self.copy_agent_message_before_selected_prompt_with(|text| {
+                tui.clipboard.copy(
+                    text.into(),
+                    crate::clipboard_copy::CopyFormat::Markdown,
+                    tui.frame_requester(),
+                )
+            });
+            return true;
+        }
         if key.modifiers != KeyModifiers::NONE {
             return false;
         }

@@ -707,6 +707,10 @@ impl AgentMarkdownCell {
         cell.spoken_artifacts = true;
         cell
     }
+
+    pub(crate) fn markdown_source(&self) -> &str {
+        &self.markdown_source
+    }
 }
 
 pub(super) fn normalize_whitespace_only_hyperlink_lines(
