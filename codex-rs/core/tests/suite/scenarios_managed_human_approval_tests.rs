@@ -22,8 +22,13 @@ use core_test_support::responses::mount_sse_once;
 use pretty_assertions::assert_eq;
 use tokio_util::sync::CancellationToken;
 
+#[test_case::test_case(AskForApproval::OnRequest; "on_request")]
+#[test_case::test_case(AskForApproval::TrustSandbox; "trust_sandbox")]
+#[test_case::test_case(AskForApproval::TrustSandboxTimeout; "trust_sandbox_timeout")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn managed_checkpoint_requires_fresh_human_decisions() -> Result<()> {
+async fn managed_checkpoint_requires_fresh_human_decisions(
+    approval_policy: AskForApproval,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_wine_exec!(Ok(()), "command approval requires host-native paths");
     let server = start_mock_server().await;
@@ -44,7 +49,7 @@ justification = "A person must approve this command."
 "#,
             ),
         )
-        .with_config(|config| {
+        .with_config(move |config| {
             configure_scenario_catalog(config);
             #[cfg(not(target_os = "windows"))]
             trust_discovered_hooks(config);
@@ -52,7 +57,7 @@ justification = "A person must approve this command."
                 .features
                 .enable(Feature::UnifiedExec)
                 .expect("unified exec");
-            config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+            config.permissions.approval_policy = Constrained::allow_any(approval_policy);
             config
                 .permissions
                 .set_permission_profile(PermissionProfile::Disabled)
@@ -108,6 +113,7 @@ justification = "A person must approve this command."
             _ => None,
         })
         .await;
+        assert!(approval.auto_approve_after_ms.is_none());
         #[cfg(not(target_os = "windows"))]
         assert_eq!(
             read_permission_request_hook_inputs(test.codex_home_path())?.len(),
@@ -177,6 +183,10 @@ justification = "A person must approve this command."
             .replace_all(&snapshot, replacement)
             .into_owned();
     }
-    insta::assert_snapshot!(snapshot);
+    // The existing snapshot covers the shared interaction. All policies above
+    // independently exercise fresh human decisions and the absence of a timer.
+    if approval_policy == AskForApproval::OnRequest {
+        insta::assert_snapshot!(snapshot);
+    }
     Ok(())
 }

@@ -224,6 +224,8 @@ pub(crate) async fn review_tool_call(
                             });
                         }
                         AskForApproval::OnRequest
+                        | AskForApproval::TrustSandbox
+                        | AskForApproval::TrustSandboxTimeout
                         | AskForApproval::UnlessTrusted
                         | AskForApproval::Granular(_) => {}
                     }

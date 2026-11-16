@@ -909,6 +909,7 @@ impl NetworkApprovalService {
             approval_reason: Some(prompt_reason),
             retry_reason: Some(policy_denial_message.clone()),
             network_approval_context: Some(network_approval_context.clone()),
+            auto_approve_after: None,
         };
         let user_prompt = pending_owner.review_user_prompt(
             &session,

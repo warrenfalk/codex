@@ -813,6 +813,7 @@ async fn proposes_full_command_amendment_for_heredoc_prompts() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "bash".to_string(),
                 "-lc".to_string(),
@@ -844,6 +845,7 @@ async fn heredoc_prompt_replaces_unrelated_requested_prefix_with_full_command() 
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "bash".to_string(),
                 "-lc".to_string(),
@@ -871,6 +873,7 @@ async fn heredoc_prompt_replaces_inner_requested_prefix_with_full_command() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "bash".to_string(),
                 "-lc".to_string(),
@@ -962,6 +965,7 @@ EOF"#
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "zsh".to_string(),
                 "-lc".to_string(),
@@ -1019,6 +1023,7 @@ async fn exec_approval_requirement_prefers_execpolicy_match() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: Some("`rm` requires approval by policy".to_string()),
+            prompt_cause: ExecApprovalPromptCause::ExecPolicyRule,
             proposed_execpolicy_amendment: None,
         },
     )
@@ -1036,6 +1041,7 @@ async fn git_status_obeys_approval_policy_and_explicit_rules() {
             None,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
                 proposed_execpolicy_amendment: amendment.clone(),
             },
         ),
@@ -1125,6 +1131,7 @@ prefix_rule(pattern=["git"], decision="prompt")
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 disallowed_git_path,
                 "status".to_string(),
@@ -1151,6 +1158,7 @@ async fn requested_prefix_rule_can_approve_absolute_path_commands() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "cargo".to_string(),
                 "install".to_string(),
@@ -1337,6 +1345,7 @@ async fn exec_approval_requirement_prompts_for_inline_additional_permissions_und
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "touch".to_string(),
                 "requested-dir/requested-but-unused.txt".to_string(),
@@ -1359,6 +1368,7 @@ async fn exec_approval_requirement_prompts_for_known_safe_escalation_under_on_re
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "echo".to_string(),
                 "hello".to_string(),
@@ -1468,6 +1478,7 @@ async fn granular_dangerous_command_approval_does_not_authorize_escalation(
         {
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
                 proposed_execpolicy_amendment: None,
             }
         } else {
@@ -1611,6 +1622,7 @@ async fn exec_approval_requirement_falls_back_to_heuristics() {
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command))
         }
     );
@@ -1638,6 +1650,7 @@ async fn empty_bash_lc_script_falls_back_to_original_command() {
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         }
     );
@@ -1669,6 +1682,7 @@ async fn whitespace_bash_lc_script_falls_back_to_original_command() {
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         }
     );
@@ -1700,6 +1714,7 @@ async fn request_rule_uses_prefix_rule() {
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "cargo".to_string(),
                 "install".to_string(),
@@ -1734,6 +1749,7 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
         requirement,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "rm".to_string(),
                 "-rf".to_string(),
@@ -1772,6 +1788,7 @@ async fn heuristics_apply_when_other_commands_match_policy() {
             .await,
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "orange".to_string()
             ]))
@@ -1845,7 +1862,28 @@ async fn proposed_execpolicy_amendment_is_present_for_single_command_without_pol
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: Some(r#"prefix_rule(pattern=["rm"], decision="prompt")"#.to_string()),
+            command: vec!["rm".to_string()],
+            approval_policy: AskForApproval::OnRequest,
+            permission_profile: PermissionProfile::Disabled,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::NeedsApproval {
+            reason: Some("`rm` requires approval by policy".to_string()),
+            prompt_cause: ExecApprovalPromptCause::ExecPolicyRule,
+            proposed_execpolicy_amendment: None,
         },
     )
     .await;
@@ -1868,6 +1906,7 @@ async fn proposed_execpolicy_amendment_is_present_for_multi_command_scripts() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "cargo".to_string(),
                 "build".to_string(),
@@ -1897,6 +1936,7 @@ async fn proposed_execpolicy_amendment_uses_first_no_match_in_multi_command_scri
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackPolicy,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
                 "apple".to_string(),
             ])),
@@ -2170,6 +2210,7 @@ async fn dangerous_rm_rf_requires_approval_in_danger_full_access() {
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         },
     )
@@ -2195,10 +2236,135 @@ async fn dangerous_rm_rf_in_shell_loop_requires_approval_in_danger_full_access()
         },
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         },
     )
     .await;
+}
+
+#[tokio::test]
+async fn trust_sandbox_allows_dangerous_command_inside_workspace_sandbox() {
+    let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
+
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: None,
+            command: command.clone(),
+            approval_policy: AskForApproval::TrustSandbox,
+            permission_profile: PermissionProfile::workspace_write(),
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn trust_sandbox_prompts_for_dangerous_command_without_managed_sandbox() {
+    let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
+
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: None,
+            command: command.clone(),
+            approval_policy: AskForApproval::TrustSandbox,
+            permission_profile: PermissionProfile::Disabled,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::NeedsApproval {
+            reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn trust_sandbox_prompts_for_sandbox_override() {
+    let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
+
+    let requirement = exec_approval_requirement_for_command(ExecApprovalRequirementScenario {
+        policy_src: None,
+        command: command.clone(),
+        approval_policy: AskForApproval::TrustSandbox,
+        permission_profile: PermissionProfile::workspace_write(),
+        sandbox_permissions: SandboxPermissions::RequireEscalated,
+        prefix_rule: None,
+    })
+    .await;
+
+    assert_eq!(
+        ExecApprovalRequirement::NeedsApproval {
+            reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
+        },
+        requirement
+    );
+    assert_eq!(
+        None,
+        requirement.auto_approve_after(AskForApproval::TrustSandbox)
+    );
+}
+
+#[tokio::test]
+async fn trust_sandbox_timeout_auto_approve_after_only_for_sandbox_override() {
+    let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
+
+    let sandbox_override_requirement =
+        exec_approval_requirement_for_command(ExecApprovalRequirementScenario {
+            policy_src: None,
+            command: command.clone(),
+            approval_policy: AskForApproval::TrustSandboxTimeout,
+            permission_profile: PermissionProfile::workspace_write(),
+            sandbox_permissions: SandboxPermissions::RequireEscalated,
+            prefix_rule: None,
+        })
+        .await;
+
+    assert_eq!(
+        ExecApprovalRequirement::NeedsApproval {
+            reason: None,
+            prompt_cause: ExecApprovalPromptCause::SandboxOverride,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command.clone())),
+        },
+        sandbox_override_requirement
+    );
+    assert_eq!(
+        Some(std::time::Duration::from_secs(300)),
+        sandbox_override_requirement.auto_approve_after(AskForApproval::TrustSandboxTimeout)
+    );
+
+    let execpolicy_requirement =
+        exec_approval_requirement_for_command(ExecApprovalRequirementScenario {
+            policy_src: Some(r#"prefix_rule(pattern=["rm"], decision="prompt")"#.to_string()),
+            command: command.clone(),
+            approval_policy: AskForApproval::TrustSandboxTimeout,
+            permission_profile: PermissionProfile::workspace_write(),
+            sandbox_permissions: SandboxPermissions::RequireEscalated,
+            prefix_rule: None,
+        })
+        .await;
+
+    assert_eq!(
+        ExecApprovalRequirement::NeedsApproval {
+            reason: Some("`rm -rf /tmp/nonexistent` requires approval by policy".to_string()),
+            prompt_cause: ExecApprovalPromptCause::ExecPolicyRule,
+            proposed_execpolicy_amendment: None,
+        },
+        execpolicy_requirement
+    );
+    assert_eq!(
+        None,
+        execpolicy_requirement.auto_approve_after(AskForApproval::TrustSandboxTimeout)
+    );
 }
 
 fn vec_str(items: &[&str]) -> Vec<String> {
@@ -2213,6 +2379,7 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
     assert_eq!(
         ExecApprovalRequirement::NeedsApproval {
             reason: None,
+            prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec_str(&[
                 "rm",
                 "-rf",
@@ -2288,6 +2455,7 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
                 safe" should require approval."#,
             ExecApprovalRequirement::NeedsApproval {
                 reason: None,
+                prompt_cause: ExecApprovalPromptCause::FallbackDangerousCommand,
                 proposed_execpolicy_amendment: expected_amendment.clone(),
             },
         )
