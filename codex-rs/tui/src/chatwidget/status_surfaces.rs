@@ -23,6 +23,7 @@ use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::PermissionProfile;
 use codex_utils_sandbox_summary::summarize_permission_profile;
+use ratatui::text::Span;
 
 use super::status_state::TerminalTitleStatusKind;
 
@@ -213,12 +214,19 @@ impl ChatWidget {
             }
         }
 
-        let line = status_line_from_segments(
+        let mut line = status_line_from_segments(
             segments,
             self.local_settings.tui.status_line_use_colors,
             self.thread_id,
             self.status_line_pull_request_url(),
         );
+        if let Some(badge) = self.connected_mode_status_badge() {
+            let line = line.get_or_insert_with(Default::default);
+            if !line.line.spans.is_empty() {
+                line.line.spans.push(" · ".dim());
+            }
+            line.line.spans.push(badge);
+        }
         self.set_status_line(line.map(Into::into));
     }
 
@@ -954,6 +962,14 @@ impl ChatWidget {
         };
         self.status_line_value_for_item(status_line_item)
     }
+
+    fn connected_mode_status_badge(&self) -> Option<Span<'static>> {
+        match self.connected_mode_footer_state? {
+            ConnectedModeFooterState::Connected => Some("[R]".light_blue()),
+            ConnectedModeFooterState::Disconnected => Some("[R]".red()),
+        }
+    }
+
     /// Resolves one configured terminal-title item into a displayable segment.
     ///
     /// Returning `None` means "omit this segment for now" so callers can keep
