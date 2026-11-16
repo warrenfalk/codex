@@ -155,7 +155,7 @@ fn collect(
 ) -> FileSearchSnapshot {
     let snapshot = nucleo.snapshot();
     let pattern = snapshot.pattern().column_pattern(0);
-    let matches = candidates
+    let mut matches = candidates
         .filter_map(|(match_, matched_name)| {
             let item = snapshot.get_item(match_.idx)?;
             let (root_idx, relative_path, match_type) = match item.data {
@@ -197,10 +197,17 @@ fn collect(
             })
         })
         .collect();
+    let total_match_count = crate::path_local::augment_matches(
+        query,
+        &inner.search_directories,
+        inner.limit,
+        snapshot.matched_item_count() as usize,
+        &mut matches,
+    );
     FileSearchSnapshot {
         query: query.to_string(),
         matches,
-        total_match_count: snapshot.matched_item_count() as usize,
+        total_match_count,
         scanned_file_count: snapshot.item_count() as usize,
         walk_complete,
     }
