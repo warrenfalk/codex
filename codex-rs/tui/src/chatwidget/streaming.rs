@@ -227,6 +227,7 @@ impl ChatWidget {
                 markdown.visible_markdown,
                 source,
                 &self.config.cwd,
+                self.config.file_opener,
                 visualizations.clone(),
                 &[],
             );
@@ -281,6 +282,7 @@ impl ChatWidget {
                     )
                 }),
             cwd: self.config.cwd.clone(),
+            file_opener: self.config.file_opener,
             visualizations,
         };
         (stream, display)
@@ -325,6 +327,7 @@ impl ChatWidget {
                     self.current_stream_width(/*reserved_cols*/ 4),
                     &self.config.cwd,
                     self.history_render_mode(),
+                    self.config.file_opener,
                 )
                 .with_list_spacing(
                     if self.local_settings.transcript_mode.is_owned() {
@@ -578,7 +581,8 @@ impl ChatWidget {
             let cell = history_cell::AgentMarkdownCell::from_parsed_message(
                 parsed.visible_markdown.clone(),
                 message.clone(),
-                self.config.cwd.as_path(),
+                &self.active_transcript_cwd(),
+                self.config.file_opener,
                 context,
                 questions,
             )
@@ -742,6 +746,7 @@ impl ChatWidget {
                     self.current_stream_width(/*reserved_cols*/ 2),
                     &self.config.cwd,
                     self.history_render_mode(),
+                    self.config.file_opener,
                     inline_visualization_context,
                 )
                 .with_list_spacing(

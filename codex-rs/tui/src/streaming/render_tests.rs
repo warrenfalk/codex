@@ -1,10 +1,12 @@
 use super::StreamingRender;
+use super::StreamingRenderContext;
 use super::render_source;
 use crate::history_cell::HistoryRenderMode;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::markdown::render_streaming_markdown_agent_with_links_and_cwd;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::visible_lines;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::ThreadId;
 use insta::assert_debug_snapshot;
 use pretty_assertions::assert_eq;
@@ -30,10 +32,13 @@ fn append(
     render.append(
         source,
         chunk,
-        width,
-        cwd,
-        render_mode,
-        /*inline_visualization_context*/ None,
+        StreamingRenderContext {
+            width,
+            cwd,
+            render_mode,
+            file_opener: UriBasedFileOpener::None,
+            inline_visualization_context: None,
+        },
     );
 }
 
@@ -52,6 +57,7 @@ fn append_rich_and_assert_matches_full(
             width,
             cwd,
             HistoryRenderMode::Rich,
+            UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
         "incremental render diverged after chunk {chunk:?}",
@@ -168,6 +174,7 @@ fn growing_single_top_level_blocks_render_and_scan_in_one_pass() {
                 &source,
                 width,
                 Some(cwd.as_path()),
+                codex_config::types::UriBasedFileOpener::None,
                 crate::markdown_render::ListSpacing::AfterMultiline,
             );
             assert_eq!(pending.last_top_level_block_start, None);
@@ -226,6 +233,7 @@ fn compact_list_spacing_keeps_incremental_and_full_renders_aligned() {
                     Some(24),
                     &cwd,
                     mode,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                     ListSpacing::Compact,
                 )
@@ -237,6 +245,7 @@ fn compact_list_spacing_keeps_incremental_and_full_renders_aligned() {
                 Some(width),
                 &cwd,
                 mode,
+                codex_config::types::UriBasedFileOpener::None,
                 /*inline_visualization_context*/ None,
             );
             assert_eq!(
@@ -246,6 +255,7 @@ fn compact_list_spacing_keeps_incremental_and_full_renders_aligned() {
                     Some(width),
                     &cwd,
                     mode,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                     ListSpacing::Compact,
                 )
@@ -268,10 +278,13 @@ fn inline_visualization_context_without_directives_keeps_stable_prefix() {
         render.append(
             &source,
             chunk,
-            width,
-            &cwd,
-            HistoryRenderMode::Rich,
-            Some(&context),
+            StreamingRenderContext {
+                width,
+                cwd: &cwd,
+                render_mode: HistoryRenderMode::Rich,
+                file_opener: UriBasedFileOpener::None,
+                inline_visualization_context: Some(&context),
+            },
         );
         assert_eq!(
             render.lines,
@@ -280,6 +293,7 @@ fn inline_visualization_context_without_directives_keeps_stable_prefix() {
                 width,
                 &cwd,
                 HistoryRenderMode::Rich,
+                UriBasedFileOpener::None,
                 Some(&context),
             ),
         );
@@ -303,10 +317,13 @@ fn inline_visualizations_use_canonical_full_render() {
         render.append(
             &source,
             chunk,
-            width,
-            &cwd,
-            HistoryRenderMode::Rich,
-            Some(&context),
+            StreamingRenderContext {
+                width,
+                cwd: &cwd,
+                render_mode: HistoryRenderMode::Rich,
+                file_opener: UriBasedFileOpener::None,
+                inline_visualization_context: Some(&context),
+            },
         );
         assert_eq!(
             render.lines,
@@ -315,6 +332,7 @@ fn inline_visualizations_use_canonical_full_render() {
                 width,
                 &cwd,
                 HistoryRenderMode::Rich,
+                UriBasedFileOpener::None,
                 Some(&context),
             ),
         );
@@ -375,6 +393,7 @@ fn inline_visualization_directive_survives_raw_to_rich_render_mode_switch() {
         width,
         &cwd,
         HistoryRenderMode::Rich,
+        UriBasedFileOpener::None,
         /*inline_visualization_context*/ None,
     );
 
@@ -386,6 +405,7 @@ fn inline_visualization_directive_survives_raw_to_rich_render_mode_switch() {
             width,
             &cwd,
             HistoryRenderMode::Rich,
+            UriBasedFileOpener::None,
             /*inline_visualization_context*/ None,
         ),
     );
@@ -442,6 +462,7 @@ fn reference_link_definition_survives_raw_to_rich_render_mode_switch() {
         width,
         &cwd,
         HistoryRenderMode::Rich,
+        UriBasedFileOpener::None,
         /*inline_visualization_context*/ None,
     );
     for chunk in ["First [reference][id].\n\n", "Later [reference][id].\n"] {
@@ -534,6 +555,7 @@ fn shell_pid_preserves_following_equations() {
                     Some(width),
                     &test_cwd(),
                     HistoryRenderMode::Rich,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                 )
             );

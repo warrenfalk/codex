@@ -182,6 +182,7 @@ impl App {
             user_items.iter().map(|(_, item)| item.clone()),
             visibility,
             Some(&self.config),
+            self.config.file_opener,
         );
         let persisted_user_cells = user_items
             .into_iter()
@@ -262,6 +263,7 @@ impl App {
                     visible.iter().cloned(),
                     visibility,
                     Some(&self.config),
+                    self.config.file_opener,
                 ));
             }
             let Some(turn) = turn_end else { continue };

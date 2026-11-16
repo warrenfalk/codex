@@ -405,7 +405,14 @@ async fn cloud_complete_transcript_includes_error_from_an_older_zero_item_turn()
         }
         (turn_pages, item_pages)
     });
-    let cells = load_session_transcript(&mut server, id, Hidden, /*config*/ None).await?;
+    let cells = load_session_transcript(
+        &mut server,
+        id,
+        Hidden,
+        /*config*/ None,
+        codex_config::types::UriBasedFileOpener::None,
+    )
+    .await?;
     let rendered = lines_to_single_string(&cells[0].display_lines(/*width*/ 80));
     insta::assert_snapshot!(rendered, @"■ offline failure with no items");
     assert_eq!(cells.len(), 5);

@@ -17,7 +17,7 @@ use crate::keymap::ListAction;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
-use crate::markdown_render::render_streaming_markdown_lines_with_width_and_cwd as render_assistant;
+use crate::markdown_render::render_streaming_markdown_lines_with_width_cwd_and_file_opener as render_assistant;
 use crate::pager_overlay::Overlay;
 use crate::status::format_directory_display;
 use crate::style::footer_hint_label_style;
@@ -49,6 +49,7 @@ use codex_app_server_protocol::ThreadSortKey;
 use codex_app_server_protocol::ThreadUnarchiveParams;
 use codex_app_server_protocol::ThreadUnarchiveResponse;
 use codex_config::types::SessionPickerViewMode;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
 use color_eyre::eyre::Result;
@@ -426,7 +427,7 @@ struct AppServerPickerBackend {
     session: AppServerSession,
     archive_request_handle: AppServerRequestHandle,
     include_non_interactive: bool,
-    raw_reasoning_visibility: RawReasoningVisibility,
+    transcript_options: TranscriptOptions,
     config: Option<Config>,
 }
 
@@ -452,7 +453,10 @@ fn resume_picker_backends(
                 config: (!session.uses_remote_workspace()).then(|| config.clone()),
                 session,
                 include_non_interactive,
-                raw_reasoning_visibility: raw_reasoning_visibility(config),
+                transcript_options: TranscriptOptions {
+                    raw_reasoning_visibility: raw_reasoning_visibility(config),
+                    file_opener: config.file_opener,
+                },
             }
         })
         .collect();
@@ -716,7 +720,10 @@ pub async fn run_fork_picker_with_app_server(
             app_server,
             archive_request_handle,
             /*include_non_interactive*/ false,
-            raw_reasoning_visibility(config),
+            TranscriptOptions {
+                raw_reasoning_visibility: raw_reasoning_visibility(config),
+                file_opener: config.file_opener,
+            },
             (!uses_remote_workspace).then(|| config.clone()),
             bg_tx,
         ),
@@ -898,12 +905,17 @@ fn picker_cwd_filter(
     }
 }
 
+struct TranscriptOptions {
+    raw_reasoning_visibility: RawReasoningVisibility,
+    file_opener: UriBasedFileOpener,
+}
+
 fn spawn_app_server_page_loader(
     uses_remote_filesystem: bool,
     app_server: AppServerSession,
     archive_request_handle: AppServerRequestHandle,
     include_non_interactive: bool,
-    raw_reasoning_visibility: RawReasoningVisibility,
+    transcript_options: TranscriptOptions,
     config: Option<Config>,
     output: mpsc::UnboundedSender<BackgroundEvent>,
 ) -> PickerBackground {
@@ -913,7 +925,7 @@ fn spawn_app_server_page_loader(
             session: app_server,
             archive_request_handle,
             include_non_interactive,
-            raw_reasoning_visibility,
+            transcript_options,
             config,
         }],
         output,
@@ -937,7 +949,7 @@ fn spawn_app_server_source(backend: AppServerPickerBackend) -> sources::Source {
         session: app_server,
         archive_request_handle,
         include_non_interactive,
-        raw_reasoning_visibility,
+        transcript_options,
         config,
     } = backend;
     let backend_id = app_server.backend_id();
@@ -1020,8 +1032,9 @@ fn spawn_app_server_source(backend: AppServerPickerBackend) -> sources::Source {
                         transcript = load_session_transcript(
                             &mut app_server,
                             thread_id,
-                            raw_reasoning_visibility,
+                            transcript_options.raw_reasoning_visibility,
                             config.as_ref(),
+                            transcript_options.file_opener,
                         ) => {
                             let _ = bg_tx.send(BackgroundEvent::Transcript {
                                 backend_id, thread_id,
@@ -3935,6 +3948,7 @@ fn render_transcript_content_lines(
                 &line.text,
                 /*width*/ None,
                 cwd,
+                UriBasedFileOpener::None,
                 &|_| false,
                 crate::markdown_render::ListSpacing::AfterMultiline,
             )
@@ -4398,7 +4412,10 @@ mod tests {
             app_server,
             request_handle,
             /*include_non_interactive*/ false,
-            RawReasoningVisibility::Hidden,
+            TranscriptOptions {
+                raw_reasoning_visibility: RawReasoningVisibility::Hidden,
+                file_opener: config.file_opener,
+            },
             Some(config.clone()),
             bg_tx,
         );
@@ -7665,6 +7682,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -7738,6 +7756,7 @@ session_picker_view = "dense"
             thread.clone(),
             RawReasoningVisibility::Hidden,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -7748,6 +7767,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
@@ -7818,6 +7838,7 @@ session_picker_view = "dense"
             thread,
             RawReasoningVisibility::Visible,
             /*config*/ None,
+            UriBasedFileOpener::None,
         )
         .into_iter()
         .flat_map(|cell| cell.transcript_lines(/*width*/ 80))

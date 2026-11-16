@@ -14,6 +14,7 @@ use crate::markdown_render::ListSpacing;
 use crate::render::highlight::syntax_theme_revision;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::plain_hyperlink_lines;
+use codex_config::types::UriBasedFileOpener;
 use ratatui::text::Line;
 use std::path::Path;
 
@@ -38,6 +39,14 @@ pub(super) struct StreamingRender {
     has_inline_visualization_directive: bool,
     /// Parser state for a directly appendable, open top-level code fence.
     open_code_fence: Option<OpenCodeFence>,
+}
+
+pub(super) struct StreamingRenderContext<'a> {
+    pub(super) width: Option<usize>,
+    pub(super) cwd: &'a Path,
+    pub(super) render_mode: HistoryRenderMode,
+    pub(super) file_opener: UriBasedFileOpener,
+    pub(super) inline_visualization_context: Option<&'a InlineVisualizationContext>,
 }
 
 impl StreamingRender {
@@ -78,6 +87,7 @@ impl StreamingRender {
         width: Option<usize>,
         cwd: &Path,
         render_mode: HistoryRenderMode,
+        file_opener: UriBasedFileOpener,
         inline_visualization_context: Option<&InlineVisualizationContext>,
     ) {
         self.open_code_fence = None;
@@ -91,6 +101,7 @@ impl StreamingRender {
                     source,
                     width,
                     Some(cwd),
+                    file_opener,
                     self.list_spacing,
                 );
                 self.has_reference_link_definition = rendered.has_reference_link_definition;
@@ -106,6 +117,7 @@ impl StreamingRender {
                         source,
                         width,
                         Some(cwd),
+                        file_opener,
                         self.list_spacing,
                     );
                     self.has_reference_link_definition = rendered.has_reference_link_definition;
@@ -118,6 +130,7 @@ impl StreamingRender {
                     width,
                     cwd,
                     render_mode,
+                    file_opener,
                     inline_visualization_context,
                     self.list_spacing,
                 )
@@ -137,11 +150,15 @@ impl StreamingRender {
         &mut self,
         raw_source: &str,
         committed_source: &str,
-        width: Option<usize>,
-        cwd: &Path,
-        render_mode: HistoryRenderMode,
-        inline_visualization_context: Option<&InlineVisualizationContext>,
+        context: StreamingRenderContext<'_>,
     ) {
+        let StreamingRenderContext {
+            width,
+            cwd,
+            render_mode,
+            file_opener,
+            inline_visualization_context,
+        } = context;
         if render_mode == HistoryRenderMode::Raw {
             self.lines
                 .extend(plain_hyperlink_lines(raw_lines_from_source(
@@ -157,6 +174,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -168,6 +186,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -187,6 +206,7 @@ impl StreamingRender {
             pending_source,
             width,
             Some(cwd),
+            file_opener,
             self.list_spacing,
         );
         self.pending_math_start = pending
@@ -202,6 +222,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
             );
             return;
@@ -223,6 +244,7 @@ impl StreamingRender {
                 width,
                 cwd,
                 render_mode,
+                file_opener,
                 inline_visualization_context,
                 self.list_spacing,
             );
@@ -250,6 +272,7 @@ pub(super) fn render_source(
     width: Option<usize>,
     cwd: &Path,
     render_mode: HistoryRenderMode,
+    file_opener: UriBasedFileOpener,
     inline_visualization_context: Option<&InlineVisualizationContext>,
 ) -> Vec<HyperlinkLine> {
     render_source_with_list_spacing(
@@ -257,6 +280,7 @@ pub(super) fn render_source(
         width,
         cwd,
         render_mode,
+        file_opener,
         inline_visualization_context,
         ListSpacing::AfterMultiline,
     )
@@ -267,6 +291,7 @@ pub(super) fn render_source_with_list_spacing(
     width: Option<usize>,
     cwd: &Path,
     render_mode: HistoryRenderMode,
+    file_opener: UriBasedFileOpener,
     inline_visualization_context: Option<&InlineVisualizationContext>,
     list_spacing: ListSpacing,
 ) -> Vec<HyperlinkLine> {
@@ -275,6 +300,7 @@ pub(super) fn render_source_with_list_spacing(
             source,
             width,
             Some(cwd),
+            file_opener,
             inline_visualization_context,
             list_spacing,
         ),

@@ -18,6 +18,7 @@ use crate::legacy_core::config::Config;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::UriBasedFileOpener;
 use codex_protocol::ThreadId;
 use codex_protocol::items::UserMessageItem;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -69,6 +70,7 @@ pub(crate) async fn load_session_transcript(
     thread_id: ThreadId,
     raw_reasoning_visibility: RawReasoningVisibility,
     config: Option<&Config>,
+    file_opener: UriBasedFileOpener,
 ) -> std::io::Result<TranscriptCells> {
     let mut thread = app_server
         .thread_read(thread_id, /*include_turns*/ false)
@@ -89,6 +91,7 @@ pub(crate) async fn load_session_transcript(
         thread,
         raw_reasoning_visibility,
         config,
+        file_opener,
     ))
 }
 
@@ -96,6 +99,7 @@ pub(crate) fn thread_to_transcript_cells(
     thread: Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
     config: Option<&Config>,
+    file_opener: UriBasedFileOpener,
 ) -> TranscriptCells {
     let cwd = thread.cwd;
     let thread_id = ThreadId::from_string(&thread.id).ok();
@@ -109,6 +113,7 @@ pub(crate) fn thread_to_transcript_cells(
                 turn.items.into_iter().map(|entry| entry.payload),
                 raw_reasoning_visibility,
                 config,
+                file_opener,
             );
             if let Some(error) = turn.error {
                 cells.push(Arc::new(crate::history_cell::new_error_event(
@@ -132,6 +137,7 @@ pub(crate) fn thread_items_to_transcript_cells(
     items: impl IntoIterator<Item = ThreadItemPayload>,
     raw_reasoning_visibility: RawReasoningVisibility,
     config: Option<&Config>,
+    file_opener: UriBasedFileOpener,
 ) -> TranscriptCells {
     let inline_visualization_context = config.and_then(|config| {
         thread_id.and_then(|thread_id| InlineVisualizationContext::from_config(config, thread_id))
@@ -147,6 +153,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                 cwd,
                 raw_reasoning_visibility,
                 inline_visualization_context.clone(),
+                file_opener,
             ) {
                 match group {
                     PendingActivity::Computer(group) => group.group.push_detail(cell),
@@ -211,6 +218,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                     cwd,
                     raw_reasoning_visibility,
                     inline_visualization_context.clone(),
+                    file_opener,
                 );
                 if !projected.is_empty() {
                     PendingActivity::flush(&mut pending, &mut cells);
@@ -229,6 +237,7 @@ fn item_to_cells(
     cwd: &AbsolutePathBuf,
     raw_reasoning_visibility: RawReasoningVisibility,
     inline_visualization_context: Option<InlineVisualizationContext>,
+    file_opener: UriBasedFileOpener,
 ) -> TranscriptCells {
     let mut cells: TranscriptCells = Vec::new();
     match item {
@@ -283,9 +292,10 @@ fn item_to_cells(
             let parsed = parse_assistant_markdown(&text, cwd.as_path());
             if !parsed.visible_markdown.trim().is_empty() {
                 cells.push(Arc::new(
-                    AgentMarkdownCell::new_with_inline_visualizations(
+                    AgentMarkdownCell::new_with_file_opener_and_inline_visualizations(
                         parsed.visible_markdown,
                         cwd.as_path(),
+                        file_opener,
                         inline_visualization_context,
                     )
                     .with_phase(phase)

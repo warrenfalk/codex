@@ -321,6 +321,7 @@ pub(crate) struct CapturedSideDisplay {
     pub(crate) work: Option<CapturedSideWork>,
     pub(crate) last_completed_agent_message: Option<(String, String)>,
     pub(crate) cwd: AbsolutePathBuf,
+    pub(crate) file_opener: codex_config::types::UriBasedFileOpener,
     pub(crate) visualizations: Option<crate::inline_visualization::InlineVisualizationContext>,
 }
 

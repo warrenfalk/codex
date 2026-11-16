@@ -19,6 +19,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+#[cfg(test)]
+#[path = "side_companion_tests.rs"]
+mod tests;
+
 pub(super) struct SideCompanion {
     pub(super) display: CapturedSideDisplay,
     pub(super) cells: Vec<Arc<dyn HistoryCell>>,
@@ -50,7 +54,10 @@ impl SideAnswer {
 }
 
 impl SideCompanion {
-    pub(super) fn empty(cwd: AbsolutePathBuf) -> Self {
+    pub(super) fn empty(
+        cwd: AbsolutePathBuf,
+        file_opener: codex_config::types::UriBasedFileOpener,
+    ) -> Self {
         Self {
             display: CapturedSideDisplay {
                 rendered_completion_turn_ids: Default::default(),
@@ -61,6 +68,7 @@ impl SideCompanion {
                 work: None,
                 last_completed_agent_message: None,
                 cwd,
+                file_opener,
                 visualizations: None,
             },
             cells: Vec::new(),
@@ -290,6 +298,7 @@ impl SideCompanion {
             markdown.visible_markdown,
             source,
             cwd.as_path(),
+            self.display.file_opener,
             self.display.visualizations.clone(),
             questions,
         ));

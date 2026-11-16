@@ -1602,6 +1602,7 @@ async fn resume_picker_loads_complete_paginated_and_legacy_transcripts() -> colo
             thread_id,
             crate::thread_transcript::RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         )
         .await?;
         assert!(cells.len() > 100);

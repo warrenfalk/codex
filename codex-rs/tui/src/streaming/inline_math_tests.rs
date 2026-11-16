@@ -20,10 +20,13 @@ fn unicode_math_inline_stream_preserves_display_exclusion_boundaries() {
             render.append(
                 &source,
                 chunk,
-                Some(40),
-                &cwd,
-                HistoryRenderMode::Rich,
-                /*inline_visualization_context*/ None,
+                crate::streaming::render::StreamingRenderContext {
+                    width: Some(40),
+                    cwd: &cwd,
+                    render_mode: HistoryRenderMode::Rich,
+                    file_opener: codex_config::types::UriBasedFileOpener::None,
+                    inline_visualization_context: None,
+                },
             );
             assert_eq!(
                 render.lines,
@@ -31,6 +34,7 @@ fn unicode_math_inline_stream_preserves_display_exclusion_boundaries() {
                     &source,
                     Some(40),
                     Some(&cwd),
+                    codex_config::types::UriBasedFileOpener::None,
                     crate::markdown_render::ListSpacing::AfterMultiline
                 )
                 .lines
@@ -42,6 +46,7 @@ fn unicode_math_inline_stream_preserves_display_exclusion_boundaries() {
                     Some(width),
                     &cwd,
                     HistoryRenderMode::Rich,
+                    codex_config::types::UriBasedFileOpener::None,
                     /*inline_visualization_context*/ None,
                 );
                 assert_eq!(
@@ -50,6 +55,7 @@ fn unicode_math_inline_stream_preserves_display_exclusion_boundaries() {
                         &source,
                         Some(width),
                         Some(&cwd),
+                        codex_config::types::UriBasedFileOpener::None,
                         crate::markdown_render::ListSpacing::AfterMultiline,
                     )
                     .lines

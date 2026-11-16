@@ -1,0 +1,5 @@
+---
+source: tui/src/app/side_companion_tests.rs
+expression: visible
+---
+• See src/lib.rs:7.

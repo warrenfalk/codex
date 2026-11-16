@@ -5225,6 +5225,7 @@ mod tests {
             thread,
             crate::thread_transcript::RawReasoningVisibility::Hidden,
             /*config*/ None,
+            codex_config::types::UriBasedFileOpener::None,
         );
         let lines = cells[0].display_lines(/*width*/ 80);
         insta::assert_snapshot!(lines.get(1).map(ToString::to_string).unwrap_or_default(), @"› hello from history");

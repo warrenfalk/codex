@@ -38,6 +38,7 @@ fn copying_wrapped_text_preserves_only_hard_newlines() {
         Some(7),
         std::path::Path::new("/"),
         crate::history_cell::HistoryRenderMode::Rich,
+        codex_config::types::UriBasedFileOpener::None,
     );
     stream.push("```text\nalpha   beta\n\n界界界界界\nnext\n```\n");
     let mut cells: Vec<std::sync::Arc<dyn crate::history_cell::HistoryCell>> = Vec::new();
