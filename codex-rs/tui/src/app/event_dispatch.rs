@@ -1193,6 +1193,9 @@ impl App {
             AppEvent::StopCommitAnimation => {
                 self.commit_animation = None;
             }
+            AppEvent::FocusNotificationRequested => {
+                self.chat_widget.notify(Notification::FocusRequested);
+            }
             AppEvent::Exit(mode)
                 if matches!(self.app_server_target, AppServerTarget::Embedded)
                     && (self.agents_overview.threads.iter().any(|(id, thread)| {
