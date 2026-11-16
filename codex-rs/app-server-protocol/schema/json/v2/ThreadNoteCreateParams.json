@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "note": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "note",
+    "threadId"
+  ],
+  "title": "ThreadNoteCreateParams",
+  "type": "object"
+}

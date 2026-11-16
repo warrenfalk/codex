@@ -332,6 +332,12 @@ pub enum ThreadItemPayload {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    NoteToSelf {
+        id: String,
+        note: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
     AgentMessage {
         #[serde(default)]
         moderation: Option<AgentMessageModeration>,
@@ -540,6 +546,7 @@ impl ThreadItemPayload {
     pub fn id(&self) -> &str {
         match self {
             Self::UserMessage { id, .. }
+            | Self::NoteToSelf { id, .. }
             | Self::HookPrompt { id, .. }
             | Self::AgentMessage { id, .. }
             | Self::FunctionCallOutput { id, .. }

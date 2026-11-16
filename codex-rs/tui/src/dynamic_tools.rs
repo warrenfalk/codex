@@ -947,7 +947,9 @@ async fn execute_inner(
                                 "turnStatus": latest_turn.as_ref().map(|turn| &turn.status),
                                 "latestItemId": latest_items
                                     .as_ref()
-                                    .and_then(|items| items.first())
+                                    .and_then(|items| items.iter().find(|entry| {
+                                        !matches!(&entry.item.payload, ThreadItemPayload::NoteToSelf { .. })
+                                    }))
                                     .map(|entry| entry.item.id())
                             }))
                             .map_err(|error| error.to_string())?;
@@ -1044,6 +1046,7 @@ async fn execute_inner(
                                     })),
                                     ThreadItemPayload::UserMessage { .. }
                                     | ThreadItemPayload::FunctionCallOutput { .. }
+                                    | ThreadItemPayload::NoteToSelf { .. }
                                     | ThreadItemPayload::HookPrompt { .. }
                                     | ThreadItemPayload::AgentMessage { .. }
                                     | ThreadItemPayload::Plan { .. }
@@ -1383,7 +1386,7 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
     let mut items: Vec<Value> = turn
         .item_payloads()
         .rev()
-        .map(|item| match item {
+        .filter_map(|item| Some(match item {
             ThreadItemPayload::UserMessage { id, content, .. } => json!({
                 "type": "userMessage",
                 "id": id,
@@ -1417,6 +1420,7 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
                     UserInput::Mention { name, path } => json!({"type": "mention", "name": name, "path": path}),
                 }).collect::<Vec<_>>()
             }),
+            ThreadItemPayload::NoteToSelf { .. } => return None,
             ThreadItemPayload::HookPrompt { id, fragments } => json!({
                 "type": "hookPrompt", "id": id, "fragmentCount": fragments.len()
             }),
@@ -1597,7 +1601,7 @@ fn turn_summary(turn: &Turn, include_outputs: bool, output_chars: usize) -> Valu
             ThreadItemPayload::ContextCompaction { id } => json!({
                 "type": "contextCompaction", "id": id
             }),
-        })
+        }))
         .take(20)
         .collect();
     items.reverse();

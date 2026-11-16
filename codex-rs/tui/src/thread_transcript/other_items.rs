@@ -18,6 +18,9 @@ use std::sync::Arc;
 pub(super) fn cells(item: ThreadItemPayload, cwd: &AbsolutePathBuf) -> TranscriptCells {
     let mut cells: TranscriptCells = Vec::new();
     match item {
+        ThreadItemPayload::NoteToSelf { note, .. } => {
+            cells.push(Arc::new(history_cell::new_note_to_self(note)));
+        }
         ThreadItemPayload::FileChange {
             id,
             changes,

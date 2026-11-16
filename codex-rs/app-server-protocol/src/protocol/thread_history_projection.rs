@@ -11,6 +11,7 @@ use crate::protocol::thread_history::ThreadHistoryChangeSet;
 use crate::protocol::thread_history::ThreadHistoryItemChange;
 use crate::protocol::thread_history::ThreadHistoryTurnMetadata;
 use crate::protocol::v2::ThreadItem;
+use crate::protocol::v2::ThreadItemPayload;
 use crate::protocol::v2::TurnError;
 use crate::protocol::v2::TurnStatus;
 
@@ -72,6 +73,42 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                     completed_at: event.completed_at,
                     duration_ms: event.duration_ms,
                 }],
+                ..Default::default()
+            }
+        }
+        RolloutItem::EventMsg(EventMsg::NoteToSelf(event)) => {
+            let Some(ordinal) = line.ordinal else {
+                return ThreadHistoryChangeSet::default();
+            };
+            let active_turn_id = event.active_turn_id.clone();
+            let turn_id = active_turn_id
+                .clone()
+                .unwrap_or_else(|| format!("rollout-{ordinal}"));
+            let changed_turns = if active_turn_id.is_some() {
+                Vec::new()
+            } else {
+                vec![ThreadHistoryTurnMetadata {
+                    turn_id: turn_id.clone(),
+                    root_turn_id: None,
+                    status: TurnStatus::Completed,
+                    error: None,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
+                }]
+            };
+            ThreadHistoryChangeSet {
+                changed_items: vec![ThreadHistoryItemChange {
+                    turn_id,
+                    item: ThreadItem::untimed(ThreadItemPayload::NoteToSelf {
+                        id: event
+                            .item_id
+                            .clone()
+                            .unwrap_or_else(|| format!("note-{ordinal}")),
+                        note: event.note.clone(),
+                    }),
+                }],
+                changed_turns,
                 ..Default::default()
             }
         }

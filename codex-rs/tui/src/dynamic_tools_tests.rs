@@ -12,6 +12,8 @@ use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
+const PERSONAL_NOTE: &str = "Private reminder excluded from model-facing task reads";
+
 async fn test_server(
     tool_arguments: Value,
 ) -> color_eyre::Result<(TempDir, AppServerSession, String, String)> {
@@ -66,6 +68,12 @@ async fn test_server(
                 "success": true
             },
             "completed_at_ms": 0
+        }),
+        json!({
+            "type": "note_to_self",
+            "note": PERSONAL_NOTE,
+            "item_id": "personal-note",
+            "active_turn_id": "persisted-turn"
         }),
         json!({
             "type": "task_complete",
@@ -145,8 +153,43 @@ fn response_json(response: DynamicToolCallResponse) -> Value {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn oversized_read_preserves_answer_in_next_model_request() -> color_eyre::Result<()> {
-    let (_home, app_server, source, target) =
-        test_server(json!({"padding": "supporting tool arguments".repeat(4_000)})).await?;
+    let expected =
+        read_thread_model_round_trip(json!({"padding": "supporting tool arguments".repeat(4_000)}))
+            .await?;
+    assert_eq!(expected["truncated"], true);
+    assert_eq!(
+        expected["turns"][0]["items"],
+        json!([{
+            "type": "agentMessage", "id": "persisted-message", "phase": "final_answer",
+            "text": "Persisted assistant output".repeat(120)
+        }])
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_read_excludes_personal_notes_from_next_model_request() -> color_eyre::Result<()> {
+    let expected = read_thread_model_round_trip(json!({})).await?;
+    assert!(expected.get("truncated").is_none());
+    Ok(())
+}
+
+async fn read_thread_model_round_trip(tool_arguments: Value) -> color_eyre::Result<Value> {
+    let (_home, app_server, source, target) = test_server(tool_arguments).await?;
+    let visible: ThreadReadResponse = request(&app_server.request_handle(), |request_id| {
+        ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: target.clone(),
+                include_turns: true,
+            },
+        }
+    })
+    .await
+    .map_err(|error| color_eyre::eyre::eyre!(error))?;
+    assert!(visible.thread.turns.iter().flat_map(Turn::item_payloads).any(
+        |item| matches!(item, ThreadItemPayload::NoteToSelf { note, .. } if note == PERSONAL_NOTE)
+    ));
     let mock_server = responses::start_mock_server().await;
     let call_id = "read-task";
     let mock = responses::mount_sse_sequence(
@@ -228,13 +271,18 @@ stream_max_retries = 0
     )
     .await;
     let expected = response_json(result.clone());
-    assert_eq!(expected["truncated"], true);
+    let assistant = expected["turns"][0]["items"]
+        .as_array()
+        .expect("turn items")
+        .iter()
+        .find(|item| item["type"] == "agentMessage")
+        .expect("assistant answer");
     assert_eq!(
-        expected["turns"][0]["items"],
-        json!([{
+        assistant,
+        &json!({
             "type": "agentMessage", "id": "persisted-message", "phase": "final_answer",
             "text": "Persisted assistant output".repeat(120)
-        }])
+        })
     );
     assert_eq!(expected["page"]["order"], "newest_first");
     tokio::time::timeout(Duration::from_secs(/*secs*/ 30), async {
@@ -272,13 +320,14 @@ stream_max_retries = 0
     .await??;
     let requests = mock.requests();
     assert_eq!(requests.len(), 2);
+    assert!(!requests[1].body_json().to_string().contains(PERSONAL_NOTE));
     let output = requests[1].function_call_output(call_id);
     let text = output["output"].as_str().expect("text response");
     assert!(text.len() > 999);
     assert!(text.len() <= response::MAX_RESPONSE_BYTES);
     assert_eq!(serde_json::from_str::<Value>(text)?, expected);
     model_server.shutdown().await?;
-    Ok(())
+    Ok(expected)
 }
 
 #[test]
@@ -326,6 +375,7 @@ fn activity_metadata_is_retained_without_including_outputs() -> color_eyre::Resu
                 {"type": "skill", "name": "debug", "path": "/tmp/SKILL.md"},
                 {"type": "mention", "name": "docs", "path": "app://docs"}
             ]},
+            {"type": "noteToSelf", "id": "personal-note", "note": PERSONAL_NOTE},
             {"type": "agentMessage", "id": "assistant-1", "text": assistant_text, "phase": "commentary"},
             {"type": "webSearch", "id": "web-1", "query": "latest docs", "action": null},
             {"type": "sleep", "id": "sleep-1", "durationMs": 1000},
