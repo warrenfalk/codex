@@ -18,7 +18,7 @@ use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use tempfile::tempdir;
 
-pub(super) struct TestFileSystem;
+pub(crate) struct TestFileSystem;
 
 #[test]
 fn project_config_cannot_override_configured_credential_broker_hosts() {

@@ -6,8 +6,8 @@ Scenario: Astra starts in one workspace, switches for the next step of the activ
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=44da20d40477bf4e):
-        - namespace/functions; hash=7c1b7203dcaa5b6f
+00:additional_tools/developer (3; hash=4325e63d95e21ad3):
+        - namespace/functions; hash=7284643d8028b3f4
           - custom/exec
           - function/wait
           - function/request_user_input

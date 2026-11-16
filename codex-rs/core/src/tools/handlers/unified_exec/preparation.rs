@@ -25,6 +25,7 @@ use crate::tools::sandboxing::ApprovalAction;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use crate::windows_sandbox::windows_sandbox_level_for_legacy_checks;
 use codex_features::Feature;
+use codex_protocol::protocol::ProjectEnvMode;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxType;
 use codex_sandboxing::SandboxablePreference;
@@ -57,6 +58,7 @@ pub(crate) struct PreparedExecCommand {
     pub(crate) yield_time_ms: u64,
     pub(crate) max_output_tokens: Option<usize>,
     pub(crate) completion_timeout: Option<Duration>,
+    pub(crate) project_env: ProjectEnvMode,
 }
 
 impl PreparedExecCommand {
@@ -313,6 +315,7 @@ impl<'a> ParsedExecCommand<'a> {
             permissions,
             justification: args.justification,
             prefix_rule: args.prefix_rule,
+            project_env: args.project_env,
         })
     }
 }

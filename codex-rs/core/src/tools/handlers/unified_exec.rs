@@ -13,6 +13,7 @@ use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::PostToolUsePayload;
 use codex_protocol::models::AdditionalPermissionProfile;
+use codex_protocol::protocol::ProjectEnvMode;
 use codex_utils_path_uri::PathUri;
 use futures::future::BoxFuture;
 use serde::Deserialize;
@@ -86,6 +87,8 @@ pub(crate) struct ExecCommandArgs {
     justification: Option<String>,
     #[serde(default)]
     prefix_rule: Option<Vec<String>>,
+    #[serde(default)]
+    project_env: ProjectEnvMode,
 }
 
 #[derive(Debug, Deserialize)]

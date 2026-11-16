@@ -19,8 +19,8 @@ Settings:
   tools (1; hash=f359ca6f02a419d6):
     - web_search; hash=f103e327c6870a46
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=bc288fa89530a658):
-        - namespace/functions; hash=6475578c7f948d18
+00:additional_tools/developer (3; hash=b452f785f3c6277f):
+        - namespace/functions; hash=297c1d888861a043
           - function/exec_command
           - function/write_stdin
           - function/list_mcp_resources
