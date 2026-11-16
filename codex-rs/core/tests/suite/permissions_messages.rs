@@ -40,6 +40,9 @@ use test_case::test_case;
 const REQUEST_TOOL_BODY: &str = "The built-in `request_permissions` tool is available in this session. Invoke it when you need to request additional `network` or `file_system` permissions before later shell-like commands need them. Request only the specific permissions required for the task.";
 const AUTO_REVIEW_BODY: &str = "`approvals_reviewer` is `auto_review`: Sandbox escalations with require_escalated will be reviewed for compliance with the policy. If a rejection happens, you should proceed only with a materially safer alternative, or inform the user of the risk and send a final message to ask for approval.";
 
+#[path = "permission_profile_instructions.rs"]
+mod permission_profile_instructions;
+
 fn permissions_texts(request: &ResponsesRequest) -> Vec<String> {
     request
         .message_input_texts("developer")

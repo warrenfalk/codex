@@ -37,6 +37,9 @@ mod approval_instructions;
 mod path_warnings;
 mod writable_roots;
 
+#[path = "permission_profile_instructions.rs"]
+mod profile_instructions;
+
 const APPROVAL_POLICY_TRUST_SANDBOX: &str =
     include_str!("../templates/permissions/approval_policy/trust_sandbox.md");
 const APPROVAL_POLICY_TRUST_SANDBOX_TIMEOUT: &str =
@@ -71,6 +74,7 @@ pub struct ApprovalPromptContext<'a> {
     reviewer: ApprovalsReviewer,
     messages: ResolvedApprovalMessages<'a>,
     permission_messages: ResolvedPermissionMessages<'a>,
+    profile_instructions: Option<&'a str>,
 }
 
 impl<'a> ApprovalPromptContext<'a> {
@@ -79,6 +83,7 @@ impl<'a> ApprovalPromptContext<'a> {
             reviewer,
             messages: model_messages.approvals(),
             permission_messages: model_messages.permissions(),
+            profile_instructions: None,
         }
     }
 
@@ -92,6 +97,11 @@ impl<'a> ApprovalPromptContext<'a> {
                     && !text.chars().any(char::is_control)
                     && !text.contains(['<', '>', '{', '}', '\u{2028}', '\u{2029}'])
             })
+    }
+
+    pub fn with_profile_instructions(mut self, instructions: &'a str) -> Self {
+        self.profile_instructions = Some(instructions);
+        self
     }
 }
 
@@ -124,7 +134,8 @@ impl PermissionsInstructions {
         approval_context: ApprovalPromptContext<'_>,
     ) -> Self {
         let mut remaining_path_bytes =
-            MAX_PERMISSION_PATH_BYTES - OMITTED_PERMISSION_PATHS.len() - 1;
+            (MAX_PERMISSION_PATH_BYTES - OMITTED_PERMISSION_PATHS.len() - 1)
+                .saturating_sub(approval_context.profile_instructions.map_or(0, str::len));
         let mut paths_omitted = false;
         let mut bounded_paths = |paths: &[String]| {
             paths
@@ -145,6 +156,23 @@ impl PermissionsInstructions {
         let writable_roots = bounded_paths(context.writable_roots);
         let denied_read_paths = bounded_paths(context.denied_read_paths);
         let denied_read_globs = bounded_paths(context.denied_read_globs);
+        if let Some(instructions) = approval_context.profile_instructions {
+            let mut text = profile_instructions::render(
+                PermissionsRenderContext {
+                    writable_roots: &writable_roots,
+                    denied_read_paths: &denied_read_paths,
+                    denied_read_globs: &denied_read_globs,
+                    ..context
+                },
+                approval_context.reviewer,
+                instructions,
+            );
+            if paths_omitted {
+                append_section(&mut text, OMITTED_PERMISSION_PATHS);
+                text.push('\n');
+            }
+            return Self { text };
+        }
         let mut text = String::new();
         let sandbox = sandbox_text(
             context.sandbox_mode,
