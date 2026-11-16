@@ -184,7 +184,9 @@ fn private_tmp_client() {
     };
     println!("private-tmp-client-started");
     assert!(UnixStream::connect(endpoint).is_err(), "daemon reachable");
-    UnixStream::connect("/tmp/other.sock").expect("unrelated socket reachable");
+    let other_socket =
+        std::env::var_os("CODEX_TEST_OTHER_SOCKET").unwrap_or_else(|| "/tmp/other.sock".into());
+    UnixStream::connect(other_socket).expect("unrelated socket reachable");
     if let Some(alias) = std::env::var_os("CODEX_TEST_DAEMON_ALIAS_SOCKET") {
         assert!(
             UnixStream::connect(alias).is_err(),
@@ -205,7 +207,7 @@ fn private_tmp_client() {
     let _runtime = UnixListener::bind(&runtime_socket)
         .expect("sandbox can create its own private daemon fixture");
     UnixStream::connect(&runtime_socket).expect("private daemon fixture reachable");
-    if std::env::var_os("CODEX_TEST_NESTED_DAEMON_CLIENT").is_none() {
+    if let Some(helper) = std::env::var_os("CODEX_TEST_NESTED_DAEMON_HELPER") {
         let profile = PermissionProfile::workspace_write_with(
             &[AbsolutePathBuf::from_absolute_path("/tmp").unwrap()],
             NetworkSandboxPolicy::Enabled,
@@ -214,19 +216,19 @@ fn private_tmp_client() {
         );
         let (_, test_module) = module_path!().split_once("::").unwrap();
         let client_test = format!("{test_module}::private_tmp_client");
-        let output = std::process::Command::new("/tmp/sandbox")
+        let output = std::process::Command::new(helper)
             .args(["--sandbox-policy-cwd", "/tmp", "--permission-profile"])
             .arg(serde_json::to_string(&profile).unwrap())
+            .arg("--")
+            .arg(std::env::current_exe().unwrap())
             .args([
-                "--",
-                "/tmp/test",
                 "--exact",
                 &client_test,
                 "--ignored",
                 "--nocapture",
                 "--test-threads=1",
             ])
-            .env("CODEX_TEST_NESTED_DAEMON_CLIENT", "1")
+            .env_remove("CODEX_TEST_NESTED_DAEMON_HELPER")
             .env("CODEX_TEST_PARENT_DAEMON_SOCKET", &runtime_socket)
             .output()
             .unwrap();
@@ -234,6 +236,48 @@ fn private_tmp_client() {
         assert!(String::from_utf8_lossy(&output.stdout).contains("private-tmp-isolated"));
     }
     println!("private-tmp-isolated");
+}
+
+#[tokio::test]
+async fn nested_sandbox_keeps_parent_and_host_daemons_private() {
+    if should_skip_bwrap_tests().await {
+        return;
+    }
+    let root = codex_uds::prepare_shared_daemon_socket_directory().unwrap();
+    let daemon = tempfile::tempdir_in(root).unwrap();
+    let endpoint = daemon.path().join("rpc.sock");
+    let _daemon = UnixListener::bind(&endpoint).unwrap();
+    let workspace = tempfile::tempdir_in("/tmp").unwrap();
+    let other_socket = workspace.path().join("other.sock");
+    let _other = UnixListener::bind(&other_socket).unwrap();
+    let profile = PermissionProfile::workspace_write_with(
+        &[AbsolutePathBuf::from_absolute_path("/tmp").unwrap()],
+        NetworkSandboxPolicy::Enabled,
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ false,
+    )
+    .with_pid_namespace(codex_protocol::PidNamespace::Host);
+    let (_, test_module) = module_path!().split_once("::").unwrap();
+    let client_test = format!("{test_module}::private_tmp_client");
+    let output = std::process::Command::new(codex_linux_sandbox_exe())
+        .args(["--sandbox-policy-cwd", "/tmp", "--permission-profile"])
+        .arg(serde_json::to_string(&profile).unwrap())
+        .args(["--no-proc", "--"])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            &client_test,
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("CODEX_TEST_DAEMON_SOCKET", endpoint)
+        .env("CODEX_TEST_OTHER_SOCKET", other_socket)
+        .env("CODEX_TEST_NESTED_DAEMON_HELPER", codex_linux_sandbox_exe())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("private-tmp-isolated"));
 }
 
 #[tokio::test]

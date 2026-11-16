@@ -21,6 +21,8 @@ pub enum TestBinaryDispatchMode {
     DispatchArg0Only,
     Skip,
     InstallAliases,
+    /// Keep a private writable Codex home active for the normal test process.
+    IsolateTestProcess,
 }
 
 pub fn configure_test_binary_dispatch<F>(
@@ -43,7 +45,8 @@ where
             None
         }
         TestBinaryDispatchMode::Skip => None,
-        TestBinaryDispatchMode::InstallAliases => {
+        mode @ (TestBinaryDispatchMode::InstallAliases
+        | TestBinaryDispatchMode::IsolateTestProcess) => {
             let codex_home = match tempfile::Builder::new().prefix(codex_home_prefix).tempdir() {
                 Ok(codex_home) => codex_home,
                 Err(error) => panic!("failed to create test CODEX_HOME: {error}"),
@@ -58,13 +61,15 @@ where
                 Some(arg0) => arg0,
                 None => panic!("failed to configure arg0 dispatch aliases for test binary"),
             };
-            match previous_codex_home.as_ref() {
-                Some(value) => unsafe {
-                    std::env::set_var("CODEX_HOME", value);
-                },
-                None => unsafe {
-                    std::env::remove_var("CODEX_HOME");
-                },
+            if matches!(mode, TestBinaryDispatchMode::InstallAliases) {
+                match previous_codex_home.as_ref() {
+                    Some(value) => unsafe {
+                        std::env::set_var("CODEX_HOME", value);
+                    },
+                    None => unsafe {
+                        std::env::remove_var("CODEX_HOME");
+                    },
+                }
             }
 
             Some(TestBinaryDispatchGuard {

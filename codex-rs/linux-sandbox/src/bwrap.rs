@@ -569,6 +569,21 @@ fn create_filesystem_args(
     if args[0] == "--ro-bind" {
         append_daemon_socket_masks(&mut args, Path::new("/"), &daemon_directories)?;
     }
+    if !options.mount_proc
+        && (options.inherit_pid_namespace || options.pid_namespace == PidNamespace::Host)
+        && !options.mask_wsl_interop
+        && !options.mask_wslg_distro
+        && file_system_sandbox_policy.can_read_local_path_with_cwd(Path::new("/proc"), cwd)
+    {
+        // A shared PID view must preserve procfs for child namespace setup.
+        // Isolated legacy fallbacks keep the inherited host procfs read-only.
+        // Later policy masks still apply to denied paths beneath it.
+        args.extend([
+            "--bind".to_string(),
+            "/proc".to_string(),
+            "/proc".to_string(),
+        ]);
+    }
     let mut bwrap_args = BwrapArgs {
         args,
         preserved_files: Vec::new(),
@@ -845,12 +860,12 @@ fn append_daemon_socket_masks(
                     CodexErr::Fatal("app-server socket mask path must be valid UTF-8".to_string())
                 })?
                 .to_string();
+            // Each sandbox gets a private runtime directory. Nested sandboxes
+            // and server fixtures can use it without exposing host sockets.
             args.extend([
                 "--perms".to_string(),
-                "000".to_string(),
+                "700".to_string(),
                 "--tmpfs".to_string(),
-                destination.clone(),
-                "--remount-ro".to_string(),
                 destination,
             ]);
         }

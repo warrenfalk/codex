@@ -123,6 +123,7 @@ async fn environment_discovery_refreshes_after_cloud_startup() {
         .current_dir(home.path())
         .env(SERVER, server.uri())
         .env("CODEX_HOME", home.path())
+        .env(core_test_support::TEST_BINARY_ROLE_ENV, "helper")
         .env(
             "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
             format!("{}/token", server.uri()),
@@ -218,6 +219,7 @@ async fn cloud_list_preserves_existing_agent_identity_during_runtime_rollout() -
                 .current_dir(home.path())
                 .env(MODE, mode)
                 .env("CODEX_HOME", home.path())
+                .env(core_test_support::TEST_BINARY_ROLE_ENV, "helper")
                 .env(
                     "CODEX_CLOUD_TASKS_BASE_URL",
                     "https://chatgpt.com/backend-api",

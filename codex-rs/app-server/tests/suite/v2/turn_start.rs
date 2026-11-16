@@ -2308,9 +2308,11 @@ allow_upstream_proxy = false
         .context("network sandbox test must be in an integration test module")?;
     let child_test = format!("{test_module}::managed_network_sandbox_probe");
     let target_env = format!("CODEX_TEST_MANAGED_NETWORK_TARGET={target}");
+    let helper_env = format!("{}=helper", core_test_support::TEST_BINARY_ROLE_ENV);
     let command = shlex::try_join([
         "env",
         &target_env,
+        &helper_env,
         test_executable,
         "--exact",
         &child_test,

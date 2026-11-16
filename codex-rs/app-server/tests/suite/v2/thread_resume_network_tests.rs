@@ -171,9 +171,11 @@ allow_local_binding = true
         // Reuse the existing probe: it checks the HTTP response body and proves
         // the command cannot reach the origin directly outside the proxy.
         let target_env = format!("CODEX_TEST_MANAGED_NETWORK_TARGET={target}");
+        let helper_env = format!("{}=helper", core_test_support::TEST_BINARY_ROLE_ENV);
         let command = shlex::try_join([
             "env",
             &target_env,
+            &helper_env,
             test_executable,
             "--exact",
             "suite::v2::turn_start::managed_network_sandbox_probe",

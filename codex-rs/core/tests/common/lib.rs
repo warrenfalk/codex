@@ -2,10 +2,8 @@
 
 use anyhow::Context as _;
 use anyhow::ensure;
-use codex_arg0::Arg0PathEntryGuard;
 use codex_utils_cargo_bin::CargoBinError;
 use ctor::ctor;
-use std::sync::OnceLock;
 use tempfile::TempDir;
 
 use codex_config::CloudConfigBundleLoader;
@@ -38,11 +36,13 @@ pub mod responses;
 pub mod runtime_auth;
 pub mod startup;
 pub mod streaming_sse;
+mod test_binary;
 pub mod test_codex;
 pub mod test_codex_exec;
 mod test_environment;
 pub mod tracing;
 
+pub use test_binary::TEST_BINARY_ROLE_ENV;
 pub(crate) use test_environment::TestEnvironment;
 pub use test_environment::TestTargetOs;
 pub use test_environment::is_remote_test_environment;
@@ -53,17 +53,10 @@ pub use test_environment::test_docker_container_name;
 pub(crate) use test_environment::test_environment;
 pub use test_environment::test_target_os;
 
-static TEST_ARG0_PATH_ENTRY: OnceLock<Option<Arg0PathEntryGuard>> = OnceLock::new();
-
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
     codex_core::test_support::set_thread_manager_test_mode(/*enabled*/ true);
     codex_core::test_support::set_deterministic_process_ids(/*enabled*/ true);
-}
-
-#[ctor]
-fn configure_arg0_dispatch_for_test_binaries() {
-    let _ = TEST_ARG0_PATH_ENTRY.get_or_init(codex_arg0::arg0_dispatch);
 }
 
 #[ctor]
@@ -259,10 +252,10 @@ fn default_test_overrides() -> ConfigOverrides {
 
 #[cfg(target_os = "linux")]
 pub fn find_codex_linux_sandbox_exe() -> Result<PathBuf, CargoBinError> {
-    if let Some(path) = TEST_ARG0_PATH_ENTRY
+    if let Some(path) = test_binary::TEST_BINARY_DISPATCH_GUARD
         .get()
         .and_then(Option::as_ref)
-        .and_then(|path_entry| path_entry.paths().codex_linux_sandbox_exe.clone())
+        .and_then(|guard| guard.paths().codex_linux_sandbox_exe.clone())
     {
         return Ok(path);
     }

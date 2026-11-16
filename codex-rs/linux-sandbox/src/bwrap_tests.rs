@@ -894,15 +894,8 @@ fn read_only_tmp_carveout_keeps_daemon_sockets_masked() {
         .expect("read-only tmp bind");
     let daemon_directory = path_to_string(&codex_uds::shared_daemon_socket_directory().unwrap());
     assert_eq!(
-        &args.args[tmp_bind + 3..tmp_bind + 9],
-        [
-            "--perms",
-            "000",
-            "--tmpfs",
-            &daemon_directory,
-            "--remount-ro",
-            &daemon_directory
-        ],
+        &args.args[tmp_bind + 3..tmp_bind + 7],
+        ["--perms", "700", "--tmpfs", &daemon_directory,],
     );
 }
 

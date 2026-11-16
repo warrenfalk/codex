@@ -241,7 +241,9 @@ async fn shell_snapshot_concurrent_replays_keep_independent_readers(
     std::fs::write(protected_file.path(), "protected")?;
     let command = if sandbox_mode == SnapshotSandbox::WorkspaceWrite {
         // Broad /tmp grants must not expose the file while it still has a name.
-        "if /bin/cat \"$SNAPSHOT_TRANSPORT_PROBE\" >/dev/null 2>&1 || (printf poisoned >> \"$SNAPSHOT_TRANSPORT_PROBE\") 2>/dev/null || /bin/mv \"$SNAPSHOT_TRANSPORT_PROBE\" \"$HOME/stolen\" 2>/dev/null; then exit 44; fi\n"
+        // A writable private runtime can create a distinct file at the same
+        // logical path. The parent verifies that its original stays untouched.
+        "if /bin/cat \"$SNAPSHOT_TRANSPORT_PROBE\" >/dev/null 2>&1 || /bin/mv \"$SNAPSHOT_TRANSPORT_PROBE\" \"$HOME/stolen\" 2>/dev/null; then exit 44; fi\nprintf poisoned >> \"$SNAPSHOT_TRANSPORT_PROBE\"\n"
     } else {
         ""
     };

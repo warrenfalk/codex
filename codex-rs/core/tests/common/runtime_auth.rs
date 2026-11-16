@@ -127,6 +127,7 @@ pub async fn run_harness_through_proxy_with_env(
     let mut command = Command::new(std::env::current_exe()?);
     command
         .args(["--exact", test_name, "--nocapture"])
+        .env(crate::TEST_BINARY_ROLE_ENV, "helper")
         .kill_on_drop(true);
     for &key in codex_network_proxy::PROXY_ENV_KEYS {
         command.env_remove(key);
