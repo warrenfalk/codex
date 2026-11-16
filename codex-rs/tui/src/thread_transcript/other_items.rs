@@ -106,15 +106,14 @@ pub(super) fn cells(item: ThreadItemPayload, cwd: &AbsolutePathBuf) -> Transcrip
             ))));
         }
         ThreadItemPayload::ContextCompaction { .. } => {
-            cells.push(Arc::new(history_cell::new_info_event(
+            cells.push(Arc::new(history_cell::new_context_compaction_event(
                 "Context compacted".to_string(),
-                /*hint*/ None,
             )));
         }
         // These items do not have richer history-cell presentations yet.
         ThreadItemPayload::HookPrompt { fragments, .. } => {
             if !fragments.is_empty() {
-                cells.push(Arc::new(PlainHistoryCell::new(
+                cells.push(Arc::new(PlainHistoryCell::new_with_visibility_kind(
                     fragments
                         .into_iter()
                         .map(|fragment| {
@@ -125,6 +124,7 @@ pub(super) fn cells(item: ThreadItemPayload, cwd: &AbsolutePathBuf) -> Transcrip
                             .into()
                         })
                         .collect(),
+                    history_cell::HistoryVisibilityKind::Noise,
                 )));
             }
         }

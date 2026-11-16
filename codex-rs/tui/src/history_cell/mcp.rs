@@ -421,6 +421,10 @@ impl HistoryCell for McpToolCallCell {
         }
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
     }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
 }
 
 /// The first two spans are the status bullet and its space, not invocation source text.
@@ -464,7 +468,7 @@ pub(crate) fn empty_mcp_output() -> WebHyperlinkHistoryCell {
         docs_line.style(Style::default().add_modifier(Modifier::DIM)),
     ];
 
-    WebHyperlinkHistoryCell::new_hyperlink_lines(lines)
+    WebHyperlinkHistoryCell::new_hyperlink_lines(lines, HistoryVisibilityKind::Noise)
 }
 
 #[cfg(test)]
@@ -638,7 +642,7 @@ pub(crate) fn new_mcp_tools_output(
         lines.push(Line::from(""));
     }
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 
 /// Build the `/mcp` history cell from app-server `McpServerStatus` responses.
@@ -785,7 +789,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
         lines.push("  Use /mcp verbose for tools and resources.".dim().into());
     }
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new_with_visibility_kind(lines, HistoryVisibilityKind::Noise)
 }
 /// A transient history cell that shows an animated spinner while the MCP
 /// inventory RPC is in flight.
@@ -836,6 +840,10 @@ impl HistoryCell for McpInventoryLoadingCell {
             return None;
         }
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
+    }
+
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
     }
 }
 

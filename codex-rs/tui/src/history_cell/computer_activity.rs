@@ -127,6 +127,14 @@ impl HistoryCell for ComputerActivityCell {
             .collect()
     }
 
+    fn history_visibility_kind(&self) -> super::HistoryVisibilityKind {
+        super::HistoryVisibilityKind::Noise
+    }
+
+    fn clean_transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.group.details.clean_transcript_hyperlink_lines(width)
+    }
+
     fn append_reasoning(&mut self, cell: Box<dyn HistoryCell>) -> Result<(), Box<dyn HistoryCell>> {
         if self.group.calls.is_empty() {
             Err(cell)

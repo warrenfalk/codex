@@ -92,6 +92,9 @@ impl App {
         cell: &dyn HistoryCell,
         width: u16,
     ) -> Vec<HyperlinkLine> {
+        if !self.cell_visible_in_current_scrollback(cell) {
+            return Vec::new();
+        }
         let mut display =
             cell.display_hyperlink_lines_for_mode(width, self.chat_widget.history_render_mode());
         if !display.is_empty() && !cell.is_stream_continuation() {
@@ -547,6 +550,9 @@ impl App {
             .iter()
             .rev()
             .find_map(|cell| {
+                if !self.cell_visible_in_current_scrollback(cell.as_ref()) {
+                    return None;
+                }
                 let lines = cell.display_hyperlink_lines_for_mode(
                     width,
                     self.chat_widget.history_render_mode(),
@@ -664,6 +670,9 @@ impl App {
         while start > 0 {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
+            if !self.cell_visible_in_current_scrollback(cell.as_ref()) {
+                continue;
+            }
             let lines = cell
                 .display_hyperlink_lines_for_mode(width, self.chat_widget.history_render_mode());
             rendered_rows += lines.len();
@@ -688,6 +697,9 @@ impl App {
         {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
+            if !self.cell_visible_in_current_scrollback(cell.as_ref()) {
+                continue;
+            }
             cell_displays.push_front(ReflowCellDisplay {
                 lines: cell.display_hyperlink_lines_for_mode(
                     width,

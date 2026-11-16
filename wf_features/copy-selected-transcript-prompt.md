@@ -11,7 +11,8 @@ transcript backtrack target.
   selected user prompt to the clipboard.
 - The shortcut only applies while the backtrack overlay is active; normal
   composer `Ctrl+I` behavior continues to copy the unsent composer input.
-- A successful copy appends a status entry saying the selected prompt was copied.
+- A completed copy shows temporary clipboard feedback without adding history or
+  a separate progress notice, including when clean scrollback is enabled.
 - Terminal-only copy requests report that delivery is unconfirmed. Such requests
   and failures preserve ownership of any previous native clipboard copy.
 - If there is no selected prompt, the TUI reports that there is no selected

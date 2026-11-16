@@ -186,6 +186,10 @@ impl HistoryCell for DynamicToolCallCell {
         ]
     }
 
+    fn history_visibility_kind(&self) -> super::HistoryVisibilityKind {
+        super::HistoryVisibilityKind::Noise
+    }
+
     fn has_stable_transcript_height(&self) -> bool {
         false
     }

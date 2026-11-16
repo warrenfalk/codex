@@ -53,6 +53,10 @@ fn agent_status_uses_bounded_buffered_activity() {
 
     let preview = AgentStatusThreadPreview::from_store("/root/reviewer".to_string(), &store);
     let cell = AgentStatusHistoryCell::new(vec![preview]);
+    assert!(
+        cell.clean_transcript_hyperlink_lines(/*width*/ 80)
+            .is_empty()
+    );
     let rendered = cell
         .display_lines(/*width*/ 80)
         .iter()

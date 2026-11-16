@@ -2,4 +2,7 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: rendered
 ---
-■ No input to copy
+› Ask Codex to do anything
+
+  GPT-5.6-Sol default · /tmp/project
+  Copy failed: No input to copy

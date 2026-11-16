@@ -469,10 +469,14 @@ async fn copy_shortcut_reveals_its_feedback_without_changing_the_draft() -> Resu
         .collect::<Vec<_>>()
         .join("\n");
     insta::assert_snapshot!(visible, @"
+    older 3
+    older 4
     older 5
-
-    ■ No agent response to copy
     ");
+    assert!(
+        crate::chatwidget::tests::helpers::render_bottom_popup(&app.chat_widget, /*width*/ 80)
+            .contains("No agent response to copy")
+    );
     tui.set_owned_screen(/*owned*/ false)?;
     server.shutdown().await?;
     Ok(())

@@ -4,13 +4,13 @@ assertion_line: 42
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 Ok(Pending(1)), 80 columns
-                                                              Copying 24 chars…
+
 
 Ok(Pending(1)), 32 columns
-              Copying 24 chars…
+
 
 Ok(Pending(1)), 18 columns
-Copying 24 chars…
+
 
 Ok(Busy), 80 columns
                                                        Copy already in progress

@@ -2,4 +2,8 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: rendered
 ---
-• Copy unconfirmed; /export saves chat
+› first line [Pasted Content]
+  last line
+
+  GPT-5.6-Sol default · /tmp/project
+  Copy unconfirmed; /export saves chat

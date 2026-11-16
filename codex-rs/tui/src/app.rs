@@ -226,6 +226,7 @@ mod background_requests;
 mod cloud_switch_wait;
 #[cfg(test)]
 pub(crate) use cloud_switch_wait::wait_for_cloud_switch;
+mod clean_scrollback;
 mod composer_hints;
 mod config_panel;
 mod config_persistence;
@@ -593,6 +594,7 @@ pub(crate) struct App {
     turn_tips: turn_tips::TurnTips,
     pub(crate) transcript_view: crate::transcript_view::TranscriptView,
     conversation_frame: owned_transcript::ConversationFrame,
+    pub(crate) clean_scrollback_enabled: bool,
     last_rendered_history_tail: Option<history_ui::RenderedHistoryTail>,
     last_thread_usage_status_cell: Option<history_ui::ThreadUsageStatusHistory>,
     pub(crate) pending_thread_usage_history_refresh: bool,

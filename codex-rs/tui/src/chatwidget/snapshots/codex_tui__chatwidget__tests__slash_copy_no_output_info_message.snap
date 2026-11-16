@@ -3,4 +3,7 @@ source: tui/src/chatwidget/tests/slash_commands.rs
 assertion_line: 145
 expression: rendered
 ---
-■ No agent response to copy
+› Ask Codex to do anything
+
+  GPT-5.6-Sol default · /tmp/project
+  Copy failed: No agent response to copy

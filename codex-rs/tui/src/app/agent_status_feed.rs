@@ -3,6 +3,7 @@
 use super::ThreadBufferedEvent;
 use super::ThreadEventStore;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::HistoryVisibilityKind;
 use crate::history_cell::plain_lines;
 use crate::style::accent_color;
 use crate::text_formatting::truncate_text;
@@ -31,6 +32,10 @@ impl AgentStatusHistoryCell {
 }
 
 impl HistoryCell for AgentStatusHistoryCell {
+    fn history_visibility_kind(&self) -> HistoryVisibilityKind {
+        HistoryVisibilityKind::Noise
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = vec![
             "/subagents".magenta().into(),

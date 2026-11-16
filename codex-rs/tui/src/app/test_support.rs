@@ -77,6 +77,7 @@ pub(crate) async fn make_test_app() -> Box<App> {
         turn_tips: Default::default(),
         transcript_view: Default::default(),
         conversation_frame: Default::default(),
+        clean_scrollback_enabled: false,
         last_rendered_history_tail: None,
         last_thread_usage_status_cell: None,
         pending_thread_usage_history_refresh: false,
