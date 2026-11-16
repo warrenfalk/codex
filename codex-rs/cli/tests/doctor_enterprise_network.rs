@@ -218,7 +218,11 @@ async fn network_only_human_output() -> Result<()> {
             "--no-color",
         ])
         .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let stdout = String::from_utf8(output.stdout)?.replacen(
+        concat!("Codex Doctor v", env!("CARGO_PKG_VERSION"), "\n"),
+        "Codex Doctor v0.0.0\n",
+        /*count*/ 1,
+    );
     assert!(output.status.success(), "{stdout}");
     insta::assert_snapshot!("network_only_human_output", stdout);
     Ok(())
@@ -234,7 +238,11 @@ async fn network_only_config_failure_human_output() -> Result<()> {
     let output = local_command(&home)?
         .args(["doctor", "--network-only", "--all", "--ascii", "--no-color"])
         .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let stdout = String::from_utf8(output.stdout)?.replacen(
+        concat!("Codex Doctor v", env!("CARGO_PKG_VERSION"), "\n"),
+        "Codex Doctor v0.0.0\n",
+        /*count*/ 1,
+    );
     assert_eq!(output.status.code(), Some(1));
     assert!(!stdout.contains("sk-config-credential-fixture"));
     // Config loading may canonicalize the directory, rendering may shorten it,

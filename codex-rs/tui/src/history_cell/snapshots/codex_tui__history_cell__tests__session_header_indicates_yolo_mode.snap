@@ -4,6 +4,6 @@ assertion_line: 1885
 expression: rendered
 ---
 
-  >_ OpenAI Codex (vtest)
+  >_ OpenAI Codex (vtest (warrenfalk custom))
      /tmp/project
   permissions: YOLO mode

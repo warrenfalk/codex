@@ -5,7 +5,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
 resume lookup fallback:
 before:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
   Resuming session…
 
@@ -13,7 +13,7 @@ before:
 
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
 
@@ -23,7 +23,7 @@ after:
 fork lookup fallback:
 before:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
   Forking session…
 
@@ -31,7 +31,7 @@ before:
 
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
 
@@ -43,7 +43,7 @@ before:
 hidden while picker owns input
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
 
@@ -56,7 +56,7 @@ before:
 hidden while picker owns input
 after:
 
-  >_ OpenAI Codex (v<VERSION>)
+  >_ OpenAI Codex (v<VERSION> (warrenfalk custom))
      loading
 
 
