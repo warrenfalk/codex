@@ -85,6 +85,9 @@ async fn root_metadata_symlinks_cannot_reopen_approved_denials() {
         command.args(
             "--ro-bind /usr /usr --ro-bind /etc /etc --proc /proc --dev /dev".split_whitespace(),
         );
+        if std::path::Path::new("/nix/store").is_dir() {
+            command.args(["--ro-bind", "/nix/store", "/nix/store"]);
+        }
         command.args("--dir /run --dir /.agents --symlink /private-link /.git".split_whitespace());
         command.args(["--symlink", codex_target, "/.codex"]);
         command.args(["--symlink", "/private/reopened", "/private-link"]);
