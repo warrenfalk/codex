@@ -738,7 +738,7 @@ impl Session {
             regular_output.is_some() && turn_context.terminal_error.lock().await.is_none();
         let finishing = CancellationToken::new();
         let finish_recording = finishing.clone().drop_guard();
-        let (turn_state, unadmitted_task, mut pending_input, outcome_handoff) = {
+        let (turn_state, unadmitted_task, mut pending_input, outcome_handoff, finished_task_guard) = {
             let mut active = self.active_turn.lock().await;
             let active_turn = active.as_mut()?;
             if !Arc::ptr_eq(&active_turn.task.as_ref()?.turn_context, &turn_context) {
@@ -753,7 +753,7 @@ impl Session {
                 }
             }
             let task = active_turn.task.take()?;
-            task.handle.detach();
+            // Keep the task alive through persistence and terminal event delivery.
             active_turn.finishing = Some(finishing);
             (
                 Arc::clone(&active_turn.turn_state),
@@ -761,6 +761,7 @@ impl Session {
                     .then_some(task.task),
                 task.pending_initial_input.unwrap_or_default(),
                 task.outcome_handoff,
+                task.handle,
             )
         };
         turn_context
@@ -1010,6 +1011,7 @@ impl Session {
         if cleared_active_turn {
             self.maybe_start_turn_for_pending_work().await;
         }
+        drop(finished_task_guard);
         None
     }
 

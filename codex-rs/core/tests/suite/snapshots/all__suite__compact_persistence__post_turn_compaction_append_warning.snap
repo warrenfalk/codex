@@ -1,0 +1,5 @@
+---
+source: core/tests/suite/compact_persistence.rs
+expression: "warnings.join(\"\\n\")"
+---
+Failed to save the compacted conversation: thread-store internal error: checkpoint rejected
