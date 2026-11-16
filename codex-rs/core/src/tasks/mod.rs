@@ -995,23 +995,16 @@ impl Session {
         if !saved_guardian_completion {
             self.send_event(turn_context.as_ref(), event.clone()).await;
         }
-        let should_start_auto_thread_title = should_consider_auto_thread_title
-            && finished_task_kind == TaskKind::Regular
-            && turn_context.config.auto_thread_title
-            && !thread_title::auto_thread_title_disabled_for_tests()
-            && self.mark_auto_thread_title_requested().await;
+        let should_start_auto_thread_title =
+            should_consider_auto_thread_title && finished_task_kind == TaskKind::Regular;
 
         if should_start_auto_thread_title {
-            let session = Arc::clone(self);
-            let turn_context = Arc::clone(&turn_context);
-            tokio::spawn(async move {
-                thread_title::maybe_generate_and_set_thread_title(
-                    session,
-                    turn_context,
-                    auto_thread_title_last_agent_message,
-                )
-                .await;
-            });
+            thread_title::maybe_start_revision_thread_title(
+                Arc::clone(self),
+                Arc::clone(&turn_context),
+                auto_thread_title_last_agent_message,
+            )
+            .await;
         }
 
         let cleared_active_turn = {

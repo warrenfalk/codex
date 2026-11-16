@@ -542,6 +542,7 @@ async fn plan_implementation_reads_approved_plan_file_in_fresh_session() -> Resu
     app.config = app
         .rebuild_config_for_cwd(workspace.path().canonicalize()?)
         .await?;
+    app.config.auto_thread_title = false;
     let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let plan = format!(
@@ -670,6 +671,7 @@ async fn assert_plan_implementation_with_unavailable_attachment(
     app.config = app
         .rebuild_config_for_cwd(workspace.path().canonicalize()?)
         .await?;
+    app.config.auto_thread_title = false;
     let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let source = server.start_thread(&app.config).await?;

@@ -58,6 +58,7 @@ async fn temporary_side_chat_sends_policy_on_its_first_request() -> Result<()> {
     app.config = app
         .rebuild_config_for_cwd(app.config.cwd.to_path_buf())
         .await?;
+    app.config.auto_thread_title = false;
     let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let started = server.start_thread(&app.config).await?;
     let parent = started.session.thread_id;

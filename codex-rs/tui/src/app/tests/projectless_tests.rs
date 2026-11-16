@@ -41,6 +41,7 @@ sandbox = "unelevated"
     app.config = app
         .rebuild_config_for_cwd(source.path().to_path_buf())
         .await?;
+    app.config.auto_thread_title = false;
     app.chat_widget
         .handle_thread_session_quiet(test_thread_session(
             ThreadId::new(),

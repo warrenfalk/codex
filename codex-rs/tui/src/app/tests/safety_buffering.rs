@@ -367,6 +367,7 @@ async fn embedded_session_switch_routes_background_approval_and_restores_draft()
         ))
         .write(&app.config.codex_home)?;
     app.config = app.rebuild_config_for_cwd(cwd.clone()).await?;
+    app.config.auto_thread_title = false;
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.pause_events();
