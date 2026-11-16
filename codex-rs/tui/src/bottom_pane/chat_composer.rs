@@ -51,6 +51,9 @@
 //! Fresh Vim drafts start in Insert; Normal `/` and `?` search the composer.
 //! On an empty draft, a standalone Normal `/` enters Insert and opens command completion.
 //! Backspace on an empty Vim search query cancels search and any pending operator.
+//! The parent chat widget intercepts Enter and Esc for exact bare `exit` and `resume`
+//! drafts while their command warning is visible. The composer renders that warning
+//! above ambient footer hints; dismissal leaves the draft available for literal submission.
 //!
 //! # Completion and Popup Dismissal
 //!
@@ -62,6 +65,7 @@
 //! Unified mention tabs retain their position across filters; Left/Right also works at a bare `@`.
 //! File completions insert Markdown code spans, using longer fences for paths containing backticks.
 //! Image completions keep their attachment behavior.
+//! Bare-command confirmations supplied by `ChatWidget` replace ambient footer hints.
 //!
 //! Popup targeting resolves an editable token range around the cursor and treats atomic text
 //! elements as hard boundaries. When that range begins immediately after an atomic element, the
@@ -391,11 +395,13 @@ use crate::keymap::KeymapContextSet;
 use crate::keymap::RuntimeKeymap;
 use crate::keymap::VimNormalKeymap;
 use crate::keymap::user_bindings;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
 use crate::style::user_message_style;
+use crate::ui_consts::FOOTER_INDENT_COLS;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -731,6 +737,20 @@ pub(crate) struct ComposerDraftSnapshot {
     pub(crate) sparkle_draft: sparkle::SparkleDraft,
 }
 
+/// Builds the one-line warning for bare drafts that look like omitted slash commands.
+fn prompt_command_warning_line(command: SlashCommand) -> Line<'static> {
+    let command_name = command.command();
+    Line::from(vec![
+        format!("Did you mean /{command_name}?").magenta(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Enter).into(),
+        format!(" to {command_name}").into(),
+        "  ".into(),
+        key_hint::plain(KeyCode::Esc).into(),
+        " to dismiss".into(),
+    ])
+}
+
 impl ChatComposer {
     fn slash_input(&self) -> SlashInput<'_> {
         SlashInput::new(
@@ -789,6 +809,7 @@ impl ChatComposer {
                 use_shift_enter_hint,
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
+                prompt_command_warning: None,
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -4753,6 +4774,17 @@ impl ChatComposer {
                     input.render(inset_footer_hint_area(hint_rect), buf);
                 } else if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
+                } else if let Some(command) = self.footer.prompt_command_warning {
+                    let available_width =
+                        hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
+                    render_footer_line(
+                        hint_rect,
+                        buf,
+                        truncate_line_with_ellipsis_if_overflow(
+                            prompt_command_warning_line(command),
+                            available_width,
+                        ),
+                    );
                 } else {
                     let footer_props = self.hint_footer_props();
                     let show_cycle_hint = !self.popup_active()

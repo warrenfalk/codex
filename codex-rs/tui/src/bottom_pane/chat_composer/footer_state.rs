@@ -36,6 +36,7 @@ use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::ShortcutHint;
+use crate::slash_command::SlashCommand;
 use crate::style::secondary_text_style;
 use std::time::Duration;
 
@@ -181,6 +182,25 @@ impl super::ChatComposer {
         self.footer.hint_override = items;
     }
 
+    /// Updates the command warning that replaces the ambient footer row.
+    ///
+    /// Returns `true` only when the rendered footer can change.
+    pub(crate) fn set_prompt_command_warning(
+        &mut self,
+        command: Option<super::SlashCommand>,
+    ) -> bool {
+        if self.footer.prompt_command_warning == command {
+            return false;
+        }
+        self.footer.prompt_command_warning = command;
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prompt_command_warning(&self) -> Option<super::SlashCommand> {
+        self.footer.prompt_command_warning
+    }
+
     /// Show the transient "press again to quit" hint for `key`.
     ///
     /// The owner (`BottomPane`/`ChatWidget`) is responsible for scheduling a
@@ -219,7 +239,10 @@ impl super::ChatComposer {
     }
 
     pub(super) fn custom_footer_height(&self) -> Option<u16> {
-        if self.draft.textarea.vim_query().is_some() || self.footer.flash_visible() {
+        if self.draft.textarea.vim_query().is_some()
+            || self.footer.flash_visible()
+            || self.footer.prompt_command_warning.is_some()
+        {
             return Some(1);
         }
         self.footer
@@ -297,6 +320,11 @@ impl super::ChatComposer {
             return hints
                 .desired_rows(super::passive_hints::hint_area(Rect::new(0, 0, width, 1)).width);
         }
+        if self.footer.prompt_command_warning.is_some()
+            && options.footer.is_none_or(|footer| !footer.is_interactive)
+        {
+            return 1;
+        }
         options.footer.map_or_else(
             || {
                 self.custom_footer_height()
@@ -318,6 +346,14 @@ impl super::ChatComposer {
             return;
         }
         let mut text = footer.text.clone();
+        if !footer.is_interactive
+            && let Some(command) = self.footer.prompt_command_warning
+        {
+            text.lines = vec![super::truncate_line_with_ellipsis_if_overflow(
+                super::prompt_command_warning_line(command),
+                usize::from(hint_area.width),
+            )];
+        }
         text.lines.truncate(usize::from(hint_area.height));
         if footer.cursor_column.is_none()
             && self.footer.flash_visible()
@@ -376,6 +412,7 @@ pub(super) struct FooterState {
     pub(super) use_shift_enter_hint: bool,
     pub(super) mode: FooterMode,
     pub(super) hint_override: Option<Vec<(String, String)>>,
+    pub(super) prompt_command_warning: Option<SlashCommand>,
     pub(super) flash: Option<FooterFlash>,
     pub(super) context_window_percent: Option<i64>,
     pub(super) context_window_used_tokens: Option<i64>,
