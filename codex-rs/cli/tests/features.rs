@@ -400,7 +400,7 @@ fn remote_start_allows_network_access_overrides_before_requiring_terminal() -> R
 }
 
 #[test]
-fn no_daemon_rejects_queue_and_explicit_remote_targets() -> Result<()> {
+fn no_daemon_rejects_queue_and_explicit_shared_targets() -> Result<()> {
     for args in [
         "--no-daemon queue --thread example --message hello",
         "--no-daemon --remote ws://localhost:9999 agents",
@@ -411,11 +411,15 @@ fn no_daemon_rejects_queue_and_explicit_remote_targets() -> Result<()> {
         "--no-daemon --remote ws://localhost:9999 queue --thread example --message hello",
         "--remote ws://localhost:9999 resume --no-daemon --last",
         "--no-daemon fork --remote ws://localhost:9999 session-name",
+        "--no-daemon --local ws://localhost:9999",
+        "--local ws://localhost:9999 resume --no-daemon --last",
     ] {
         let args = args.split_whitespace().collect::<Vec<_>>();
         let home = TempDir::new()?;
         let expected = if args.contains(&"queue") && !args.contains(&"--remote") {
             "--no-daemon cannot be used with codex queue."
+        } else if args.contains(&"--local") {
+            "--no-daemon cannot be used with --local."
         } else {
             "--no-daemon cannot be used with --remote."
         };

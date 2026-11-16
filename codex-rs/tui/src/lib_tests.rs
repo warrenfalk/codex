@@ -22,6 +22,7 @@ fn tui_startup_future_stays_bounded() {
         Cli::parse_from(["codex"]),
         Arg0DispatchPaths::default(),
         LoaderOverrides::default(),
+        /*local_endpoint*/ None,
         /*explicit_remote_endpoint*/ None,
     );
     let size = std::mem::size_of_val(&future);

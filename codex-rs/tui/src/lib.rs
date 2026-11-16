@@ -29,6 +29,7 @@ pub use app::AppExitInfo;
 pub use app::DisconnectInfo;
 pub use app::ExitReason;
 pub use app::ResumableThread;
+use app_server_mode::ResolvedAppServerMode;
 use app_server_session::AppServerSession;
 use app_server_session::ThreadParamsMode;
 use codex_app_server_client::AppServerClient;
@@ -115,6 +116,7 @@ mod app_event_sender;
 mod app_info;
 mod app_server_approval_conversions;
 mod app_server_connection;
+mod app_server_mode;
 mod app_server_session;
 mod approval_events;
 mod async_question_reply;
@@ -1198,6 +1200,7 @@ pub async fn run_main(
     cli: Cli,
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
+    local_endpoint: Option<RemoteAppServerEndpoint>,
     explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 ) -> std::io::Result<AppExitInfo> {
     system_motion::initialize().await;
@@ -1208,6 +1211,7 @@ pub async fn run_main(
             cli,
             arg0_paths,
             loader_overrides,
+            local_endpoint,
             explicit_remote_endpoint,
         ))
         .await
@@ -1240,7 +1244,7 @@ async fn run_ratatui_app(
     arg0_paths: Arg0DispatchPaths,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    mut app_server_target: AppServerTarget,
+    app_server_mode: ResolvedAppServerMode,
     remote_cwd_override: Option<PathBuf>,
     initial_config: Config,
     manually_selected_oss_provider: Option<String>,
@@ -1261,6 +1265,9 @@ async fn run_ratatui_app(
     >,
     startup_draft: startup_draft::StartupDraft,
 ) -> color_eyre::Result<AppExitInfo> {
+    let mut app_server_target = app_server_mode.target().clone();
+    let mut initial_app_server_footer_state = app_server_mode.footer_state();
+    let initial_app_server = app_server_mode.into_initial_app_server();
     // Capture host credentials and project inputs before resume/fork reloads executor config.
     let backend_preference_context = app::backend_selection::BackendPreferenceContext::new(
         &initial_config,
@@ -1337,17 +1344,22 @@ async fn run_ratatui_app(
         )
         .await
     };
-    let startup_app_server = startup_draft
-        .run_until(
-            &mut tui,
-            connect(
-                &mut app_server_target,
-                &initial_config,
-                &cloud_config_bundle,
-                &mut state_db,
-            ),
-        )
-        .await;
+    let startup_app_server = match initial_app_server {
+        Some(app_server) => Ok(Ok(app_server)),
+        None => {
+            startup_draft
+                .run_until(
+                    &mut tui,
+                    connect(
+                        &mut app_server_target,
+                        &initial_config,
+                        &cloud_config_bundle,
+                        &mut state_db,
+                    ),
+                )
+                .await
+        }
+    };
     let mut app_server_session = match startup_app_server {
         Ok(Ok(app_server)) => {
             tui.terminal_size_tags = launch_telemetry.record(match &app_server_target {
@@ -1375,6 +1387,11 @@ async fn run_ratatui_app(
         }
     }
     .with_remote_cwd_override(remote_cwd_override.clone());
+    if matches!(app_server_target, AppServerTarget::Embedded)
+        && initial_app_server_footer_state == Some(chatwidget::ConnectedModeFooterState::Connected)
+    {
+        initial_app_server_footer_state = Some(chatwidget::ConnectedModeFooterState::LocalFallback);
+    }
     if let Some(provider) = manually_selected_oss_provider.as_deref() {
         match startup_draft
             .run_until(
@@ -2380,6 +2397,7 @@ async fn run_ratatui_app(
         is_first_run,
         should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
+        initial_app_server_footer_state,
         state_db,
         environment_manager,
         startup_elapsed_before_app,
