@@ -569,7 +569,8 @@ impl SessionConfiguration {
                             SandboxEnforcement::from_legacy_sandbox_policy(&current_sandbox_policy),
                             &file_system_sandbox_policy,
                             self.network_sandbox_policy(),
-                        ),
+                        )
+                        .with_pid_namespace(self.permission_profile().pid_namespace()),
                     )?;
             }
         }

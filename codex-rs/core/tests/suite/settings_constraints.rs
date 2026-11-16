@@ -80,6 +80,7 @@ async fn protected_model_startup_preserves_legacy_permission_behavior() -> Resul
         (PermissionProfile::Disabled, StartupExpectation::Downgrade),
         (
             PermissionProfile::Managed {
+                pid_namespace: Default::default(),
                 file_system: ManagedFileSystemPermissions::Unrestricted,
                 network: NetworkSandboxPolicy::Enabled,
             },

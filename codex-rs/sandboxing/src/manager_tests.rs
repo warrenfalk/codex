@@ -287,7 +287,8 @@ fn transform_additional_permissions_preserves_denied_entries() {
             denied.clone(),
         ]),
         NetworkSandboxPolicy::Restricted,
-    );
+    )
+    .with_pid_namespace(codex_protocol::PidNamespace::Host);
     let workspace = PathUri::from_abs_path(&workspace_root);
     let build_dir = FileSystemSandboxEntry::new(
         workspace_root.join("build").into(),
@@ -347,6 +348,7 @@ fn transform_additional_permissions_preserves_denied_entries() {
                 &FileSystemSandboxPolicy::restricted(expected_entries),
                 NetworkSandboxPolicy::Restricted,
             )
+            .with_pid_namespace(codex_protocol::PidNamespace::Host)
         );
     }
 }

@@ -287,7 +287,7 @@ async fn run_command_under_sandbox(
         } else {
             base_profile.network_sandbox_policy()
         };
-        PermissionProfile::from_runtime_permissions(&file_system, network)
+        base_profile.with_runtime_permissions(&file_system, network)
     } else {
         base_profile
     };

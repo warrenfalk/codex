@@ -153,14 +153,11 @@ impl PreparedLaunchPolicy {
                 &file_system,
                 NetworkSandboxPolicy::Restricted,
             )
+            .with_pid_namespace(permissions.pid_namespace())
         } else {
             let file_system =
                 file_system.with_additional_readable_roots(&cwd, runtime_readable_paths);
-            PermissionProfile::from_runtime_permissions_with_enforcement(
-                permissions.enforcement(),
-                &file_system,
-                network,
-            )
+            permissions.with_runtime_permissions(&file_system, network)
         };
         Ok(Self {
             permissions,

@@ -5585,22 +5585,35 @@ async fn session_configuration_apply_permission_profile_preserves_existing_deny_
         .unwrap();
 
     let permission_profile =
-        PermissionProfile::from_runtime_permissions(&requested, NetworkSandboxPolicy::Restricted);
+        PermissionProfile::from_runtime_permissions(&requested, NetworkSandboxPolicy::Restricted)
+            .with_pid_namespace(codex_protocol::PidNamespace::Host);
     let mut expected = requested.materialize_project_roots_with_workspace_roots(&[]);
     expected.glob_scan_max_depth = Some(GLOB_SCAN_MAX_DEPTH);
     expected.entries.push(deny_entry);
-    for updates in [
-        SessionSettingsUpdate {
-            permission_profile: Some(permission_profile),
-            ..Default::default()
-        },
-        SessionSettingsUpdate {
-            sandbox_policy: Some(workspace_policy.clone()),
-            ..Default::default()
-        },
+    for (updates, namespace) in [
+        (
+            SessionSettingsUpdate {
+                permission_profile: Some(permission_profile),
+                ..Default::default()
+            },
+            codex_protocol::PidNamespace::Host,
+        ),
+        (
+            SessionSettingsUpdate {
+                sandbox_policy: Some(workspace_policy.clone()),
+                ..Default::default()
+            },
+            codex_protocol::PidNamespace::Isolated,
+        ),
     ] {
         let updated = session.apply_session_settings(&config, &updates).unwrap();
-        assert_eq!(updated.file_system_sandbox_policy(&[]), expected);
+        assert_eq!(
+            (
+                updated.file_system_sandbox_policy(&[]),
+                updated.permission_profile().pid_namespace(),
+            ),
+            (expected.clone(), namespace),
+        );
     }
     let next_cwd = tempfile::tempdir().unwrap();
     let git_dir = cwd.path().join("git-metadata");
@@ -5766,6 +5779,7 @@ async fn active_profile_update_rebuilds_network_proxy_config(
             (
                 "locked-down".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,
@@ -5782,6 +5796,7 @@ async fn active_profile_update_rebuilds_network_proxy_config(
             (
                 "web-enabled".to_string(),
                 PermissionProfileToml {
+                    pid_namespace: None,
                     description: None,
                     extends: None,
                     workspace_roots: None,

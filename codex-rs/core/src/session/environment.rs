@@ -204,13 +204,8 @@ impl Session {
             });
             let (mut file_system, network) = profile.to_runtime_permissions();
             file_system.preserve_deny_read_restrictions_from(&current_file_system);
-            updates.permission_profile = Some(
-                PermissionProfile::from_runtime_permissions_with_enforcement(
-                    profile.enforcement(),
-                    &file_system,
-                    network,
-                ),
-            );
+            updates.permission_profile =
+                Some(profile.with_runtime_permissions(&file_system, network));
         } else if let Some(policy) = sandbox_policy {
             let cwd = updates.environments.as_ref().map_or_else(
                 || current.cwd(),
