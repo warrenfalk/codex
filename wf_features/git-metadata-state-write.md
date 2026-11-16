@@ -29,6 +29,9 @@ symbolic path, so sharing the config with an older binary does not broaden that 
   Git metadata writes merely because the marker directory exists.
 - Keep a linked worktree's `.git` pointer file read-only. Grant the current worktree's private Git
   directory separately from the shared common Git directory.
+- Allow creating, using, removing, and pruning auxiliary worktrees. Their checkout paths must
+  already be writable under the selected profile; worktree registration does not grant access to
+  another checkout's files.
 - Fail closed for missing repositories, read-only profiles, malformed pointers, symlinked Git
   metadata roots, non-standard external Git directories, and mismatched worktree back-pointers.
 - Recompute the grant after cwd, environment, or permission-profile changes so access from a prior
@@ -43,6 +46,9 @@ symbolic path, so sharing the config with an older binary does not broaden that 
 The writable state includes the index, HEAD and other operation state, refs, objects, reflogs, and
 their lock files. This should support the common `add`, `commit`, `fetch`, `pull`, `push`, `merge`,
 `rebase`, `cherry-pick`, `revert`, `reset`, `restore`, `switch`, `branch`, `tag`, and `stash` flows.
+It also supports `git worktree add/remove/prune`, including the first worktree in a repository.
+Worktree administration may create and remove auxiliary worktrees' registration and control
+pointers, while the active worktree's existing control pointers remain read-only.
 
 ## Protected controls
 
@@ -53,8 +59,7 @@ The overlay keeps these repository controls read-only:
 - legacy branches and remotes definitions;
 - repository info files and object alternates;
 - submodule metadata administration;
-- shared worktree administration, except for the active worktree's private mutable state;
-- linked-worktree `commondir`, `gitdir`, and worktree-local config files.
+- the active worktree's `commondir`, `gitdir`, and worktree-local config files.
 
 Configuration lock files (`config.lock` and `config.worktree.lock`) are deliberately left writable.
 Protecting missing lock files can create real host-side placeholders that Git interprets as active
@@ -62,8 +67,8 @@ locks, blocking other Git processes even when the sandbox is idle. Sandbox start
 these lock files; protect the configuration files themselves instead.
 
 Consequently, commands whose purpose is to change those controls can fail. Examples include local
-`git config` writes, hook installation, `git worktree add/remove/prune`, submodule administration,
-and some maintenance or server-info commands.
+`git config` writes, hook installation, submodule administration, and some maintenance or
+server-info commands.
 
 These carveouts are defense in depth, not a complete security boundary against hostile repository
 mutation. Writable refs, objects, and operation state inherently permit repository corruption and
@@ -81,6 +86,9 @@ repository already contained.
   hook creation fail.
 - In a linked worktree, shared refs/objects and the active private index are writable while the
   `.git` pointer and private control pointers remain read-only.
+- From ordinary repositories and linked worktrees, comparison worktrees can be created and used,
+  clean worktrees can be removed, and stale registrations can be pruned. Cover a repository with
+  no prior worktrees and repeated commands in the same turn; config and hooks remain protected.
 - Missing optional controls such as a linked worktree's `config.worktree` do not prevent sandbox
   startup and cannot be created from inside the sandbox.
 - Initially absent configuration lock files remain absent during sandbox startup and execution

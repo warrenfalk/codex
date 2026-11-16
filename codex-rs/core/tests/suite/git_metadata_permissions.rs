@@ -61,7 +61,8 @@ async fn write_file(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn opted_in_profile_can_commit_but_cannot_change_git_controls() -> Result<()> {
+async fn opted_in_profile_can_commit_and_manage_worktrees_but_cannot_change_git_controls()
+-> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_target_windows!(
         Ok(()),
@@ -107,13 +108,24 @@ extends = ":workspace"
     let call_id = "git-commit";
     let second_call_id = "git-commit-second-step";
     let command = concat!(
+        "set -eu; ",
         "test ! -e .git/config.lock && test ! -e .git/config.worktree.lock || exit 40; ",
-        "git add tracked.txt && ",
+        "git add tracked.txt; ",
         "git -c user.name='Codex Test' -c user.email='codex@example.com' ",
-        "commit --quiet --no-gpg-sign --allow-empty -m checkpoint && ",
+        "commit --quiet --no-gpg-sign --allow-empty -m checkpoint; ",
+        "git worktree add --quiet --detach comparison HEAD; ",
+        "printf 'comparison\\n' >> comparison/tracked.txt; ",
+        "git -C comparison add tracked.txt; ",
+        "git -C comparison -c user.name='Codex Test' -c user.email='codex@example.com' ",
+        "commit --quiet --no-gpg-sign -m comparison; ",
+        "git worktree remove comparison; ",
+        "git worktree add --quiet --detach stale-comparison HEAD; ",
+        "rm -r stale-comparison; ",
+        "git worktree prune --expire now; ",
+        "test ! -e .git/worktrees/stale-comparison; ",
         "if git config codex.must-not-persist true; then exit 41; fi; ",
         "if printf '#!/bin/sh\\n' > .git/hooks/pre-commit; then exit 42; fi; ",
-        "test ! -e .git/hooks/pre-commit && ",
+        "test ! -e .git/hooks/pre-commit; ",
         "git rev-parse --verify HEAD"
     );
     let args = serde_json::to_string(&json!({
@@ -146,7 +158,7 @@ extends = ":workspace"
         .test()
         .codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
-            text: "stage and commit the file".to_string(),
+            text: "commit the file and manage comparison worktrees".to_string(),
             text_elements: Vec::new(),
         }]))
         .await?;
@@ -169,6 +181,14 @@ extends = ":workspace"
     assert!(!harness.path_exists(".git/config.lock").await?);
     assert!(!harness.path_exists(".git/config.worktree.lock").await?);
     assert!(!harness.path_exists(".git/hooks/pre-commit").await?);
+    assert!(!harness.path_exists("comparison").await?);
+    assert!(!harness.path_exists("stale-comparison").await?);
+    assert!(!harness.path_exists(".git/worktrees/comparison").await?);
+    assert!(
+        !harness
+            .path_exists(".git/worktrees/stale-comparison")
+            .await?
+    );
     assert!(harness.path_exists(".git/refs/heads/main").await?);
     Ok(())
 }

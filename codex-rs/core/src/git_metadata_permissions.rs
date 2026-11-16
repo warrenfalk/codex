@@ -33,7 +33,6 @@ const COMMON_READ_ONLY_PATHS: &[&str] = &[
     "objects/info/alternates",
     "objects/info/http-alternates",
     "modules",
-    "worktrees",
 ];
 
 const PRIVATE_READ_ONLY_PATHS: &[&str] = &["config.worktree"];

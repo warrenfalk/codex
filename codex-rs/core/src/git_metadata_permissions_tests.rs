@@ -56,7 +56,7 @@ fn init_repo() -> TempDir {
 }
 
 #[tokio::test]
-async fn linked_worktree_reopens_only_its_private_gitdir() {
+async fn linked_worktree_allows_worktree_management_but_keeps_its_controls_read_only() {
     let main_repo = init_repo();
     let worktree_path = main_repo.path().join("linked");
     run_git(
@@ -82,6 +82,10 @@ async fn linked_worktree_reopens_only_its_private_gitdir() {
         .trim();
     let private_git_dir = absolute(Path::new(private_path));
 
+    assert!(policy.can_write_local_path_with_cwd(
+        common_git_dir.join("worktrees/comparison/HEAD").as_path(),
+        cwd.as_path(),
+    ));
     assert!(!policy.can_write_local_path_with_cwd(cwd.join(".git").as_path(), cwd.as_path()));
     assert!(policy.can_write_local_path_with_cwd(
         common_git_dir.join("refs/heads/linked-test").as_path(),

@@ -38,6 +38,10 @@ mod pid_namespace;
 mod git_config;
 
 #[cfg(target_os = "linux")]
+#[path = "sandbox_git_worktree_tests.rs"]
+mod git_worktree;
+
+#[cfg(target_os = "linux")]
 #[path = "sandbox_root_metadata_tests.rs"]
 mod root_metadata;
 
