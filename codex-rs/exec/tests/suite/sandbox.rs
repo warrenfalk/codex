@@ -42,6 +42,10 @@ mod git_config;
 mod git_worktree;
 
 #[cfg(target_os = "linux")]
+#[path = "sandbox_nested_tests.rs"]
+mod nested;
+
+#[cfg(target_os = "linux")]
 #[path = "sandbox_root_metadata_tests.rs"]
 mod root_metadata;
 

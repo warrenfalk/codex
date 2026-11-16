@@ -193,6 +193,46 @@ fn private_tmp_client() {
         UnixStream::connect(std::env::var_os("CODEX_TEST_OTHER_ALIAS_SOCKET").unwrap())
             .expect("unrelated alias socket reachable");
     }
+    if let Some(parent_socket) = std::env::var_os("CODEX_TEST_PARENT_DAEMON_SOCKET") {
+        assert!(
+            UnixStream::connect(parent_socket).is_err(),
+            "parent sandbox daemon reachable"
+        );
+    }
+    let runtime_socket = codex_uds::shared_daemon_socket_directory()
+        .unwrap()
+        .join("sandbox-fixture.sock");
+    let _runtime = UnixListener::bind(&runtime_socket)
+        .expect("sandbox can create its own private daemon fixture");
+    UnixStream::connect(&runtime_socket).expect("private daemon fixture reachable");
+    if std::env::var_os("CODEX_TEST_NESTED_DAEMON_CLIENT").is_none() {
+        let profile = PermissionProfile::workspace_write_with(
+            &[AbsolutePathBuf::from_absolute_path("/tmp").unwrap()],
+            NetworkSandboxPolicy::Enabled,
+            /*exclude_tmpdir_env_var*/ true,
+            /*exclude_slash_tmp*/ false,
+        );
+        let (_, test_module) = module_path!().split_once("::").unwrap();
+        let client_test = format!("{test_module}::private_tmp_client");
+        let output = std::process::Command::new("/tmp/sandbox")
+            .args(["--sandbox-policy-cwd", "/tmp", "--permission-profile"])
+            .arg(serde_json::to_string(&profile).unwrap())
+            .args([
+                "--",
+                "/tmp/test",
+                "--exact",
+                &client_test,
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("CODEX_TEST_NESTED_DAEMON_CLIENT", "1")
+            .env("CODEX_TEST_PARENT_DAEMON_SOCKET", &runtime_socket)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("private-tmp-isolated"));
+    }
     println!("private-tmp-isolated");
 }
 

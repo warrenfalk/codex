@@ -107,6 +107,7 @@ mod guardian_cached_score;
 mod guardian_checkpoint_migration;
 mod reasoning_replay_metrics;
 mod shell_environment_reload;
+mod test_process_state;
 // Uses the same command-approval harness as guardian_review below.
 mod builtin_model_catalog;
 mod canonical_plugin_connectors;
