@@ -251,7 +251,9 @@ pub(crate) async fn run_turn(
         crate::guardian::check_pending_guardian_input(&sess, &turn_context).await?;
     }
     // Record results from hooks that finished after the previous turn before this turn's user prompt.
-    drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ true).await;
+    if !turn_context.model_only {
+        drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ true).await;
+    }
 
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
@@ -307,8 +309,8 @@ pub(crate) async fn run_turn(
     }
 
     let user_input = turn_user_input(&input);
-    let allow_plugin_mentions =
-        !crate::guardian::is_basic_session_source(&turn_context.session_source);
+    let allow_plugin_mentions = !turn_context.model_only
+        && !crate::guardian::is_basic_session_source(&turn_context.session_source);
     let McpStartupRequirements {
         required_servers,
         required_plugins,
@@ -316,7 +318,9 @@ pub(crate) async fn run_turn(
     if allow_plugin_mentions {
         required_plugins.extend(crate::plugins::collect_explicit_plugin_ids(&user_input));
     }
-    let (input_required_servers, mentioned_plugins) =
+    let (input_required_servers, mentioned_plugins) = if turn_context.model_only {
+        (Vec::new(), Vec::new())
+    } else {
         match required_mcp_servers_for_input(&sess, turn_context.as_ref(), &user_input)
             .or_cancel(&cancellation_token)
             .await
@@ -333,7 +337,8 @@ pub(crate) async fn run_turn(
                 .await;
                 return Err(err.into());
             }
-        };
+        }
+    };
 
     required_servers.extend(input_required_servers);
     required_servers.sort_unstable();
@@ -397,19 +402,24 @@ pub(crate) async fn run_turn(
     );
     let mut world_state = record_context??;
 
-    let Some((injection_items, explicitly_enabled_connectors)) = build_skills_and_plugins(
-        &sess,
-        first_step_context.as_ref(),
-        &user_input,
-        &mentioned_plugins,
-        &cancellation_token,
-    )
-    .await
-    else {
-        return Ok(None);
+    let (injection_items, explicitly_enabled_connectors) = if turn_context.model_only {
+        (Vec::new(), HashSet::new())
+    } else {
+        let Some(result) = build_skills_and_plugins(
+            &sess,
+            first_step_context.as_ref(),
+            &user_input,
+            &mentioned_plugins,
+            &cancellation_token,
+        )
+        .await
+        else {
+            return Ok(None);
+        };
+        result
     };
 
-    if run_pending_session_start_hooks(&sess, &turn_context).await {
+    if !turn_context.model_only && run_pending_session_start_hooks(&sess, &turn_context).await {
         return Ok(None);
     }
     if crate::guardian::is_basic_session_source(&turn_context.session_source)
@@ -675,7 +685,14 @@ pub(crate) async fn run_turn(
                 }
                 can_drain_pending_input = true;
                 // Process async hooks only after sampling and its tools have finished.
-                drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ false).await;
+                if !turn_context.model_only {
+                    drain_async_hook_results(
+                        &sess,
+                        &turn_context,
+                        /*before_user_prompt*/ false,
+                    )
+                    .await;
+                }
                 let (has_pending_input, token_status) = async {
                     let has_pending_input =
                         sess.input_queue.has_pending_input(&sess.active_turn).await;
@@ -773,7 +790,9 @@ pub(crate) async fn run_turn(
                     .await;
                     match compacted {
                         Ok(true) => {
-                            if run_pending_session_start_hooks(&sess, &turn_context).await {
+                            if !turn_context.model_only
+                                && run_pending_session_start_hooks(&sess, &turn_context).await
+                            {
                                 return Ok(None);
                             }
                             // After interrupted sampling, drain pending input even if compaction
@@ -805,6 +824,9 @@ pub(crate) async fn run_turn(
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
+                    if turn_context.model_only {
+                        break;
+                    }
                     let stop_outcome = run_turn_stop_hooks(
                         &sess,
                         &step_context,
@@ -1058,6 +1080,18 @@ pub(crate) async fn run_hooks_and_record_inputs(
     let mut accepted_user_input = false;
     for input_item in recordable_inputs(sess, model_info, input) {
         let input_item = input_item?;
+        if turn_context.model_only {
+            record_pending_input(
+                sess,
+                turn_context,
+                model_info,
+                input_item.into_owned(),
+                Vec::new(),
+                persist_context,
+            )
+            .await;
+            continue;
+        }
         let hook_outcome = inspect_pending_input(sess, turn_context, &input_item).await;
         if hook_outcome.should_stop {
             blocked_input = true;

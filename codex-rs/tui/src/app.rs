@@ -260,6 +260,7 @@ mod permission_shortcuts;
 mod pets;
 mod platform_actions;
 mod plugin_mentions;
+mod prompt_rewrite;
 pub(crate) mod provider;
 mod rate_limit_refresh;
 mod realtime_delivery;
@@ -694,6 +695,8 @@ pub(crate) struct App {
     abandoned_side_threads: HashSet<ThreadId>,
     pending_side_summary: Option<PendingSideSummary>,
     pending_session_transition: Option<session_transition::PendingSessionTransition>,
+    pending_prompt_rewrite: Option<prompt_rewrite::PendingPromptRewrite>,
+    prompt_rewrite_thread_tombstones: HashSet<ThreadId>,
     active_thread_id: Option<ThreadId>,
     active_thread_rx: Option<mpsc::Receiver<ThreadBufferedEvent>>,
     primary_thread_id: Option<ThreadId>,

@@ -12,6 +12,7 @@ mod external_agent_config;
 pub(crate) mod fs;
 mod history;
 mod models;
+mod prompt_rewrite;
 pub(crate) mod provider_selection;
 #[cfg(test)]
 #[path = "app_server_session/provider_selection_tests.rs"]
@@ -144,6 +145,8 @@ use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
+use codex_app_server_protocol::TurnStartModelOnlyParams;
+use codex_app_server_protocol::TurnStartModelOnlyResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;

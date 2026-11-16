@@ -501,7 +501,8 @@ pub(crate) async fn run_turn_interrupt_hooks(
     turn_context: &Arc<TurnContext>,
     turn_state: &Mutex<TurnState>,
 ) {
-    if matches!(&turn_context.session_source, SessionSource::SubAgent(_)) {
+    if turn_context.model_only || matches!(&turn_context.session_source, SessionSource::SubAgent(_))
+    {
         return;
     }
 
@@ -1117,6 +1118,9 @@ pub(crate) fn hooks_for_model_request(
     session: &Arc<Session>,
     step: &StepContext,
 ) -> Arc<codex_hooks::Hooks> {
+    if step.turn.model_only {
+        return Arc::new(session.hooks().reconfigured(Default::default()));
+    }
     match step.turn.session_source {
         SessionSource::Internal(InternalSessionSource::MemoryConsolidation)
         | SessionSource::SubAgent(SubAgentSource::MemoryConsolidation) => Arc::new(

@@ -139,7 +139,9 @@ pub(crate) async fn maybe_generate_and_set_thread_title(
 }
 
 fn auto_thread_title_enabled(turn_context: &TurnContext) -> bool {
-    turn_context.config.auto_thread_title && !auto_thread_title_disabled_for_tests()
+    !turn_context.model_only
+        && turn_context.config.auto_thread_title
+        && !auto_thread_title_disabled_for_tests()
 }
 
 pub(crate) fn auto_thread_title_disabled_for_tests() -> bool {

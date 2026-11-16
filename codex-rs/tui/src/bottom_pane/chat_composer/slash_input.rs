@@ -126,6 +126,14 @@ impl<'a> SlashInput<'a> {
         self.enabled && !text.starts_with(' ') && text.trim().starts_with('/')
     }
 
+    pub(super) fn recognizes_command(&self, text: &str) -> bool {
+        if !self.enabled || self.is_bash_mode || text.starts_with(' ') {
+            return false;
+        }
+        parse_slash_name(text)
+            .is_some_and(|(name, _, _)| !name.contains('/') && self.command(name).is_some())
+    }
+
     pub(super) fn command_element_range(
         &self,
         first_line: &str,

@@ -4678,12 +4678,16 @@ impl Session {
                 } else {
                     None
                 };
-            let executor_hook_sources = crate::hook_runtime::prepare_executor_hook_sources(
-                &mcp,
-                session_plugins.as_ref().unwrap_or(&selected_plugins),
-                executor_capability_discovery.as_deref(),
-                executor_capability_discovery_v2.as_deref(),
-            );
+            let executor_hook_sources = if turn_context.model_only {
+                Vec::new()
+            } else {
+                crate::hook_runtime::prepare_executor_hook_sources(
+                    &mcp,
+                    session_plugins.as_ref().unwrap_or(&selected_plugins),
+                    executor_capability_discovery.as_deref(),
+                    executor_capability_discovery_v2.as_deref(),
+                )
+            };
             let mut filesystem_access = HashMap::new();
             for environment in environments.turn_environments() {
                 let environment_id = &environment.selection.environment_id;

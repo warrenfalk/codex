@@ -579,6 +579,7 @@ impl Session {
             prompt_cache_ttl: start_options.prompt_cache_ttl,
             cyber_access_program: start_options.cyber_access_program,
             helper_admission: triggered.then_some(helper_admission).flatten(),
+            model_only: false,
         };
         let turn_context = match session_configuration {
             Some(configuration) => {

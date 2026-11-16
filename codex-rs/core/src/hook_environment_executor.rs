@@ -53,6 +53,9 @@ pub(crate) fn with_tool_environment_hooks(
     environments: &TurnEnvironmentSnapshot,
     target_environments: &[&str],
 ) -> Hooks {
+    if turn.model_only {
+        return session.hooks().reconfigured(Default::default());
+    }
     session.hooks().with_environment_hooks(
         environment_hook_sources(environments, target_environments),
         Arc::new(EnvironmentCommandExecutor {

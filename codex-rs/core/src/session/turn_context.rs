@@ -339,6 +339,7 @@ pub(crate) struct NewTurnContextOptions {
     pub(crate) prompt_cache_ttl: Option<crate::PromptCacheTtl>,
     pub(crate) cyber_access_program: Option<CyberAccessProgram>,
     pub(crate) helper_admission: Option<crate::agent::helper_daybreak::turn::HelperTurnAdmission>,
+    pub(crate) model_only: bool,
 }
 
 /// The context needed for a single turn of the thread.
@@ -407,6 +408,8 @@ pub struct TurnContext {
     pub(crate) model_verification_emitted: AtomicBool,
     /// Effective cyber treatment for this turn, including any child-agent inheritance.
     pub(crate) cyber_access_program: Option<CyberAccessProgram>,
+    /// Restricts this turn to model sampling with no host-side capabilities.
+    pub(crate) model_only: bool,
 }
 
 /// Selects which preparation is needed when building a turn context.
@@ -493,6 +496,7 @@ impl TurnContext {
             server_model_warning_emitted: AtomicBool::new(false),
             model_verification_emitted: AtomicBool::new(false),
             cyber_access_program: None,
+            model_only: false,
         }
     }
 
@@ -937,6 +941,7 @@ impl TurnContext {
                 self.model_verification_emitted.load(Ordering::Relaxed),
             ),
             cyber_access_program: self.cyber_access_program,
+            model_only: self.model_only,
         }
     }
 
@@ -1203,6 +1208,7 @@ impl Session {
             server_model_warning_emitted: AtomicBool::new(false),
             model_verification_emitted: AtomicBool::new(false),
             cyber_access_program: None,
+            model_only: false,
         }
     }
 
@@ -1383,7 +1389,8 @@ impl Session {
             &plugin_outcome,
             per_turn_config.codex_home.as_path(),
         );
-        let skill_discovery = if matches!(build_mode, TurnContextBuildMode::InjectItems)
+        let skill_discovery = if options.model_only
+            || matches!(build_mode, TurnContextBuildMode::InjectItems)
             || crate::guardian::is_basic_session_source(&session_configuration.session_source)
             || (per_turn_config
                 .features
@@ -1498,6 +1505,7 @@ impl Session {
         if let Some(program) = turn_context.cyber_access_program {
             turn_context.extension_data.insert(program);
         }
+        turn_context.model_only = options.model_only;
         let turn_context = Arc::new(turn_context);
         if git_enrichment_policy == GitEnrichmentPolicy::Fresh
             && turn_context
