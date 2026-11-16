@@ -19,6 +19,95 @@ use std::time::Instant;
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
+fn nested_sandbox_cleans_only_its_own_synthetic_controls() {
+    let temp_dir = tempfile::tempdir().expect("create nested workspace");
+    let repo = temp_dir.path();
+    if !bubblewrap_is_available(repo) {
+        eprintln!("skipping nested cleanup test: sandbox prerequisites are unavailable");
+        return;
+    }
+    let controls = repo.join("controls");
+    std::fs::create_dir(&controls).expect("create controls directory");
+    let generated = controls.join("generated");
+    let existing = controls.join("existing");
+    std::fs::write(&existing, "").expect("create existing empty file");
+    let inner = PermissionProfile::from_runtime_permissions(
+        &FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry::new(
+                AbsolutePathBuf::from_absolute_path("/").unwrap().into(),
+                FileSystemAccessMode::Read,
+            ),
+            path_entry(repo, FileSystemAccessMode::Write),
+            path_entry(&generated, FileSystemAccessMode::Read),
+            path_entry(&existing, FileSystemAccessMode::Read),
+        ]),
+        NetworkSandboxPolicy::Enabled,
+    );
+    let script = r#"
+set -eu
+test ! -e controls/generated
+"$1" --sandbox-policy-cwd "$3" --permission-profile "$2" --no-proc -- sh -c '
+    test -f controls/generated
+    if printf changed > controls/generated; then exit 41; fi
+    test -f controls/existing
+    printf "inner ready\n"
+    : > inner-ready
+    if test "$1" = kill; then
+        while :; do sleep 0.01; done
+    fi
+' inner-command "$4" &
+supervisor=$!
+attempt=0
+while ! test -f inner-ready; do
+    attempt=$((attempt + 1))
+    if test "$attempt" -ge 500; then kill -KILL "$supervisor"; exit 42; fi
+    sleep 0.01
+done
+if test "$4" = kill; then kill -KILL "$supervisor"; fi
+wait "$supervisor" || test "$4" = kill
+attempt=0
+while test -e controls/generated; do
+    attempt=$((attempt + 1))
+    if test "$attempt" -ge 500; then exit 43; fi
+    sleep 0.01
+done
+test ! -e controls/generated
+test -f controls/existing
+printf 'nested cleanup complete\n'
+"#;
+    for network in [
+        NetworkSandboxPolicy::Enabled,
+        NetworkSandboxPolicy::Restricted,
+    ] {
+        let outer = PermissionProfile::workspace_write_with(
+            &[],
+            network,
+            /*exclude_tmpdir_env_var*/ true,
+            /*exclude_slash_tmp*/ true,
+        )
+        .with_pid_namespace(codex_protocol::PidNamespace::Host);
+        for completion in ["exit", "kill"] {
+            let _ = std::fs::remove_file(repo.join("inner-ready"));
+            let output = sandbox_command(repo, &outer)
+                .args(["--", "sh", "-c", script, "nested-cleanup"])
+                .arg(env!("CARGO_BIN_EXE_codex-linux-sandbox"))
+                .arg(serde_json::to_string(&inner).expect("serialize inner profile"))
+                .arg(repo)
+                .arg(completion)
+                .output()
+                .expect("run nested sandbox");
+            assert!(
+                output.status.success(),
+                "nested cleanup failed for {network:?}/{completion}: {output:?}"
+            );
+            assert_eq!(output.stdout, b"inner ready\nnested cleanup complete\n");
+            assert!(!generated.exists());
+            assert_eq!(std::fs::read(&existing).expect("read existing file"), b"");
+        }
+    }
+}
+
+#[test]
 fn missing_read_only_git_lock_is_removed_after_supervisor_is_killed() {
     if !command_is_available("git") {
         eprintln!("skipping bwrap test: git is unavailable");

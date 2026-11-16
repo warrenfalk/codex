@@ -26,7 +26,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::linux_run_main::synthetic_mount_registry_root;
+use crate::synthetic_mount_registry::synthetic_mount_registry_root;
 use codex_protocol::PidNamespace;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
@@ -754,7 +754,10 @@ fn create_filesystem_args(
         // this before deny masks so a denied parent stays hidden, rather than
         // trying to recreate the registry beneath an already read-only tmpfs.
         let registry_root = synthetic_mount_registry_root();
-        let registry_mount = if registry_root.starts_with(mount_root) {
+        let registry_mount = if registry_root.starts_with(&daemon_directory) {
+            // The fresh runtime mask already hides the parent's registry.
+            None
+        } else if registry_root.starts_with(mount_root) {
             Some(registry_root.as_path())
         } else if mount_root.starts_with(&registry_root) {
             Some(mount_root)

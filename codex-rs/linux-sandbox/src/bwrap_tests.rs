@@ -477,12 +477,22 @@ fn registry_protection_precedes_denied_parent_mask() {
         .args
         .windows(3)
         .position(|args| args == ["--ro-bind", registry_path.as_str(), registry_path.as_str()]);
+    let daemon_directory = codex_uds::shared_daemon_socket_directory().expect("daemon directory");
+    let registry_protection = if registry_root.starts_with(&daemon_directory) {
+        assert!(registry_bind.is_none(), "parent registry must stay hidden");
+        let daemon_path = path_to_string(&daemon_directory);
+        args.args
+            .windows(2)
+            .position(|args| args == ["--tmpfs", daemon_path.as_str()])
+    } else {
+        registry_bind
+    };
     let temp_mask = args
         .args
         .windows(2)
-        .position(|args| args == ["--tmpfs", temp_path.as_str()]);
+        .rposition(|args| args == ["--tmpfs", temp_path.as_str()]);
     assert!(
-        registry_bind.expect("registry read-only bind") < temp_mask.expect("temp deny mask"),
+        registry_protection.expect("registry protected") < temp_mask.expect("temp deny mask"),
         "registry protection must not reopen denied temp paths"
     );
 }

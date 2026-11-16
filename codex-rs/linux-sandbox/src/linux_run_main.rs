@@ -1,3 +1,4 @@
+use crate::synthetic_mount_registry::synthetic_mount_registry_root;
 use clap::Parser;
 use std::ffi::CString;
 use std::fmt;
@@ -10,7 +11,6 @@ use std::os::fd::FromRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -1086,34 +1086,6 @@ fn with_synthetic_mount_registry_lock<T>(f: impl FnOnce() -> T) -> T {
 
 fn synthetic_mount_marker_dir(path: &Path) -> PathBuf {
     synthetic_mount_registry_root().join(format!("{:016x}", hash_path(path)))
-}
-
-pub(crate) fn synthetic_mount_registry_root() -> PathBuf {
-    static REGISTRY_ROOT: OnceLock<PathBuf> = OnceLock::new();
-
-    REGISTRY_ROOT
-        .get_or_init(|| {
-            let effective_uid = unsafe { libc::geteuid() };
-            let temp_dir = std::env::temp_dir();
-            let temp_dir = temp_dir.canonicalize().unwrap_or_else(|err| {
-                panic!(
-                    "failed to resolve synthetic mount registry temp directory {}: {err}",
-                    temp_dir.display()
-                )
-            });
-            let registry_root = temp_dir.join(format!(
-                "codex-bwrap-synthetic-mount-targets-{effective_uid}"
-            ));
-            // A registry symlink can redirect bookkeeping into a writable root
-            // that does not overlap TMPDIR, bypassing its read-only mount.
-            assert!(
-                !registry_root.is_symlink(),
-                "synthetic mount registry must not be a symlink: {}",
-                registry_root.display()
-            );
-            registry_root
-        })
-        .clone()
 }
 
 fn hash_path(path: &Path) -> u64 {

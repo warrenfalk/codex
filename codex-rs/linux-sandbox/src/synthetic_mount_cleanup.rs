@@ -1,9 +1,11 @@
 use crate::linux_run_main::SyntheticMountTargetRegistration;
 use crate::linux_run_main::cleanup_synthetic_mount_targets;
 use crate::linux_run_main::process_is_active;
+use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::io::Write;
+use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::thread;
 use std::time::Duration;
@@ -13,7 +15,7 @@ const CLEANUP_WORKER_DISARM: u8 = 2;
 
 /// Keeps synthetic mount cleanup alive if the sandbox supervisor is hard-killed.
 pub(crate) struct SyntheticMountCleanupGuard {
-    control: UnixStream,
+    control: File,
     worker_pid: libc::pid_t,
 }
 
@@ -29,8 +31,12 @@ impl SyntheticMountCleanupGuard {
 
         let registrations = registrations.to_vec();
         let inherited_fds_to_close = inherited_fds_to_close.to_vec();
-        let (mut supervisor_control, worker_control) = UnixStream::pair()
+        let (supervisor_control, worker_control) = UnixStream::pair()
             .unwrap_or_else(|err| panic!("failed to create synthetic mount cleanup socket: {err}"));
+        // Plain descriptor I/O remains available under an inherited network
+        // filter, which denies sendto even on an existing Unix socketpair.
+        let mut supervisor_control = File::from(OwnedFd::from(supervisor_control));
+        let worker_control = File::from(OwnedFd::from(worker_control));
         let worker_pid = unsafe { libc::fork() };
         if worker_pid < 0 {
             let err = io::Error::last_os_error();
@@ -71,7 +77,7 @@ impl SyntheticMountCleanupGuard {
 }
 
 fn run_cleanup_worker(
-    mut control: UnixStream,
+    mut control: File,
     bwrap_pid: libc::pid_t,
     registrations: &[SyntheticMountTargetRegistration],
     inherited_fds_to_close: &[libc::c_int],

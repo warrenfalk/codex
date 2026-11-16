@@ -42,6 +42,9 @@ symbolic path, so sharing the config with an older binary does not broaden that 
   active. Those entries must be removed after normal completion, cancellation, timeout, or abrupt
   supervisor termination. A later sandbox startup must reclaim an entry attributable to an
   interrupted prior sandbox while preserving a pre-existing empty file or directory.
+- Nested filesystem sandboxes must be able to maintain their own temporary controls while the
+  parent sandbox's cleanup records stay protected. A command with no temporary controls must not
+  require writable cleanup state.
 
 The writable state includes the index, HEAD and other operation state, refs, objects, reflogs, and
 their lock files. This should support the common `add`, `commit`, `fetch`, `pull`, `push`, `merge`,
@@ -98,6 +101,9 @@ repository already contained.
   and a later sandbox run reclaims synthetic leftovers from interruptions before cleanup supervision
   began.
 - Empty control files or directories that predate sandbox setup are preserved.
+- Nested sandbox execution removes its own temporary controls after completion or termination of
+  its supervisor while the parent remains active. It preserves pre-existing empty files without
+  needing write access to the parent sandbox's cleanup records.
 - A read-only project, malformed or forged pointer, unrelated repository, or later cwd does not
   inherit the grant.
 - An empty or structurally incomplete `.git` directory does not receive the grant or prevent a

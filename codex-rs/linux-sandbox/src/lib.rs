@@ -32,6 +32,8 @@ mod seccomp;
 #[cfg(target_os = "linux")]
 mod synthetic_mount_cleanup;
 #[cfg(target_os = "linux")]
+mod synthetic_mount_registry;
+#[cfg(target_os = "linux")]
 mod wslg;
 
 #[cfg(target_os = "linux")]
