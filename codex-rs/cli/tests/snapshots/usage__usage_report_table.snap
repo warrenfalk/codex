@@ -1,0 +1,17 @@
+---
+source: cli/tests/usage.rs
+expression: rendered
+---
+Usage from 2000-01-01T00:00:00Z to 2000-01-03T00:00:00Z
+
+Estimated API cost: $0.000705
+Input cost:         $0.000255 (cached $0.000005, uncached $0.000250)
+Output cost:        $0.000450 (reasoning $0.000150)
+
+Total tokens:  150
+Input tokens:  120 (cached 20, uncached 100)
+Output tokens: 30 (reasoning 10)
+Rollout files: 1 scanned, 1 modified since start, 0 parse errors
+
+     TOTAL      INPUT     CACHED     UNCACH     OUTPUT     REASON LAST                     NAME (CWD)
+ $0.000705  $0.000255  $0.000005  $0.000250  $0.000450  $0.000150 2000-01-01T12:00:00Z     00000000-0000-0000-0000-000000000001 ([PROJECT])
