@@ -42,6 +42,7 @@ use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
 use crate::state::TurnState;
+use crate::thread_title;
 use codex_analytics::TurnProfileFact;
 use codex_analytics::TurnTokenUsageFact;
 use codex_context_fragments::RenderedFragment;
@@ -738,7 +739,14 @@ impl Session {
             regular_output.is_some() && turn_context.terminal_error.lock().await.is_none();
         let finishing = CancellationToken::new();
         let finish_recording = finishing.clone().drop_guard();
-        let (turn_state, unadmitted_task, mut pending_input, outcome_handoff, finished_task_guard) = {
+        let (
+            turn_state,
+            unadmitted_task,
+            mut pending_input,
+            outcome_handoff,
+            finished_task_guard,
+            finished_task_kind,
+        ) = {
             let mut active = self.active_turn.lock().await;
             let active_turn = active.as_mut()?;
             if !Arc::ptr_eq(&active_turn.task.as_ref()?.turn_context, &turn_context) {
@@ -762,6 +770,7 @@ impl Session {
                 task.pending_initial_input.unwrap_or_default(),
                 task.outcome_handoff,
                 task.handle,
+                task.kind,
             )
         };
         turn_context
@@ -943,6 +952,8 @@ impl Session {
         } else {
             ThreadIdleCause::Completed
         };
+        let mut should_consider_auto_thread_title = false;
+        let mut auto_thread_title_last_agent_message = None;
         let event = if let Some(reason) = abort_reason {
             if reason == TurnAbortReason::Interrupted {
                 run_turn_interrupt_hooks(self, &turn_context, &turn_state).await;
@@ -966,6 +977,8 @@ impl Session {
             let error = turn_context.terminal_error.lock().await.clone();
             self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
                 .await;
+            should_consider_auto_thread_title = true;
+            auto_thread_title_last_agent_message = last_agent_message.clone();
             EventMsg::TurnComplete(TurnCompleteEvent {
                 root_turn_id: Some(turn_context.root_turn_id()),
                 turn_id: turn_context.sub_id.clone(),
@@ -981,6 +994,24 @@ impl Session {
             matches!(event, EventMsg::TurnComplete(_)) && self.is_private_guardian_reviewer().await;
         if !saved_guardian_completion {
             self.send_event(turn_context.as_ref(), event.clone()).await;
+        }
+        let should_start_auto_thread_title = should_consider_auto_thread_title
+            && finished_task_kind == TaskKind::Regular
+            && turn_context.config.auto_thread_title
+            && !thread_title::auto_thread_title_disabled_for_tests()
+            && self.mark_auto_thread_title_requested().await;
+
+        if should_start_auto_thread_title {
+            let session = Arc::clone(self);
+            let turn_context = Arc::clone(&turn_context);
+            tokio::spawn(async move {
+                thread_title::maybe_generate_and_set_thread_title(
+                    session,
+                    turn_context,
+                    auto_thread_title_last_agent_message,
+                )
+                .await;
+            });
         }
 
         let cleared_active_turn = {

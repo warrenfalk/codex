@@ -508,6 +508,7 @@ async fn migrating_only_the_project_agent_setting_preserves_v1_tools() -> Result
     ] {
         std::fs::write(project_dir.join(CONFIG_TOML_FILE), project_settings)?;
         let mut loaded = builder.build().await?;
+        loaded.auto_thread_title = false;
         let mut model = remote_model("project-agent-selector");
         model.multi_agent_version = model_version;
         let body = response_body_for_remote_model(model, move |fixture| {

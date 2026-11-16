@@ -175,6 +175,8 @@ pub const DEFAULT_APP_SERVER_TEST_ARGS: [&str; 5] = [
     "-c",
     "features.recommended_plugins=false",
 ];
+pub const DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR: &str =
+    "CODEX_DISABLE_AUTO_THREAD_TITLE_FOR_TESTS";
 const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG";
 #[cfg(windows)]
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
@@ -291,6 +293,7 @@ impl TestAppServer {
         cmd.current_dir(codex_home);
         cmd.env("CODEX_HOME", codex_home);
         cmd.env("RUST_LOG", "warn");
+        cmd.env(DISABLE_AUTO_THREAD_TITLE_FOR_TESTS_ENV_VAR, "1");
         // Keep integration tests isolated from host managed configuration.
         cmd.env(
             "CODEX_APP_SERVER_MANAGED_CONFIG_PATH",

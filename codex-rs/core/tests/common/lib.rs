@@ -228,6 +228,7 @@ pub async fn load_default_config_for_test_with_cloud_config_bundle(
             .disable(feature)
             .expect("test config should allow disabling plugin recommendations");
     }
+    config.auto_thread_title = false;
     config
 }
 

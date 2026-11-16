@@ -75,7 +75,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart_scenari
     git(&repository, &["add", "."]);
     git(&repository, &["commit", "-m", "base"]);
     fs::write(repository.join("tracked.txt"), "source edits\n")?;
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             cwd: Some(home.path().to_path_buf()),
@@ -84,6 +84,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart_scenari
         .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
         .build()
         .await?;
+    config.auto_thread_title = false;
     let mut server = Box::pin(start_server(&config)).await?;
     let config_path = home.path().join("config.toml");
     let original = fs::read_to_string(&config_path)?;

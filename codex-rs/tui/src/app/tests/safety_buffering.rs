@@ -180,6 +180,7 @@ async fn safety_recourse_handles_a_policy_block() -> Result<()> {
     app.config = app
         .rebuild_config_for_cwd(app.config.cwd.to_path_buf())
         .await?;
+    app.config.auto_thread_title = false;
     let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     for (domain, error_domain) in [("cyber", "cyber"), ("bio", "bio"), ("cyber", "bio")] {
