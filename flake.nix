@@ -77,6 +77,7 @@
               # this fork.
               # bazel
               pkgs.just
+              pkgs.cargo-nextest
               pkgs.dotslash
               pkgs.pkg-config
               pkgs.openssl
