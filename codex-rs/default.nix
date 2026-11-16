@@ -74,6 +74,7 @@ rustPlatform.buildRustPackage (_: {
     "sqlx-core-0.9.0" = "sha256-kLvUfUy6vmL9LYU7nzHv+iB6cIJm2CjDf9Yo6wpWrWg=";
     "tokio-tungstenite-0.28.0" = "sha256-hJAkvWxDjB9A9GqansahWhTmj/ekcelslLUTtwqI7lw=";
     "tungstenite-0.27.0" = "sha256-AN5wql2X2yJnQ7lnDxpljNw0Jua40GtmT+w3wjER010=";
+    "v8-152.2.0" = "sha256-/sO2tkahl8n21xhZyefKO1WIJTwarGC53flSwRl/aGE=";
   };
 
   meta = with lib; {
