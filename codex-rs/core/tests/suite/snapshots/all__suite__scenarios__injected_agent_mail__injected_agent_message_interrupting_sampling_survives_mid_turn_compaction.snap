@@ -20,7 +20,7 @@ Scenario: An injected agent message that interrupts sampling is included in the 
 
     When using the shell, you must adhere to the following guidelines:
 
-    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...he `rg` command is not found, then use alternatives.) [hash=67af3ff3b546e946]
+    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...able, fall back gracefully to available alternatives. [hash=cca9f33c741f0b63]
     - Do not use python scripts to attempt to output larger chunks of a file.
 
 
@@ -47,7 +47,7 @@ Scenario: An injected agent message that interrupts sampling is included in the 
 
     When using the shell, you must adhere to the following guidelines:
 
-    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...he `rg` command is not found, then use alternatives.) [hash=67af3ff3b546e946]
+    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...able, fall back gracefully to available alternatives. [hash=cca9f33c741f0b63]
     - Do not use python scripts to attempt to output larger chunks of a file.
 
 
@@ -77,7 +77,7 @@ Scenario: An injected agent message that interrupts sampling is included in the 
 
     When using the shell, you must adhere to the following guidelines:
 
-    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...he `rg` command is not found, then use alternatives.) [hash=67af3ff3b546e946]
+    - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much ...able, fall back gracefully to available alternatives. [hash=cca9f33c741f0b63]
     - Do not use python scripts to attempt to output larger chunks of a file.
 
 

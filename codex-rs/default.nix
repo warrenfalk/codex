@@ -107,6 +107,21 @@ rustPlatform.buildRustPackage (_: {
   src = ./.;
   buildInputs = nativeAudioLibraries;
 
+  # Select runtime entrypoints explicitly: an unscoped workspace build also
+  # compiles standalone frontend launchers, test fixtures, and developer tools.
+  # The combined CLI retains its embedded TUI, exec, and server subcommands.
+  cargoBuildFlags = [
+    "-p" "codex-cli" "--bin" "codex"
+    "-p" "codex-app-server" "--bin" "codex-app-server"
+    "-p" "codex-exec-server-cli" "--bin" "codex-exec-server"
+    "-p" "codex-code-mode-host" "--bin" "codex-code-mode-host"
+    "-p" "codex-voice-host" "--bin" "codex-voice-host"
+    "-p" "codex-apply-patch" "--bin" "apply_patch"
+  ] ++ lib.optionals stdenv.hostPlatform.isLinux [
+    "-p" "codex-linux-sandbox" "--bin" "codex-linux-sandbox"
+    "-p" "codex-bwrap" "--bin" "bwrap"
+  ];
+
   prePatch = ''
     cp ${mxcSdkLock.lockFile} "$cargoDepsCopy/${mxcSdkLock.crateDirectory}/Cargo.lock"
   '';
