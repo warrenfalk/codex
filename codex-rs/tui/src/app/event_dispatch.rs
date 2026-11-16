@@ -29,9 +29,20 @@ use codex_app_server_protocol::WindowsSandboxSetupMode;
 pub(super) const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
-    // Keep the existing dispatcher layout until it can be formatted separately.
+    // Construct and box the large dispatcher future outside the event loop's poll frame.
+    // Boxing at the await site still reserves stack space for the unboxed temporary.
+    #[inline(never)]
+    pub(crate) fn handle_event<'a>(
+        &'a mut self,
+        tui: &'a mut tui::Tui,
+        app_server: &'a mut AppServerSession,
+        event: AppEvent,
+    ) -> std::pin::Pin<Box<impl std::future::Future<Output = Result<AppRunControl>> + 'a>> {
+        crate::boxed_future!(self.handle_event_inner(tui, app_server, event))
+    }
+
     #[rustfmt::skip]
-    pub(crate) async fn handle_event(
+    async fn handle_event_inner(
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
@@ -263,14 +274,7 @@ impl App {
             AppEvent::ChooseNewSessionCheckout { name }
             | AppEvent::NewSession { name }
             | AppEvent::NewSessionInCurrentWorktree { name } => {
-                self.start_fresh_session(
-                    tui, app_server, /*session_start_source*/ None,
-                    /*initial_user_message*/ None, name,
-                )
-                .await;
-                if self.chat_widget.has_misalignment_policy_violation() {
-                    self.chat_widget.show_misalignment_policy_precaution();
-                }
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::NewSession { name });
             }
             AppEvent::ContinueProviderChat { thread_id } => {
                 // A queued shortcut must still refer to the locked chat on screen.
@@ -555,14 +559,10 @@ impl App {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
                 self.reset_app_ui_state_after_clear();
 
-                self.start_fresh_session(
-                    tui,
-                    app_server,
-                    Some(ThreadStartSource::Clear),
-                    /*initial_user_message*/ None,
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::ClearSession {
+                    user_message: None,
                     name,
-                )
-                .await;
+                });
             }
             AppEvent::RawOutputModeChanged { enabled } => {
                 self.apply_raw_output_mode(tui, enabled, /*notify*/ false);
@@ -3261,7 +3261,7 @@ impl App {
                 }
             }
             AppEvent::NewAgentsOverviewSession { cwd, .. } => {
-                return Box::pin(self.new_agents_overview_session(tui, app_server, cwd)).await;
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::NewAgentsOverviewSession { cwd });
             }
             AppEvent::AgentsOverviewThreadsLoaded { request_id, result } => {
                 self.apply_agents_overview_thread_refresh(app_server, request_id, result);
@@ -3443,7 +3443,7 @@ impl App {
                 user_message,
                 mode,
             } => {
-                return Box::pin(self.handle_start_side(tui, app_server, parent_thread_id, user_message, mode)).await;
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::StartSide { parent_thread_id, user_message, mode });
             }
             AppEvent::SideCreated {
                 backend_id: _,
@@ -3520,6 +3520,9 @@ impl App {
                     }
                     tui.frame_requester().schedule_frame();
                 }
+            }
+            AppEvent::SideConversationCloseSelected(choice) => {
+                self.pending_session_transition = Some(super::session_transition::PendingSessionTransition::CloseSide(choice));
             }
             AppEvent::OpenSkillsList => {
                 self.chat_widget.open_skills_list();

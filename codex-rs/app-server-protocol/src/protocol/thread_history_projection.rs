@@ -3,6 +3,7 @@
 //! This module is only for the new paginated rollout format that persists canonical
 //! `ItemCompleted(TurnItem)` records, not legacy event-only rollouts.
 
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_rollout::RolloutItem;
 use codex_rollout::RolloutLine;
@@ -119,9 +120,55 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
             }],
             ..Default::default()
         },
+        RolloutItem::ResponseItem(envelope) => {
+            let ResponseItem::Message {
+                id, role, content, ..
+            } = &envelope.item
+            else {
+                return ThreadHistoryChangeSet::default();
+            };
+            // Ordinary model messages already have canonical ItemCompleted records.
+            if role != "assistant" {
+                return ThreadHistoryChangeSet::default();
+            }
+            let Some(side_thread_id) = id
+                .as_deref()
+                .and_then(|id| id.strip_prefix("msg_side_summary_"))
+                .filter(|id| !id.is_empty())
+            else {
+                return ThreadHistoryChangeSet::default();
+            };
+            let Some(text) = super::thread_history::side_conversation_summary_text(content) else {
+                return ThreadHistoryChangeSet::default();
+            };
+            let turn_id = format!("side-summary-{side_thread_id}");
+            ThreadHistoryChangeSet {
+                changed_turns: vec![ThreadHistoryTurnMetadata {
+                    turn_id: turn_id.clone(),
+                    root_turn_id: None,
+                    status: TurnStatus::Completed,
+                    error: None,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
+                }],
+                changed_items: vec![ThreadHistoryItemChange {
+                    turn_id: turn_id.clone(),
+                    item: ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                        id: turn_id,
+                        text,
+                        moderation: None,
+                        phase: None,
+                        memory_citation: None,
+                        delivery: None,
+                        questions: None,
+                    }),
+                }],
+                ..Default::default()
+            }
+        }
         RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::SessionMeta(_)
-        | RolloutItem::ResponseItem(_)
         | RolloutItem::InterAgentCommunication(_)
         | RolloutItem::InterAgentCommunicationMetadata { .. }
         | RolloutItem::Compacted(_)

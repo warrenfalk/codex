@@ -279,10 +279,12 @@ mod safety_recourse;
 mod server_version_notice;
 mod session_lifecycle;
 mod session_picker;
+mod session_transition;
 mod side;
 mod side_companion;
 mod side_focus;
 mod side_pane;
+mod side_summary;
 mod sidebar;
 mod sidebar_close;
 pub(crate) mod sidebar_loading;
@@ -323,6 +325,7 @@ use self::side::SideParentStatus;
 use self::side::SideParentStatusChange;
 use self::side::SideThreadState;
 use self::side_companion::SideCompanion;
+use self::side_summary::PendingSideSummary;
 use self::startup_prompts::*;
 use self::thread_events::*;
 
@@ -689,6 +692,8 @@ pub(crate) struct App {
     pane_resize: Option<side_pane::PaneResize>,
     passive_link_drag: Option<(ThreadId, Rect)>,
     abandoned_side_threads: HashSet<ThreadId>,
+    pending_side_summary: Option<PendingSideSummary>,
+    pending_session_transition: Option<session_transition::PendingSessionTransition>,
     active_thread_id: Option<ThreadId>,
     active_thread_rx: Option<mpsc::Receiver<ThreadBufferedEvent>>,
     primary_thread_id: Option<ThreadId>,

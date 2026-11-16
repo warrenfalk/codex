@@ -331,6 +331,25 @@ fn projects_identified_turn_aborts() {
     );
 }
 
+#[test]
+fn sampled_and_compaction_summaries_keep_canonical_display_ownership() {
+    let message: codex_protocol::models::ResponseItem = serde_json::from_value(serde_json::json!({
+        "type": "message",
+        "role": "assistant",
+        "content": [{ "type": "output_text", "text": "Side conversation summary\n\nA model response." }],
+    })).unwrap();
+    for sampled in [false, true] {
+        let mut envelope = codex_rollout::ResponseItemEnvelope::from(message.clone());
+        let metadata = envelope.metadata.get_or_insert_default();
+        metadata.sampled_through_sequence = sampled.then_some(0);
+        metadata.compaction_output = !sampled;
+        assert_eq!(
+            project(RolloutItem::ResponseItem(envelope)),
+            ThreadHistoryChangeSet::default()
+        );
+    }
+}
+
 fn project(item: RolloutItem) -> ThreadHistoryChangeSet {
     project_rollout_line(&RolloutLine {
         timestamp: "2026-07-09T00:00:00.000Z".to_string(),

@@ -48,6 +48,113 @@ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 #[test_case(ThreadHistoryMode::Legacy; "legacy")]
 #[test_case(ThreadHistoryMode::Paginated; "paginated")]
 #[tokio::test]
+async fn side_summary_remains_visible_after_injection_and_reopen(
+    history_mode: ThreadHistoryMode,
+) -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri())
+        .enable_feature(Feature::Sqlite)
+        .write(codex_home.path())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
+    let request = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            history_mode: Some(history_mode),
+            ..Default::default()
+        })
+        .await?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request)).await??;
+    let mut _original_server = None;
+    let summaries = [
+        "Side conversation summary\n\nFirst handoff from the side conversation.",
+        "Side conversation summary\n\nSecond handoff after reopening the same side.",
+    ];
+    for (index, summary) in summaries.iter().enumerate() {
+        let request = mcp
+            .send_thread_inject_items_request(ThreadInjectItemsParams {
+                thread_id: thread.id.clone(),
+                items: vec![json!({
+                    "type": "message",
+                    "id": format!("msg_side_summary_handoff_{index}"),
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": summary }],
+                })],
+            })
+            .await?;
+        let _: ThreadInjectItemsResponse =
+            timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request)).await??;
+    }
+    for reopened in [false, true] {
+        if reopened {
+            timeout(DEFAULT_READ_TIMEOUT, mcp.shutdown_gracefully()).await??;
+            let restarted = TestAppServer::builder()
+                .with_codex_home(codex_home.path())
+                .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+                .await?;
+            _original_server = Some(std::mem::replace(&mut mcp, restarted));
+            let request = mcp
+                .send_thread_resume_request(ThreadResumeParams {
+                    thread_id: thread.id.clone(),
+                    ..Default::default()
+                })
+                .await?;
+            let _: ThreadResumeResponse =
+                timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request)).await??;
+        }
+        let turns = match history_mode {
+            ThreadHistoryMode::Legacy => {
+                let request = mcp
+                    .send_thread_read_request(codex_app_server_protocol::ThreadReadParams {
+                        thread_id: thread.id.clone(),
+                        include_turns: true,
+                    })
+                    .await?;
+                let response: codex_app_server_protocol::ThreadReadResponse =
+                    timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request)).await??;
+                response.thread.turns
+            }
+            ThreadHistoryMode::Paginated => {
+                let request = mcp
+                    .send_thread_turns_list_request(
+                        codex_app_server_protocol::ThreadTurnsListParams {
+                            thread_id: thread.id.clone(),
+                            cursor: None,
+                            limit: Some(10),
+                            sort_direction: Some(codex_app_server_protocol::SortDirection::Asc),
+                            items_view: Some(codex_app_server_protocol::TurnItemsView::Full),
+                        },
+                    )
+                    .await?;
+                let response: codex_app_server_protocol::ThreadTurnsListResponse =
+                    timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request)).await??;
+                response.data
+            }
+        };
+        let messages = turns
+            .into_iter()
+            .flat_map(|turn| turn.items)
+            .filter_map(|item| match item.payload {
+                ThreadItemPayload::AgentMessage { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            messages,
+            summaries.map(str::to_string).to_vec(),
+            "reopened={reopened}"
+        );
+    }
+    Ok(())
+}
+
+#[test_case(ThreadHistoryMode::Legacy; "legacy")]
+#[test_case(ThreadHistoryMode::Paginated; "paginated")]
+#[tokio::test]
 async fn thread_inject_items_adds_raw_response_items_to_thread_history(
     history_mode: ThreadHistoryMode,
 ) -> Result<()> {
