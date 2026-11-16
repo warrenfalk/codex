@@ -1005,7 +1005,7 @@ async fn permissions_message_includes_writable_roots(
         ));
         let denied_root = denied_root.to_string_lossy();
         let facts = format!(
-            "The active permission profile denies reading these paths/globs. Do not request escalation or additional permissions to read them; these denials are policy restrictions.\n- path `{denied_root}`\n- glob `{denied_glob}`"
+            "The active permission profile blocks reading these paths/globs inside the sandbox. When the approval policy permits escalation and the task requires access, request it with `sandbox_permissions: \"require_escalated\"`. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted.\n- path `{denied_root}`\n- glob `{denied_glob}`"
         );
         format!(
             "\n{}",
@@ -1228,12 +1228,12 @@ pub(super) async fn catalog_permission_paths_model_change_requests(
             .join("catalog-secrets/*.key")?
             .inferred_native_path_string();
         assert!(first.ends_with(&format!(
-            "\nModel A denied reads:\nThe active permission profile denies reading these paths/globs. Do not request escalation or additional permissions to read them; these denials are policy restrictions.\n- path `{denied_path}`\n- glob `{denied_glob}`\n</permissions instructions>"
+            "\nModel A denied reads:\nThe active permission profile blocks reading these paths/globs inside the sandbox. When the approval policy permits escalation and the task requires access, request it with `sandbox_permissions: \"require_escalated\"`. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted.\n- path `{denied_path}`\n- glob `{denied_glob}`\n</permissions instructions>"
         )));
     } else {
         assert!(first.ends_with(concat!(
             "Model A omitted paths:\n",
-            "Additional permission paths/globs are omitted. All restrictions still apply; do not use escalation or additional permissions to bypass omitted read denials.\n",
+            "Additional permission paths/globs are omitted. All restrictions still apply during sandboxed execution; approved unsandboxed commands bypass them.\n",
             "</permissions instructions>",
         )));
     }

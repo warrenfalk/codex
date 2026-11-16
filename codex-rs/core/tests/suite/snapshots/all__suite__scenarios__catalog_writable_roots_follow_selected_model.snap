@@ -35,7 +35,7 @@ Settings:
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model A roots: <BOUNDED_ROOT_LIST>.
     Model A omitted paths:
-    Additional permission paths/globs are omitted. All restrictions still apply; do not use escalation or additional permissions to bypass omitted read denials.
+    Additional permission paths/globs are omitted. All restrictions still apply during sandboxed execution; approved unsandboxed commands bypass them.
     </permissions instructions>
 03:message/user:
     <environment_context>
@@ -72,7 +72,7 @@ Settings: relative to window 1
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model A roots: <BOUNDED_ROOT_LIST>.
     Model A omitted paths:
-    Additional permission paths/globs are omitted. All restrictions still apply; do not use escalation or additional permissions to bypass omitted read denials.
+    Additional permission paths/globs are omitted. All restrictions still apply during sandboxed execution; approved unsandboxed commands bypass them.
     </permissions instructions>
 03:message/user:
     <environment_context>
@@ -94,7 +94,7 @@ Settings: relative to window 1
     Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.
     Model B roots: <BOUNDED_ROOT_LIST>.
     Model B omitted paths:
-    Additional permission paths/globs are omitted. All restrictions still apply; do not use escalation or additional permissions to bypass omitted read denials.
+    Additional permission paths/globs are omitted. All restrictions still apply during sandboxed execution; approved unsandboxed commands bypass them.
     </permissions instructions>
 07:message/user:
     Continue with the selected model.

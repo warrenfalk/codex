@@ -7,8 +7,8 @@ use crate::model_messages::permissions::DENIED_READS_TEMPLATE;
 use crate::model_messages::permissions::ResolvedPermissionMessages;
 use codex_context_fragments::ContextualUserFragment;
 
-pub(super) const OMITTED_PERMISSION_PATHS: &str = "Additional permission paths/globs are omitted. All restrictions still apply; do not use escalation or additional permissions to bypass omitted read denials.";
-const DENIED_READS_POLICY: &str = "The active permission profile denies reading these paths/globs. Do not request escalation or additional permissions to read them; these denials are policy restrictions.";
+pub(super) const OMITTED_PERMISSION_PATHS: &str = "Additional permission paths/globs are omitted. All restrictions still apply during sandboxed execution; approved unsandboxed commands bypass them.";
+const DENIED_READS_POLICY: &str = "The active permission profile blocks reading these paths/globs inside the sandbox. When the approval policy permits escalation and the task requires access, request it with `sandbox_permissions: \"require_escalated\"`. Approved unsandboxed commands bypass these restrictions; subsequent sandboxed commands remain restricted.";
 const DENIED_READS_PLACEHOLDER: &str = "{{ denied_reads }}";
 // Together the two overrides introduce at most 1,000 UTF-8 bytes of presentation.
 const MAX_PRESENTATION_BYTES: usize = 500;
