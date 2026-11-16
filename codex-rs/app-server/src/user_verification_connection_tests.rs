@@ -78,6 +78,7 @@ async fn user_verification_disconnect_releases_ownership_before_rpc_drain() -> R
                 id: id.clone(),
                 result: proof.clone(),
             },
+            &second,
         )
         .await;
     let mut pending = std::pin::pin!(pending);
@@ -119,12 +120,12 @@ async fn user_verification_disconnect_releases_ownership_before_rpc_drain() -> R
     let message = timeout(Duration::from_secs(/*secs*/ 5), h.messages.recv()).await?;
     assert!(matches!(
         message,
-        Some(OutgoingEnvelope::ToConnection {
-            connection_id: ConnectionId(2),
+        Some(OutgoingEnvelope::ToConnections {
+            connection_ids,
             message: OutgoingMessage::Request(_),
-            ..
-        })
+        }) if connection_ids == vec![ConnectionId(2)]
     ));
+    second.note_answerable_server_request(id.clone()).await;
     h.processor
         .process_response(
             ConnectionId(1),
@@ -132,6 +133,7 @@ async fn user_verification_disconnect_releases_ownership_before_rpc_drain() -> R
                 id: id.clone(),
                 result: proof.clone(),
             },
+            &h.session,
         )
         .await;
     let mut response = std::pin::pin!(response);
@@ -146,6 +148,7 @@ async fn user_verification_disconnect_releases_ownership_before_rpc_drain() -> R
                 id,
                 result: proof.clone(),
             },
+            &second,
         )
         .await;
     assert_eq!(response.await?, Ok(proof));

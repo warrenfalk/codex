@@ -499,6 +499,8 @@ async fn disconnected_v2_child_lifecycle(unload_delay_secs: u64, ephemeral: bool
                 if loaded.is_empty() && child_runtime.upgrade().is_none() {
                     break;
                 }
+                // Model the transport draining events even without thread subscribers.
+                while outgoing.try_recv().is_ok() {}
                 tokio::task::yield_now().await;
             }
         })
@@ -643,15 +645,25 @@ decision = "prompt-user"
             .await;
         let request = timeout(Duration::from_secs(/*secs*/ 10), async {
             loop {
-                if let OutgoingEnvelope::ToConnection {
-                    connection_id,
-                    message: OutgoingMessage::Request(request),
-                    ..
-                } = outgoing.recv().await.context("outgoing channel closed")?
-                {
-                    assert_eq!(connection_id, capable_id);
-                    break anyhow::Ok(request);
-                }
+                let (connection_ids, request) =
+                    match outgoing.recv().await.context("outgoing channel closed")? {
+                        OutgoingEnvelope::ToConnection {
+                            connection_id,
+                            message: OutgoingMessage::Request(request),
+                            ..
+                        } => (vec![connection_id], request),
+                        OutgoingEnvelope::ToConnections {
+                            connection_ids,
+                            message: OutgoingMessage::Request(request),
+                        } => (connection_ids, request),
+                        _ => continue,
+                    };
+                assert_eq!(connection_ids, vec![capable_id]);
+                // This dispatcher test reads before the outbound router records ownership.
+                capable
+                    .note_answerable_server_request(request.id().clone())
+                    .await;
+                break anyhow::Ok(request);
             }
         })
         .await
@@ -684,7 +696,9 @@ decision = "prompt-user"
         processor
             .connection_initialized(unrelated_id, unrelated.request_attestation())
             .await;
-        for connection_id in [incompatible_id, unrelated_id] {
+        for (connection_id, session) in
+            [(incompatible_id, &incompatible), (unrelated_id, &unrelated)]
+        {
             processor
                 .process_response(
                     connection_id,
@@ -692,6 +706,7 @@ decision = "prompt-user"
                         id: request_id.clone(),
                         result: json!({"decision": "accept"}),
                     },
+                    session,
                 )
                 .await;
             processor
@@ -701,6 +716,7 @@ decision = "prompt-user"
                         id: request_id.clone(),
                         error: crate::error_code::internal_error("unsupported request"),
                     },
+                    session,
                 )
                 .await;
             assert_eq!(
@@ -722,6 +738,7 @@ decision = "prompt-user"
                     id: request_id.clone(),
                     result: json!({"decision": "decline"}),
                 },
+                &capable,
             )
             .await;
         assert!(
