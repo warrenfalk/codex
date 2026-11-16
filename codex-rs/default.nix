@@ -1,7 +1,7 @@
 {
   alsa-lib ? null,
   cmake,
-  curl,
+  fetchurl,
   formats,
   git,
   glib,
@@ -9,8 +9,8 @@
   libopus,
   llvmPackages,
   openssl,
-  python3,
   libcap ? null,
+  runCommand,
   rustPlatform,
   pkg-config,
   lib,
@@ -29,6 +29,56 @@ let
     gst_all_1.gst-plugins-base
     libopus
   ] ++ lib.optionals stdenv.hostPlatform.isLinux [ alsa-lib ];
+
+  rustyV8Target =
+    {
+      "aarch64-darwin" = {
+        name = "aarch64-apple-darwin";
+        archiveHash = "sha256-/qua4DhL66qZwdAAZURiydQhI9WHGFx4dqru99dv90k=";
+        bindingHash = "sha256-udVlLrylFesr9MLuSmVRslZxF7Wqcg9DDSAyYW3X47U=";
+      };
+      "aarch64-linux" = {
+        name = "aarch64-unknown-linux-gnu";
+        archiveHash = "sha256-EFRGSmIwBs314lriCHcAK/PtuaLC8+ZPRKhxR0KxXoc=";
+        bindingHash = "sha256-Pk1f7Nvg+YpgF+adfKglGad/sDLF615M2+zdPi7FGdU=";
+      };
+      "x86_64-darwin" = {
+        name = "x86_64-apple-darwin";
+        archiveHash = "sha256-v+Gdm2M7YdmXgOzolpBCf+9LmFxrQZZTbq+UVxFm/CQ=";
+        bindingHash = "sha256-udVlLrylFesr9MLuSmVRslZxF7Wqcg9DDSAyYW3X47U=";
+      };
+      "x86_64-linux" = {
+        name = "x86_64-unknown-linux-gnu";
+        archiveHash = "sha256-s7SQ8qqAntp/ascn+FH7AM6DVb5ygnV3z6rCjHE3280=";
+        bindingHash = "sha256-Pk1f7Nvg+YpgF+adfKglGad/sDLF615M2+zdPi7FGdU=";
+      };
+    }
+    .${stdenv.hostPlatform.system}
+      or (throw "unsupported system for rusty_v8 prebuilt archive: ${stdenv.hostPlatform.system}");
+
+  rustyV8BaseUrl = "https://github.com/openai/codex/releases/download/rusty-v8-v152.2.0";
+  rustyV8Archive = fetchurl {
+    url = "${rustyV8BaseUrl}/librusty_v8_ptrcomp_sandbox_release_${rustyV8Target.name}.a.gz";
+    hash = rustyV8Target.archiveHash;
+  };
+  rustyV8PublishedBinding = fetchurl {
+    url = "${rustyV8BaseUrl}/src_binding_ptrcomp_sandbox_release_${rustyV8Target.name}.rs";
+    hash = rustyV8Target.bindingHash;
+  };
+  # The pinned Codex archives use 8-byte CppGC members and V8's 64-byte inline
+  # typed-array limit. Their published bindings describe GN's compressed
+  # members and zero-byte inline limit instead. Verify the original asset and
+  # correct those ABI constants until matching pairs are published (#57644).
+  rustyV8Binding = runCommand "rusty-v8-bindings-152.2.0-${rustyV8Target.name}" { } ''
+    cp ${rustyV8PublishedBinding} "$out"
+    substituteInPlace "$out" \
+      --replace-fail 'pub const cppgc__Member_SIZE: usize = 4;' \
+                     'pub const cppgc__Member_SIZE: usize = 8;' \
+      --replace-fail 'pub const cppgc__WeakMember_SIZE: usize = 4;' \
+                     'pub const cppgc__WeakMember_SIZE: usize = 8;' \
+      --replace-fail 'pub const v8__TYPED_ARRAY_MAX_SIZE_IN_HEAP: usize = 0;' \
+                     'pub const v8__TYPED_ARRAY_MAX_SIZE_IN_HEAP: usize = 64;'
+  '';
 in
 rustPlatform.buildRustPackage (_: {
   env = {
@@ -37,6 +87,8 @@ rustPlatform.buildRustPackage (_: {
         ([ openssl ] ++ nativeAudioLibraries ++ lib.optionals stdenv.hostPlatform.isLinux [ libcap ]);
 
     LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+    RUSTY_V8_ARCHIVE = rustyV8Archive;
+    RUSTY_V8_SRC_BINDING_PATH = rustyV8Binding;
 
     # cargoBuildHook overrides HOST_CC/CXX; use the AWS-LC-specific settings
     # so its compiler probe agrees with the target compiler below.
@@ -68,13 +120,11 @@ rustPlatform.buildRustPackage (_: {
   '';
   nativeBuildInputs = [
     cmake
-    curl
     git
     llvmPackages.clang
     llvmPackages.libclang.lib
     openssl
     pkg-config
-    python3
   ] ++ lib.optionals stdenv.hostPlatform.isLinux [
     libcap
   ];
