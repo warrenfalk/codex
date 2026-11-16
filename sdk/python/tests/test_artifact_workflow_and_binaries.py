@@ -143,6 +143,7 @@ def test_root_format_driver_covers_all_formatter_groups(
     tmp_path: Path,
 ) -> None:
     """The shared driver should retain every formatter in both modes."""
+    monkeypatch.delenv("CODEX_RUFF_WRAPPER", raising=False)
     script = _load_root_format_script_module()
     for name in (
         "bazel/rules/example.rs",
