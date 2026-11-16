@@ -281,6 +281,8 @@ mod server_version_notice;
 mod session_lifecycle;
 mod session_picker;
 mod session_transition;
+#[cfg(unix)]
+mod shutdown_signal;
 mod side;
 mod side_companion;
 mod side_focus;

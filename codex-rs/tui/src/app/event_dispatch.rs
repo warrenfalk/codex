@@ -65,7 +65,13 @@ impl App {
         if matches!(event, AppEvent::ForkCurrentSession { .. }) {
             self.chat_widget.fork_in_progress = false;
         }
-        if self.reconnect.offline && matches!(event, AppEvent::Exit(ExitMode::ShutdownFirst)) {
+        if self.reconnect.offline
+            && matches!(
+                event,
+                AppEvent::Exit(ExitMode::ShutdownFirst)
+                    | AppEvent::ConfirmedEmbeddedExit(ExitMode::ShutdownFirst)
+            )
+        {
             return Ok(AppRunControl::Exit(ExitReason::UserRequested));
         }
         if self.reconnect.offline

@@ -233,6 +233,15 @@ async fn lost_mutation_reply_preserves_work_without_resubmitting() -> Result<()>
             AppRunControl::Exit(ExitReason::UserRequested)
         ));
     }
+    assert!(matches!(
+        app.handle_event(
+            &mut tui,
+            &mut session,
+            AppEvent::ConfirmedEmbeddedExit(ExitMode::ShutdownFirst),
+        )
+        .await?,
+        AppRunControl::Exit(ExitReason::UserRequested)
+    ));
     session.shutdown().await?;
     assert_eq!(
         server.await??,
