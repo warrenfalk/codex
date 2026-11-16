@@ -30,6 +30,8 @@ mod proxy_routing;
 #[cfg(target_os = "linux")]
 mod seccomp;
 #[cfg(target_os = "linux")]
+mod synthetic_mount_cleanup;
+#[cfg(target_os = "linux")]
 mod wslg;
 
 #[cfg(target_os = "linux")]
