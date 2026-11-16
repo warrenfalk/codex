@@ -13,6 +13,9 @@ use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_exec_server::LOCAL_FS;
 use codex_features::feature_for_key;
+use codex_inference_profiles::InferenceProfile;
+use codex_inference_profiles::effective_provider_id;
+use codex_inference_profiles::inference_profile_for_model;
 use codex_login::AuthManager;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
@@ -364,19 +367,23 @@ impl ConfigManager {
         )
         .await?;
         self.check_application_policy_load(&policy_load)?;
+        let model_provider_id = effective_provider_id(
+            current.model.as_deref().unwrap_or_default(),
+            &current.model_provider_id,
+        );
         let selection_changed = requirements
             .model_provider
             .as_ref()
-            .is_some_and(|provider_id| provider_id != &current.model_provider_id);
+            .is_some_and(|provider_id| provider_id != model_provider_id);
         let required_provider = requirements
             .model_providers
             .as_ref()
-            .and_then(|providers| providers.get(&current.model_provider_id))
+            .and_then(|providers| providers.get(model_provider_id))
             .cloned();
         let required_provider = match required_provider {
             Some(provider)
                 if matches!(
-                    current.model_provider_id.as_str(),
+                    model_provider_id,
                     AMAZON_BEDROCK_PROVIDER_ID
                         | AMAZON_BEDROCK_RUNTIME_PROVIDER_ID
                         | GCP_PROVIDER_ID
@@ -387,11 +394,11 @@ impl ConfigManager {
                 // OpenAI's inference URL belongs to the retained session, not the catalog override.
                 let mut provider = merge_configured_model_providers(
                     built_in_model_providers(current.model_provider.base_url.clone()),
-                    HashMap::from([(current.model_provider_id.clone(), provider)]),
+                    HashMap::from([(model_provider_id.to_owned(), provider)]),
                 )
                 .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?
-                .remove(&current.model_provider_id);
-                if current.model_provider_id == GCP_PROVIDER_ID
+                .remove(model_provider_id);
+                if model_provider_id == GCP_PROVIDER_ID
                     && let Some(provider) = provider.as_mut()
                 {
                     apply_default_gcp_auth(provider, &current.cwd);
@@ -401,17 +408,22 @@ impl ConfigManager {
             Some(provider) => Some(provider),
             None => None,
         };
+        let profile = current
+            .model
+            .as_deref()
+            .and_then(inference_profile_for_model);
         let definition_changed = required_provider
             .as_ref()
-            .is_some_and(|provider| provider != &current.model_provider);
+            // A local adapter cannot silently replace a managed, fixed provider route.
+            .is_some_and(|provider| profile.is_some() || provider != &current.model_provider);
         if selection_changed || definition_changed {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 ModelProviderError::ModelProviderPolicyConflict {
-                    model_provider: current.model_provider_id.clone(),
+                    model_provider: model_provider_id.to_owned(),
                     required_model_provider: requirements
                         .model_provider
-                        .unwrap_or_else(|| current.model_provider_id.clone()),
+                        .unwrap_or_else(|| model_provider_id.to_owned()),
                 },
             ));
         }
@@ -432,6 +444,17 @@ impl ConfigManager {
         self.update_managed_config_loader(auth, &bootstrap);
         let config = self.load_latest_config(cwd).await;
         Ok(CloudStartupConfig { bootstrap, config })
+    }
+
+    /// Check a requested model against current managed provider requirements.
+    pub(crate) async fn check_thread_model_provider_for_input(
+        &self,
+        baseline: &Config,
+        model: &str,
+    ) -> std::io::Result<()> {
+        let mut current = baseline.clone();
+        current.model = Some(model.to_owned());
+        self.check_thread_model_provider(&current).await
     }
 
     /// Installs local policy before cloud access; failed policy loads block traffic while
@@ -540,12 +563,32 @@ impl ConfigManager {
             request_overrides,
             typesafe_overrides,
             cwd,
-            |config, _overrides, layers| {
+            |config, overrides, layers| {
                 let requested_provider = requested_provider
                     .as_deref()
                     .or(saved_provider)
                     .or(config.model_provider.as_deref())
                     .unwrap_or("openai");
+                // A local profile has a registered, model-scoped provider alias; its
+                // process-local endpoint is created only after admission succeeds.
+                let profile_provider = overrides
+                    .model
+                    .as_deref()
+                    .or(config.model.as_deref())
+                    .and_then(inference_profile_for_model)
+                    .map(InferenceProfile::provider_id);
+                if let Some(profile_provider) = profile_provider
+                    && let Some(required) = layers.required_model_provider()
+                    && profile_provider != required
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        ModelProviderError::ModelProviderPolicyConflict {
+                            model_provider: profile_provider.to_owned(),
+                            required_model_provider: required.to_owned(),
+                        },
+                    ));
+                }
                 // Validate the saved route even when a client sends a provider override.
                 for provider in [
                     saved_provider.unwrap_or(requested_provider),
@@ -562,7 +605,8 @@ impl ConfigManager {
                             },
                         ));
                     }
-                    if !config.model_providers.contains_key(provider)
+                    if Some(provider) != profile_provider
+                        && !config.model_providers.contains_key(provider)
                         && !built_in_model_providers(config.openai_base_url.clone())
                             .contains_key(provider)
                     {
@@ -811,6 +855,10 @@ mod application_network_tests;
 #[cfg(test)]
 #[path = "config_manager_provider_tests.rs"]
 mod provider_tests;
+
+#[cfg(test)]
+#[path = "config_manager_inference_profile_tests.rs"]
+mod inference_profile_tests;
 
 pub(crate) fn protected_feature_keys(config_layer_stack: &ConfigLayerStack) -> BTreeSet<String> {
     let mut protected_features = config_layer_stack

@@ -536,7 +536,8 @@ async fn list_models_uses_display_order_and_marks_the_selection_default() -> Res
         [
             ("z-model", false),
             ("a-model", false),
-            ("recommended", true)
+            ("recommended", true),
+            ("kimi-k3", false)
         ]
     );
     Ok(())

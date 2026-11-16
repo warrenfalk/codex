@@ -265,6 +265,7 @@ mod extension_interruption;
 pub(crate) mod extension_metrics;
 mod guardian_checkpoint;
 mod handlers;
+mod inference_profile;
 pub(crate) mod inject;
 mod reasoning_effort;
 mod shell_environment_reload;
@@ -2214,6 +2215,7 @@ impl Session {
             if let Some(catalog) = self.services.models_manager.refreshed_model_catalog() {
                 model_catalog_settings::normalize(&mut updated.step_settings, &catalog);
             }
+            self.validate_inference_profile_configuration(&updated)?;
 
             if !should_commit(&state.session_configuration, &updated) {
                 return Ok(None);
@@ -2600,9 +2602,24 @@ impl Session {
         }
     }
 
-    pub(crate) async fn provider(&self) -> ModelProviderInfo {
+    pub(crate) async fn provider(
+        &self,
+    ) -> Result<ModelProviderInfo, codex_inference_profiles::InferenceProfileError> {
         let state = self.state.lock().await;
-        state.session_configuration.provider.info().clone()
+        let configuration = &state.session_configuration;
+        Ok(self
+            .services
+            .inference_profiles
+            .resolve_provider(
+                configuration.step_settings.collaboration_mode.model(),
+                &configuration.original_config_do_not_use.model_provider_id,
+                configuration.provider.info(),
+                configuration
+                    .original_config_do_not_use
+                    .config_layer_stack
+                    .required_model_provider(),
+            )?
+            .info)
     }
 
     pub(crate) async fn refresh_hooks(&self, mut config: Arc<Config>) {

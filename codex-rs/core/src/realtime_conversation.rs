@@ -1476,7 +1476,10 @@ async fn prepare_realtime_start(
     sess.services
         .model_client
         .validate_required_cyber_access_program(/*programs*/ None)?;
-    let provider = sess.provider().await;
+    let provider = sess
+        .provider()
+        .await
+        .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
     let auth_manager = sess
         .services
         .model_client

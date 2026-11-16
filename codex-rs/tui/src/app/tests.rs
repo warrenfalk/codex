@@ -184,6 +184,7 @@ use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationRequest;
@@ -8114,7 +8115,7 @@ async fn side_summary_user_turn_asks_for_side_only_summary() {
 }
 
 #[tokio::test]
-async fn active_parent_drain_renders_side_summary_notification() -> Result<()> {
+async fn active_parent_drain_renders_server_side_summary_notification() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let parent_thread_id = ThreadId::new();
     app.thread_event_channels
@@ -8124,25 +8125,26 @@ async fn active_parent_drain_renders_side_summary_notification() -> Result<()> {
         parent_thread_id,
         test_path_buf("/tmp/project"),
     ));
-    let summary_id = uuid::Uuid::new_v4();
     let summary = "Findings from side chat.";
+    let turn_id = "side-summary-turn";
 
     app.enqueue_thread_notification(
         parent_thread_id,
-        ServerNotification::ItemCompleted(App::side_summary_item_completed_notification(
-            parent_thread_id,
-            summary_id,
-            summary,
-        )),
-    )
-    .await?;
-    app.enqueue_thread_notification(
-        parent_thread_id,
-        ServerNotification::TurnCompleted(App::side_summary_turn_completed_notification(
-            parent_thread_id,
-            summary_id,
-            summary,
-        )),
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id: parent_thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            content_token_count: None,
+            completed_at_ms: 0,
+            item: codex_app_server_protocol::ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                moderation: None,
+                id: "side-summary-item".to_string(),
+                text: format!("Side conversation summary\n\n{summary}"),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            }),
+        }),
     )
     .await?;
     assert!(app.drain_active_thread_events_now().await);

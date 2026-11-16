@@ -2619,7 +2619,10 @@ impl ThreadRequestProcessor {
         let (_, thread) = self.load_thread(&thread_id).await?;
         ensure_direct_input_allowed(thread.as_ref()).await?;
         self.config_manager
-            .check_thread_model_provider(thread.config().await.as_ref())
+            .check_thread_model_provider_for_input(
+                thread.config().await.as_ref(),
+                &thread.config_snapshot().await.model,
+            )
             .await
             .map_err(|error| config_load_error(&error))?;
         self.submit_core_op(request_id, thread.as_ref(), Op::Compact)
@@ -4938,7 +4941,10 @@ impl ThreadRequestProcessor {
                 );
             }
             self.config_manager
-                .check_thread_model_provider(existing_thread.config().await.as_ref())
+                .check_thread_model_provider_for_input(
+                    existing_thread.config().await.as_ref(),
+                    &existing_thread.config_snapshot().await.model,
+                )
                 .await
                 .map_err(|err| config_load_error(&err))?;
             let redact_resume_payloads =

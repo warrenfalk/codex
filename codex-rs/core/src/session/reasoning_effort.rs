@@ -6,6 +6,7 @@
 //! Fixed-effort workers always use their selected request-level effort.
 //! Unsupported models use selected request effort without rewriting saved updates.
 //! A provider catalog can retire a request pin that is invalid for a new step.
+//! Capability checks use the provider of the sampled turn, including previous-model compaction.
 
 use super::session::Session;
 use super::step_context::StepContext;
@@ -13,6 +14,7 @@ use super::step_settings::ResolvedStepSettings;
 use crate::state::ReasoningEffortPin;
 use codex_history::CodexHarnessMetadata;
 use codex_history::ResponseItemEnvelope;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::models::ConfigurationReasoning;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelOrigin;
@@ -29,7 +31,9 @@ impl Session {
     /// Establishes the selected effort in surviving history, independent of replayed settings.
     pub(crate) async fn record_reasoning_effort_override(&self, step_context: &StepContext) {
         let settings = &step_context.settings;
-        let Some(effort) = self.effort_for_configuration_update(settings) else {
+        let Some(effort) =
+            self.effort_for_configuration_update(settings, step_context.turn.provider.info())
+        else {
             return;
         };
         let should_skip = {
@@ -96,20 +100,21 @@ impl Session {
     pub(crate) async fn reasoning_effort_for_request(
         &self,
         settings: &ResolvedStepSettings,
+        provider: &ModelProviderInfo,
         usage: RequestEffortUsage,
     ) -> Option<ReasoningEffort> {
         let selected_effort = settings.reasoning_effort().cloned();
         if !self
             .services
             .model_client
-            .reasoning_effort_override_enabled(&settings.model_info)
+            .reasoning_effort_override_enabled_for_provider(&settings.model_info, provider)
         {
             if usage == RequestEffortUsage::Sampling {
                 self.state.lock().await.reasoning_effort_pin = ReasoningEffortPin::Unset;
             }
             return selected_effort;
         }
-        let effort = self.effort_for_configuration_update(settings);
+        let effort = self.effort_for_configuration_update(settings, provider);
         let mut state = self.state.lock().await;
         if let Some(pinned) = state.reasoning_effort_pin.get(&settings.model_info.slug) {
             let model = &settings.model_info;
@@ -147,11 +152,12 @@ impl Session {
     fn effort_for_configuration_update(
         &self,
         settings: &ResolvedStepSettings,
+        provider: &ModelProviderInfo,
     ) -> Option<ReasoningEffort> {
         if !self
             .services
             .model_client
-            .reasoning_effort_override_enabled(&settings.model_info)
+            .reasoning_effort_override_enabled_for_provider(&settings.model_info, provider)
         {
             return None;
         }

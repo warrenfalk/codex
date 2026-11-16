@@ -461,7 +461,10 @@ impl TurnRequestProcessor {
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
         self.config_manager
-            .check_thread_model_provider(thread.config().await.as_ref())
+            .check_thread_model_provider_for_input(
+                thread.config().await.as_ref(),
+                &thread.config_snapshot().await.model,
+            )
             .await
             .map_err(|error| config_load_error(&error))?;
         let (review_request, display_text) = Self::review_request_from_target(params.target)?;
@@ -632,7 +635,10 @@ impl TurnRequestProcessor {
         self.ensure_direct_input_allowed(&request_id, thread.as_ref())
             .await?;
         self.config_manager
-            .check_thread_model_provider(thread.config().await.as_ref())
+            .check_thread_model_provider_for_input(
+                thread.config().await.as_ref(),
+                &thread.config_snapshot().await.model,
+            )
             .await
             .map_err(|error| config_load_error(&error))?;
         if let Some(tool_output) = &params.tool_output {
@@ -955,6 +961,25 @@ impl TurnRequestProcessor {
 
         let collaboration_mode =
             collaboration_mode.map(|mode| self.normalize_collaboration_mode(mode));
+        if let Some(selected_model) = collaboration_mode
+            .as_ref()
+            .map(codex_protocol::config_types::CollaborationMode::model)
+            .or(model.as_deref())
+        {
+            let current_model = thread.config_snapshot().await.model;
+            if codex_inference_profiles::inference_profile_for_model(selected_model).is_some()
+                || codex_inference_profiles::inference_profile_for_model(&current_model).is_some()
+            {
+                // Previewing a local profile can resolve credentials. Admit its route first.
+                self.config_manager
+                    .check_thread_model_provider_for_input(
+                        thread.config().await.as_ref(),
+                        selected_model,
+                    )
+                    .await
+                    .map_err(|error| config_load_error(&error))?;
+            }
+        }
         let has_environment_override = environment_requests.is_some();
         let snapshot = if permissions.is_some() {
             Some(thread.config_snapshot().await)
@@ -1134,7 +1159,7 @@ impl TurnRequestProcessor {
         request_id: &ConnectionRequestId,
         params: ThreadInjectItemsParams,
     ) -> Result<ThreadInjectItemsResponse, JSONRPCErrorError> {
-        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        let (thread_id, thread) = self.load_thread(&params.thread_id).await?;
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
 
@@ -1149,6 +1174,13 @@ impl TurnRequestProcessor {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(invalid_request)?;
         validate_response_item_image_urls(&items)?;
+        let visible_turns = build_legacy_api_turns_from_rollout_items(
+            &items
+                .iter()
+                .cloned()
+                .map(|item| RolloutItem::ResponseItem(item.into()))
+                .collect::<Vec<_>>(),
+        );
 
         thread
             .inject_response_items(items)
@@ -1157,6 +1189,35 @@ impl TurnRequestProcessor {
                 CodexErrorDetails::InvalidRequest(message) => invalid_request(message.clone()),
                 _ => internal_error(format!("failed to inject response items: {err}")),
             })?;
+
+        if !visible_turns.is_empty() {
+            let subscribed_connection_ids = self
+                .thread_state_manager
+                .subscribed_connection_ids(thread_id)
+                .await;
+            let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+                self.outgoing.clone(),
+                subscribed_connection_ids,
+                thread_id,
+            );
+            for turn in visible_turns {
+                let turn_id = Uuid::now_v7().to_string();
+                let completed_at_ms = chrono::Utc::now().timestamp_millis();
+                for item in turn.items {
+                    thread_outgoing
+                        .send_server_notification(ServerNotification::ItemCompleted(
+                            ItemCompletedNotification {
+                                thread_id: thread_id.to_string(),
+                                turn_id: turn_id.clone(),
+                                completed_at_ms,
+                                content_token_count: None,
+                                item,
+                            },
+                        ))
+                        .await;
+                }
+            }
+        }
         Ok(ThreadInjectItemsResponse {})
     }
 
@@ -1185,7 +1246,10 @@ impl TurnRequestProcessor {
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
         self.config_manager
-            .check_thread_model_provider(thread.config().await.as_ref())
+            .check_thread_model_provider_for_input(
+                thread.config().await.as_ref(),
+                &thread.config_snapshot().await.model,
+            )
             .await
             .map_err(|error| config_load_error(&error))?;
 

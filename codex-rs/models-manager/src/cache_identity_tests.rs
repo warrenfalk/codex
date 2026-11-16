@@ -31,7 +31,7 @@ async fn mismatched_and_legacy_cache_entries_fetch_the_current_catalog() {
                 .raw_model_catalog(RefreshStrategy::InMemory, DEFAULT_HTTP_CLIENT_FACTORY)
                 .await
                 .models,
-            vec![current.clone()]
+            vec![current.clone(), model_info::kimi_k3_model_info()]
         );
         assert_eq!(endpoint.fetch_count(), 1);
     }

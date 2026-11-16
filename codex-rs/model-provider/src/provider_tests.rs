@@ -38,6 +38,23 @@ use crate::RemoteCompactionSupport;
 use crate::auth::AgentIdentitySessionFallback;
 use crate::shared_state::process_shared_state;
 
+#[test]
+fn configured_provider_uses_explicit_capabilities() {
+    let capabilities = ProviderCapabilities {
+        reasoning_summaries: false,
+        image_generation: false,
+        web_search: false,
+        external_web_access: false,
+        remote_compaction: RemoteCompactionSupport::Unsupported,
+    };
+    let provider = create_model_provider_with_capabilities(
+        ModelProviderInfo::default(),
+        /*auth_manager*/ None,
+        capabilities,
+    );
+    assert_eq!(provider.capabilities(), capabilities);
+}
+
 fn provider_info_with_command_auth() -> ModelProviderInfo {
     ModelProviderInfo {
         auth: Some(ModelProviderAuthInfo {

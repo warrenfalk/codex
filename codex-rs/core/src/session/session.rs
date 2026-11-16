@@ -31,6 +31,8 @@ use codex_attachment_store::AttachmentStore;
 use codex_extension_api::ExtensionDataInit;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::RouteAwareClientPool;
+use codex_inference_profiles::InferenceProfileRuntime;
+use codex_inference_profiles::effective_provider_id;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::SharedModelProvider;
 use codex_project_env::ProjectEnvConfig;
@@ -313,7 +315,11 @@ impl SessionConfiguration {
             .unwrap_or_else(|| self.permission_profile_state.snapshot());
         ThreadConfigSnapshot {
             model: self.step_settings.collaboration_mode.model().to_string(),
-            model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
+            model_provider_id: effective_provider_id(
+                self.step_settings.collaboration_mode.model(),
+                &self.original_config_do_not_use.model_provider_id,
+            )
+            .to_string(),
             service_tier: self.step_settings.service_tier.clone(),
             approval_policy: self.step_settings.approval_policy.value(),
             approvals_reviewer: self.step_settings.approvals_reviewer,
@@ -355,7 +361,11 @@ impl SessionConfiguration {
     ) -> ThreadSettingsSnapshot {
         ThreadSettingsSnapshot {
             model: self.step_settings.collaboration_mode.model().to_string(),
-            model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
+            model_provider_id: effective_provider_id(
+                self.step_settings.collaboration_mode.model(),
+                &self.original_config_do_not_use.model_provider_id,
+            )
+            .to_string(),
             service_tier: self.step_settings.service_tier.clone(),
             approval_policy: self.step_settings.approval_policy.value(),
             approvals_reviewer: self.step_settings.approvals_reviewer,
@@ -896,6 +906,25 @@ impl Session {
         git_enrichment_policy: GitEnrichmentPolicy,
         windows_sandbox_proxy_settings_mode: codex_sandboxing::WindowsSandboxProxySettingsMode,
     ) -> anyhow::Result<Arc<Self>> {
+        let inference_profiles = thread_extension_init
+            .get::<InferenceProfileRuntime>()
+            .unwrap_or_else(|| Arc::new(InferenceProfileRuntime::default()));
+        let resolved_provider = inference_profiles
+            .resolve_provider(
+                session_configuration
+                    .step_settings
+                    .collaboration_mode
+                    .model(),
+                &config.model_provider_id,
+                session_configuration.provider.info(),
+                config.config_layer_stack.required_model_provider(),
+            )
+            .map_err(anyhow::Error::msg)?;
+        let effective_provider = resolved_provider.info;
+        let mut effective_config = (*config).clone();
+        effective_config.model_provider_id = resolved_provider.id;
+        effective_config.model_provider = effective_provider.clone();
+        let config = Arc::new(effective_config);
         debug!(
             "Configuring session: model={}; provider={:?}",
             session_configuration
@@ -1895,7 +1924,14 @@ impl Session {
             let reasoning_effort_override_enabled =
                 config.features.enabled(Feature::ReasoningEffortOverride) && !title_request;
             let model_client = ModelClient::new(
-                Arc::clone(&session_configuration.provider),
+                match resolved_provider.profile {
+                    Some(profile) => super::inference_profile::create_profile_model_provider(
+                        effective_provider,
+                        Some(Arc::clone(&auth_manager)),
+                        Some(profile),
+                    ),
+                    None => Arc::clone(&session_configuration.provider),
+                },
                 if config.features.enabled(Feature::UseAgentIdentity) {
                     AgentIdentityAuthPolicy::ChatGptAuth
                 } else {
@@ -2001,6 +2037,7 @@ impl Session {
                 session_telemetry,
                 models_manager: Arc::clone(&models_manager),
                 git_root_discovery,
+                inference_profiles,
                 tool_approvals: Mutex::new(ApprovalStore::default()),
                 granted_permissions_by_environment_id: Arc::default(),
                 runtime_handle: tokio::runtime::Handle::current(),

@@ -25,6 +25,7 @@ use codex_models_manager::manager::ModelsEndpointResponse;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
+use codex_models_manager::model_info::kimi_k3_model_info;
 use codex_models_manager::model_info::model_info_from_slug;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::error::Result as CoreResult;
@@ -463,11 +464,12 @@ async fn initialization_preserves_a_concurrent_refresh() -> Result<()> {
     )
     .await
     .expect("refresh must not wait for an initialization cache write");
-    assert_eq!(manager.get_remote_models().await, vec![model.clone()]);
+    let expected_models = vec![model.clone(), kimi_k3_model_info()];
+    assert_eq!(manager.get_remote_models().await, expected_models);
 
     release_store.send(()).expect("release initial cache write");
     timeout(Duration::from_secs(/*secs*/ 10), initialization).await??;
-    assert_eq!(manager.get_remote_models().await, vec![model.clone()]);
+    assert_eq!(manager.get_remote_models().await, expected_models);
     assert_eq!(
         manager.refreshed_model_catalog().as_deref(),
         Some(std::slice::from_ref(&model))
@@ -577,10 +579,11 @@ async fn account_switch_during_cache_store_preserves_new_catalog_for_next_turn()
     )
     .await
     .expect("new account catalog must load while the old account's cache write is paused");
-    assert_eq!(manager.get_remote_models().await, vec![new_model.clone()]);
+    let expected_models = vec![new_model.clone(), kimi_k3_model_info()];
+    assert_eq!(manager.get_remote_models().await, expected_models);
     release_store.send(()).unwrap();
     timeout(Duration::from_secs(10), old_refresh).await??;
-    assert_eq!(manager.get_remote_models().await, vec![new_model]);
+    assert_eq!(manager.get_remote_models().await, expected_models);
     for (mock, account) in [(old_request, "account_id"), (new_request, "second-account")] {
         let requests = mock.requests();
         assert_eq!(requests.len(), 1);

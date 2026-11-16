@@ -8,6 +8,7 @@ use codex_config::ConfigLayerStack;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_features::Feature;
+use codex_inference_profiles::KIMI_K3_MODEL_ID;
 use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::ModelOrigin;
 use codex_models_manager::manager::RefreshStrategy;
@@ -150,14 +151,16 @@ impl ModelCatalog {
         let catalog = models_manager
             .model_catalog_with_origins(refresh_strategy, config.http_client_factory())
             .await;
-        // The first-party catalog supplies picker rows in display order. Bundled,
+        // The first-party catalog supplies picker rows in display order. Appending
+        // the trusted local profile must not change that order. Other bundled,
         // configured and third-party catalogs rely on the manager's priority order.
         let use_catalog_order = config.model_provider_id == OPENAI_PROVIDER_ID
             && (config.model_provider.supports_codex_backend_routes()
                 || config.model_provider.model_catalog_url.is_some())
-            && catalog
-                .iter()
-                .all(|entry| entry.origin == ModelOrigin::Provider);
+            && catalog.iter().all(|entry| {
+                entry.origin == ModelOrigin::Provider
+                    || (entry.origin == ModelOrigin::Bundled && entry.slug == KIMI_K3_MODEL_ID)
+            });
         let positions = use_catalog_order.then(|| {
             catalog
                 .iter()

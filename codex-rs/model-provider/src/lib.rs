@@ -61,6 +61,7 @@ pub use provider::create_model_provider_from_local_config;
 pub use provider::provider_uses_first_party_auth_path;
 pub use provider::resolve_api_provider;
 
+pub use provider::create_model_provider_with_capabilities;
 pub use request_preparation::prepare_provider_request;
 pub use request_setup::ResolvedProviderRequest;
 pub use request_setup::request_auth_owner;

@@ -478,6 +478,18 @@ pub(crate) fn create_model_provider_with_runtime(
     ))
 }
 
+/// Creates a configured provider with explicit runtime capability bounds.
+pub fn create_model_provider_with_capabilities(
+    provider_info: ModelProviderInfo,
+    auth_manager: Option<Arc<AuthManager>>,
+    capabilities: ProviderCapabilities,
+) -> SharedModelProvider {
+    let mut provider =
+        ConfiguredModelProvider::new(provider_info, auth_manager, /*runtime_auth*/ None);
+    provider.capabilities = Some(capabilities);
+    Arc::new(provider)
+}
+
 /// Runtime model provider that orchestrates primary and gateway credentials.
 #[derive(Clone, Debug)]
 struct ConfiguredModelProvider {
@@ -487,6 +499,7 @@ struct ConfiguredModelProvider {
     gateway_auth_manager: Option<Result<Arc<GatewayAuthManager>, String>>,
     runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
     catalog_runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
+    capabilities: Option<ProviderCapabilities>,
 }
 
 impl ConfiguredModelProvider {
@@ -525,6 +538,7 @@ impl ConfiguredModelProvider {
             gateway_auth_manager,
             runtime_auth: inference_runtime_auth,
             catalog_runtime_auth,
+            capabilities: None,
         }
     }
 
@@ -565,7 +579,8 @@ impl ModelProvider for ConfiguredModelProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::from_config(&self.info)
+        self.capabilities
+            .unwrap_or_else(|| ProviderCapabilities::from_config(&self.info))
     }
 
     fn approval_review_preferred_model(&self) -> &'static str {

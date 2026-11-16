@@ -58,6 +58,7 @@ use codex_config::types::ResumeCwdMode;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimeOptions;
 use codex_features::Feature;
+use codex_inference_profiles::inference_profile_for_model;
 use codex_login::AuthConfig;
 use codex_login::default_client::originator;
 use codex_login::default_client::set_default_client_residency_requirement;
@@ -1445,7 +1446,7 @@ async fn run_ratatui_app(
     };
     let requires_openai_auth = startup_account
         .as_ref()
-        .is_some_and(|account| account.requires_openai_auth);
+        .is_some_and(|account| requires_openai_login(&initial_config, account));
     let should_show_onboarding = should_show_onboarding(
         login_status,
         requires_openai_auth,
@@ -2656,6 +2657,15 @@ fn should_show_login_screen(login_status: LoginStatus, requires_openai_auth: boo
     }
 
     login_status == LoginStatus::NotAuthenticated
+}
+
+fn requires_openai_login(config: &Config, account: &GetAccountResponse) -> bool {
+    account.requires_openai_auth
+        && config
+            .model
+            .as_deref()
+            .and_then(inference_profile_for_model)
+            .is_none()
 }
 
 fn should_show_provider_setup_wizard(

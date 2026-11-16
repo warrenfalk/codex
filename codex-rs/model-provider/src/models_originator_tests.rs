@@ -5,6 +5,7 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
+use codex_models_manager::model_info::kimi_k3_model_info;
 use codex_models_manager::model_info::model_info_from_slug;
 use codex_protocol::openai_models::ModelsResponse;
 use pretty_assertions::assert_eq;
@@ -41,6 +42,8 @@ async fn originator_managers_share_api_key_discovery_policy() {
             .mount(&server)
             .await;
     }
+    let mut expected_catalog = catalog;
+    expected_catalog.models.push(kimi_k3_model_info());
     let auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test-key"));
     let endpoint = Arc::new(OpenAiModelsEndpoint::new(
         provider,
@@ -65,7 +68,7 @@ async fn originator_managers_share_api_key_discovery_policy() {
             child
                 .raw_model_catalog(RefreshStrategy::OnlineIfUncached, client.clone())
                 .await,
-            catalog
+            expected_catalog
         );
     }
 
@@ -86,7 +89,7 @@ async fn originator_managers_share_api_key_discovery_policy() {
             child
                 .raw_model_catalog(RefreshStrategy::OnlineIfUncached, client.clone())
                 .await,
-            catalog
+            expected_catalog
         );
     }
     server.verify().await;
@@ -130,7 +133,9 @@ async fn originator_catalogs_are_isolated_and_reused_from_disk() {
             .expect(1)
             .mount(&server)
             .await;
-        catalogs.push(catalog);
+        let mut expected_catalog = catalog;
+        expected_catalog.models.push(kimi_k3_model_info());
+        catalogs.push(expected_catalog);
     }
     let client = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
     for _ in 0..2 {

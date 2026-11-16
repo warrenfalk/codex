@@ -437,8 +437,14 @@ requires_openai_auth = true
         .build_initialized()
         .await?;
     let initial = list_models(&mut server).await?;
-    assert_eq!(initial.data.len(), 1);
-    assert_eq!(initial.data[0].id, "first-model");
+    assert_eq!(
+        initial
+            .data
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first-model", "kimi-k3"]
+    );
     let cache_path = home.path().join("models_cache.json");
     let initial_cache: ModelsResponse = serde_json::from_slice(&std::fs::read(&cache_path)?)?;
 
@@ -450,8 +456,14 @@ requires_openai_auth = true
         },
     };
     let selected: ModelListResponse = server.request(select_second).await?;
-    assert_eq!(selected.data.len(), 1);
-    assert_eq!(selected.data[0].id, "second-model");
+    assert_eq!(
+        selected
+            .data
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        ["second-model", "kimi-k3"]
+    );
     let disk_catalog: ModelsResponse = serde_json::from_slice(&std::fs::read(&cache_path)?)?;
     assert_eq!(disk_catalog, initial_cache);
     assert_eq!(list_models(&mut server).await?, initial);
