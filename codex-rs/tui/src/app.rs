@@ -290,6 +290,7 @@ mod startup;
 pub(crate) mod startup_bootstrap;
 mod startup_prompts;
 mod startup_warnings;
+mod thread_archive;
 pub(crate) mod thread_attachment;
 mod thread_event_buffer;
 mod thread_events;
@@ -516,6 +517,7 @@ pub(crate) enum AppRunControl {
 #[derive(Debug, Clone)]
 pub enum ExitReason {
     UserRequested,
+    Archived(ThreadId),
     TurnInterrupted,
     Fatal(String),
 }

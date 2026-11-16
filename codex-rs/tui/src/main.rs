@@ -44,7 +44,9 @@ fn main() -> anyhow::Result<()> {
                 eprintln!("ERROR: {message}");
                 true
             }
-            ExitReason::UserRequested | ExitReason::TurnInterrupted => false,
+            ExitReason::UserRequested | ExitReason::TurnInterrupted | ExitReason::Archived(_) => {
+                false
+            }
         };
 
         let color_enabled = supports_color::on(Stream::Stdout).is_some();

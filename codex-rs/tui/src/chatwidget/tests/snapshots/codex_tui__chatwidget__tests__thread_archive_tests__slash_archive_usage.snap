@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/thread_archive_tests.rs
+expression: rendered
+---
+■ Usage: /archive [new|exit]

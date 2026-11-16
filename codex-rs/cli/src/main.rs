@@ -819,7 +819,7 @@ fn handle_app_exit(
             eprintln!("ERROR: {message}");
             true
         }
-        ExitReason::UserRequested | ExitReason::TurnInterrupted => false,
+        ExitReason::UserRequested | ExitReason::TurnInterrupted | ExitReason::Archived(_) => false,
     };
 
     let update_action = exit_info.update_action;
