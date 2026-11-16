@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::bottom_pane::footer_content::FooterContent;
+use crate::status::format_status_limit_delta_vs_pace;
 use crate::status::thread_cost_micros;
 
 impl ChatWidget {
@@ -374,6 +375,7 @@ impl ChatWidget {
             for item in [
                 StatusSurfacePreviewItem::FiveHourLimit,
                 StatusSurfacePreviewItem::WeeklyLimit,
+                StatusSurfacePreviewItem::WeeklyLimitBar,
             ] {
                 if self.status_surface_preview_value_for_item(item).is_none() {
                     preview_data.suppress_placeholder(item);
@@ -452,7 +454,15 @@ impl ChatWidget {
     ) -> Option<String> {
         let window = window?;
         let remaining = (100.0f64 - window.used_percent).clamp(0.0f64, 100.0f64);
-        Some(format!("{label} {remaining:.0}% left"))
+        let summary = format_status_limit_delta_vs_pace(remaining, window.time_remaining_percent);
+        match window
+            .time_remaining
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            Some(time_remaining) => Some(format!("{label} {summary} ({time_remaining})")),
+            None => Some(format!("{label} {summary}")),
+        }
     }
 
     pub(super) fn status_line_reasoning_effort_label(
