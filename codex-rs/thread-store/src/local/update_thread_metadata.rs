@@ -545,15 +545,16 @@ async fn apply_metadata_update(
             }
             let memory_mode = patch.memory_mode.map(memory_mode_as_str);
             let recency_at = existing.as_ref().and(advance_recency_at);
+            let observed_title = existing.as_ref().map(|metadata| metadata.title.as_str());
             let upsert_result = state_db
-                .upsert_thread_with_observed_metadata(&metadata, memory_mode, recency_at)
+                .upsert_thread_with_observed_metadata(&metadata, memory_mode, recency_at, observed_title)
                 .await;
             if existing.is_none()
                 && metadata.project_id.is_some()
                 && matches!(&upsert_result, Err(err) if err.to_string().contains("FOREIGN KEY constraint failed"))
             {
                 metadata.project_id = None;
-                state_db.upsert_thread_with_observed_metadata(&metadata, memory_mode, recency_at).await.map_err(|err| {
+                state_db.upsert_thread_with_observed_metadata(&metadata, memory_mode, recency_at, observed_title).await.map_err(|err| {
                     ThreadStoreError::Internal {
                         message: format!("failed to update thread metadata for {thread_id}: {err}"),
                     }

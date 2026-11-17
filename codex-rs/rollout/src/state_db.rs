@@ -591,7 +591,14 @@ pub(super) async fn reconcile_rollout_from_disk(
         }
         Some(true) | None => {}
     }
-    if let Err(err) = ctx.upsert_thread(&metadata).await {
+    let upsert_result = match existing_metadata.as_ref() {
+        Some(existing) => {
+            ctx.upsert_thread_with_observed_title(&metadata, &existing.title)
+                .await
+        }
+        None => ctx.upsert_thread(&metadata).await,
+    };
+    if let Err(err) = upsert_result {
         warn!(
             "state db reconcile_rollout upsert failed {}: {err}",
             rollout_path.display()
@@ -650,7 +657,10 @@ pub async fn read_repair_rollout_path(
             return;
         }
         warn!("state db discrepancy during read_repair_rollout_path: upsert_needed (fast path)");
-        if let Err(err) = ctx.upsert_thread(&repaired).await {
+        if let Err(err) = ctx
+            .upsert_thread_with_observed_title(&repaired, &metadata.title)
+            .await
+        {
             warn!(
                 "state db read-repair upsert failed for {}: {err}",
                 rollout_path.display()

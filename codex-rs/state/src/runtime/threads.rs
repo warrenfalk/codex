@@ -631,8 +631,27 @@ ON CONFLICT(child_thread_id) DO NOTHING
 
     /// Insert or replace thread metadata directly.
     pub async fn upsert_thread(&self, metadata: &crate::ThreadMetadata) -> anyhow::Result<()> {
-        self.upsert_thread_with_creation_memory_mode(metadata, /*creation_memory_mode*/ None)
-            .await
+        self.upsert_thread_with_creation_memory_mode(
+            metadata, /*creation_memory_mode*/ None, /*observed_title*/ None,
+        )
+        .await
+    }
+
+    /// Update metadata read earlier without overwriting a concurrent title change.
+    ///
+    /// Pass the title from the original read, before applying metadata changes. Explicit
+    /// renames should use `update_thread_title` after this reconciliation step.
+    pub async fn upsert_thread_with_observed_title(
+        &self,
+        metadata: &crate::ThreadMetadata,
+        observed_title: &str,
+    ) -> anyhow::Result<()> {
+        self.upsert_thread_with_creation_memory_mode(
+            metadata,
+            /*creation_memory_mode*/ None,
+            Some(observed_title),
+        )
+        .await
     }
 
     pub async fn insert_thread_if_absent(
@@ -957,27 +976,36 @@ WHERE id = ?
         Ok(result.rows_affected() > 0)
     }
 
-    /// Apply observed metadata, memory preference, and recency in one commit.
+    /// Apply metadata, memory preference, and recency atomically, preserving concurrent renames.
     pub async fn upsert_thread_with_observed_metadata(
         &self,
         metadata: &crate::ThreadMetadata,
         memory_mode: Option<&str>,
         recency_at: Option<DateTime<Utc>>,
+        observed_title: Option<&str>,
     ) -> anyhow::Result<()> {
-        self.upsert_thread_metadata(metadata, memory_mode, memory_mode, recency_at)
-            .await
+        self.upsert_thread_metadata(
+            metadata,
+            memory_mode,
+            memory_mode,
+            recency_at,
+            observed_title,
+        )
+        .await
     }
 
     async fn upsert_thread_with_creation_memory_mode(
         &self,
         metadata: &crate::ThreadMetadata,
         creation_memory_mode: Option<&str>,
+        observed_title: Option<&str>,
     ) -> anyhow::Result<()> {
         self.upsert_thread_metadata(
             metadata,
             creation_memory_mode,
             /*memory_mode*/ None,
             /*recency_at*/ None,
+            observed_title,
         )
         .await
     }
@@ -988,16 +1016,25 @@ WHERE id = ?
         creation_memory_mode: Option<&str>,
         memory_mode: Option<&str>,
         recency_at: Option<DateTime<Utc>>,
+        observed_title: Option<&str>,
     ) -> anyhow::Result<()> {
         let recency_at = recency_at
             .map(|at| self.allocate_thread_recency_at(at))
             .transpose()?;
+        // SQLite's default trim only handles ASCII spaces. Match Rust's str::trim when
+        // distinguishing an explicit title from the original user-message fallback.
+        const TITLE_TRIM_CHARS: &str = concat!(
+            "\u{9}\u{a}\u{b}\u{c}\u{d}\u{20}\u{85}\u{a0}\u{1680}",
+            "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}",
+            "\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}",
+            "\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}",
+        );
         let updated_at = self.allocate_thread_updated_at(metadata.updated_at)?;
         let insert_recency_at = self.allocate_thread_recency_at(metadata.recency_at)?;
         let preview = metadata_preview(metadata);
-        // Backfill/reconcile callers merge existing git info before upserting, but that
-        // read/modify/write is not atomic. Preserve non-null SQLite git fields here so
-        // an explicit metadata update cannot be lost if a stale rollout upsert lands later.
+        // Backfill/reconcile callers merge existing git info and titles before upserting,
+        // but that read/modify/write is not atomic. Preserve non-null SQLite git fields
+        // and explicit titles here so stale rollout upserts cannot lose those updates.
         // Daybreak and project choices are insert-only here; explicit changes use their setters.
         sqlx::query(
             r#"
@@ -1073,7 +1110,14 @@ ON CONFLICT(id) DO UPDATE SET
     reasoning_effort = excluded.reasoning_effort,
     cwd = excluded.cwd,
     cli_version = excluded.cli_version,
-    title = excluded.title,
+    title = CASE
+        WHEN ? IS NOT NULL AND threads.title IS NOT ? THEN threads.title
+        WHEN ?
+            AND trim(threads.title, ?) != ''
+            AND trim(threads.title, ?) IS NOT trim(threads.first_user_message, ?)
+        THEN threads.title
+        ELSE excluded.title
+    END,
     preview = COALESCE(NULLIF(excluded.preview, ''), threads.preview),
     sandbox_policy = excluded.sandbox_policy,
     approval_mode = excluded.approval_mode,
@@ -1143,6 +1187,12 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(recency_at.map(datetime_to_epoch_millis))
         .bind(recency_at.map(datetime_to_epoch_millis))
         .bind(recency_at.map(datetime_to_epoch_millis))
+        .bind(observed_title)
+        .bind(observed_title)
+        .bind(metadata.has_derived_title())
+        .bind(TITLE_TRIM_CHARS)
+        .bind(TITLE_TRIM_CHARS)
+        .bind(TITLE_TRIM_CHARS)
         .bind(memory_mode)
         .execute_with_busy_retry(self.pool.as_ref())
         .await?;
@@ -1188,11 +1238,16 @@ ON CONFLICT(id) DO UPDATE SET
         if let Some(updated_at) = updated_at {
             metadata.updated_at = updated_at;
         }
-        let upsert_result = if existing_metadata.is_none() {
-            self.upsert_thread_with_creation_memory_mode(&metadata, new_thread_memory_mode)
+        let upsert_result = if let Some(existing) = existing_metadata.as_ref() {
+            self.upsert_thread_with_observed_title(&metadata, &existing.title)
                 .await
         } else {
-            self.upsert_thread(&metadata).await
+            self.upsert_thread_with_creation_memory_mode(
+                &metadata,
+                new_thread_memory_mode,
+                /*observed_title*/ None,
+            )
+            .await
         };
         upsert_result?;
         if let Some(memory_mode) = extract_memory_mode(items)
@@ -1226,7 +1281,8 @@ ON CONFLICT(id) DO UPDATE SET
                 metadata.id
             );
         }
-        self.upsert_thread(&metadata).await
+        self.upsert_thread_with_observed_title(&metadata, &metadata.title)
+            .await
     }
 
     /// Mark a thread as unarchived using the underlying database.
@@ -1249,7 +1305,8 @@ ON CONFLICT(id) DO UPDATE SET
                 metadata.id
             );
         }
-        self.upsert_thread(&metadata).await
+        self.upsert_thread_with_observed_title(&metadata, &metadata.title)
+            .await
     }
 
     /// Delete a thread and all associated state by id.
@@ -1755,7 +1812,11 @@ mod tests {
         let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
 
         runtime
-            .upsert_thread_with_creation_memory_mode(&metadata, Some("disabled"))
+            .upsert_thread_with_creation_memory_mode(
+                &metadata,
+                Some("disabled"),
+                /*observed_title*/ None,
+            )
             .await
             .expect("initial insert should succeed");
 
