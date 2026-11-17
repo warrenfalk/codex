@@ -249,6 +249,8 @@ pub enum RolloutItem {
     Compacted(Box<CompactedItem>),
     TurnContext(TurnContextItem),
     TokenUsageRecord(TokenUsageRecord),
+    /// Model-invisible client timing observations for offline usage analysis.
+    TimingRecord(timing::TimingRecord),
     WorldState(WorldStateItem),
     SecurityRiskScore(SecurityRiskScore),
     RetainedContext(RetainedContextEvent),
@@ -313,6 +315,7 @@ pub use retained_context::RetainedUserMessage;
 pub use retained_context::VerifiedAnswer;
 pub use retained_context::VerifiedQuestionAnswer;
 mod rollout_payload;
+pub mod timing;
 
 pub use guardian_history::GuardianHistoryCheckpoint;
 pub use guardian_history::GuardianRetainedOmissions;

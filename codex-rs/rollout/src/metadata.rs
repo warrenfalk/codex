@@ -83,6 +83,7 @@ pub fn builder_from_items(
         | RolloutItem::WorldState(_)
         | RolloutItem::RealtimeItem(_)
         | RolloutItem::TokenUsageRecord(_)
+        | RolloutItem::TimingRecord(_)
         | RolloutItem::RetainedContext(_)
         | RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::SecurityRiskScore(_)
@@ -181,6 +182,7 @@ pub async fn extract_metadata_from_rollout(
             | RolloutItem::WorldState(_)
             | RolloutItem::RealtimeItem(_)
             | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::TimingRecord(_)
             | RolloutItem::RetainedContext(_)
             | RolloutItem::DynamicToolsUpdated { .. }
             | RolloutItem::SecurityRiskScore(_)

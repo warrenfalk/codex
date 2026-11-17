@@ -174,6 +174,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
         | RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::TokenUsageRecord(_)
+        | RolloutItem::TimingRecord(_)
         | RolloutItem::WorldState(_)
         | RolloutItem::RealtimeItem(_)
         | RolloutItem::RetainedContext(_)

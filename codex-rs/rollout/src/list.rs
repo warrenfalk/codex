@@ -1064,7 +1064,7 @@ async fn read_head_summary(path: &Path, head_limit: usize) -> io::Result<HeadTai
             RolloutItem::TurnContext(_) => {
                 // Not included in `head`; skip.
             }
-            RolloutItem::TokenUsageRecord(_) => {
+            RolloutItem::TokenUsageRecord(_) | RolloutItem::TimingRecord(_) => {
                 // Not included in `head`; skip.
             }
             RolloutItem::RetainedContext(_)
@@ -1146,6 +1146,7 @@ pub async fn read_head_for_summary(path: &Path) -> io::Result<Vec<serde_json::Va
                 | RolloutItem::Compacted(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::WorldState(_)
                 | RolloutItem::RealtimeItem(_)
                 | RolloutItem::RetainedContext(_)
@@ -1241,6 +1242,7 @@ pub async fn read_session_meta_line(path: &Path) -> io::Result<SessionMetaLine> 
             | RolloutItem::Compacted(_)
             | RolloutItem::TurnContext(_)
             | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::TimingRecord(_)
             | RolloutItem::WorldState(_)
             | RolloutItem::RealtimeItem(_)
             | RolloutItem::RetainedContext(_)

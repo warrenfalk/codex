@@ -525,6 +525,7 @@ impl ThreadHistoryBuilder {
             | RolloutItem::InterAgentCommunicationMetadata { .. }
             | RolloutItem::TurnContext(_)
             | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::TimingRecord(_)
             | RolloutItem::WorldState(_)
             | RolloutItem::RealtimeItem(_)
             | RolloutItem::RetainedContext(_)

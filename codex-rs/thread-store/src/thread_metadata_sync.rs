@@ -184,6 +184,14 @@ impl ThreadMetadataSync {
         &mut self,
         items: &[RolloutItem],
     ) -> Option<PendingThreadMetadataPatch> {
+        // Observations must not create recency touches or release deferred metadata.
+        if !items.is_empty()
+            && items
+                .iter()
+                .all(|item| matches!(item, RolloutItem::TimingRecord(_)))
+        {
+            return None;
+        }
         self.defer_create_update_until_history_exists = false;
         self.defer_resume_update_until_append = false;
         let affects_metadata = items
@@ -351,6 +359,7 @@ impl ThreadMetadataSync {
                 | RolloutItem::Compacted(_)
                 | RolloutItem::RealtimeItem(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::RetainedContext(_)
                 | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::WorldState(_) => {}
@@ -452,6 +461,10 @@ fn git_info_patch_from_observation(git_info: GitInfo) -> GitInfoPatch {
         origin_url: git_info.repository_url.map(Some),
     }
 }
+
+#[cfg(test)]
+#[path = "thread_metadata_sync_timing_tests.rs"]
+mod timing_tests;
 
 #[cfg(test)]
 mod tests {

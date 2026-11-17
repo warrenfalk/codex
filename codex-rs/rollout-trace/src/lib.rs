@@ -17,6 +17,7 @@ mod protocol_event;
 mod raw_event;
 mod reducer;
 mod thread;
+mod timing;
 mod tool_dispatch;
 mod writer;
 
@@ -64,6 +65,10 @@ pub use thread::CODEX_ROLLOUT_TRACE_ROOT_ENV;
 pub use thread::ThreadStartedTraceMetadata;
 /// No-op-capable handle for recording one thread in a rollout bundle.
 pub use thread::ThreadTraceContext;
+pub use timing::StreamObservation;
+pub use timing::StreamTimingCapture;
+pub use timing::TimingContext;
+pub use timing::TimingSpan;
 /// Request data for the canonical Codex tool boundary.
 pub use tool_dispatch::ToolDispatchInvocation;
 /// Tool input observed at the registry boundary.

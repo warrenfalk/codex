@@ -81,7 +81,7 @@ fn keep_forked_rollout_item(item: &RolloutItem, preserve_context_baselines: bool
         // from the parent's durable baseline unless legacy compaction requires rebuilding it.
         RolloutItem::TurnContext(_) | RolloutItem::WorldState(_) => preserve_context_baselines,
         // Child threads inherit model context, not the parent's cumulative usage state.
-        RolloutItem::TokenUsageRecord(_) => false,
+        RolloutItem::TokenUsageRecord(_) | RolloutItem::TimingRecord(_) => false,
         RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::Compacted(_)
         | RolloutItem::EventMsg(_)
@@ -428,6 +428,7 @@ pub(super) async fn prepare_forked_history(
             | RolloutItem::InterAgentCommunicationMetadata { .. } => true,
             RolloutItem::RetainedContext(_)
             | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::TimingRecord(_)
             | RolloutItem::SecurityRiskScore(_) => false,
         }
     });

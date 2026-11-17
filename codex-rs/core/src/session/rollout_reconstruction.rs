@@ -279,6 +279,7 @@ impl ContextManager {
                 | RolloutItem::RetainedContext(_)
                 | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::RealtimeItem(_)
                 | RolloutItem::Compacted(_)
                 | RolloutItem::EventMsg(_) => None,
@@ -473,6 +474,7 @@ impl ContextManager {
                 | RolloutItem::RetainedContext(_)
                 | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::InterAgentCommunicationMetadata { .. } => {}
             }
         }
@@ -582,6 +584,7 @@ impl ContextManager {
                 | RolloutItem::WorldState(_)
                 | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::DynamicToolsUpdated { .. }
                 | RolloutItem::SessionMeta(_) => {}
             }
@@ -624,6 +627,7 @@ impl ContextManager {
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::RealtimeItem(_)
                 | RolloutItem::TokenUsageRecord(_)
+                | RolloutItem::TimingRecord(_)
                 | RolloutItem::RetainedContext(_)
                 | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::EventMsg(_) => {

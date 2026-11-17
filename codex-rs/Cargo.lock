@@ -4959,6 +4959,7 @@ version = "0.170.0"
 dependencies = [
  "anyhow",
  "codex-code-mode",
+ "codex-history",
  "codex-protocol",
  "http 1.4.0",
  "pretty_assertions",

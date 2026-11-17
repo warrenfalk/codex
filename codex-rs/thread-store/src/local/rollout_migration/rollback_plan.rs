@@ -287,6 +287,9 @@ impl RollbackPlanner {
             RolloutItem::TokenUsageRecord(record) => {
                 self.assign_targeted_record(index, Some(record.turn_id.as_str()));
             }
+            RolloutItem::TimingRecord(record) => {
+                self.assign_targeted_record(index, Some(record.turn_id.as_str()));
+            }
             RolloutItem::WorldState(_) | RolloutItem::RealtimeItem(_) => {}
             RolloutItem::RetainedContext(codex_rollout::RetainedContextEvent::VerifiedAnswer {
                 answer,
@@ -655,3 +658,7 @@ fn user_response_matches_event(content: &[ContentItem], event: &UserMessageEvent
         && event.local_images.is_empty()
         && event.local_audio.is_empty()
 }
+
+#[cfg(test)]
+#[path = "rollback_timing_tests.rs"]
+mod timing_tests;

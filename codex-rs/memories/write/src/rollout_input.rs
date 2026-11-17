@@ -121,6 +121,7 @@ pub(crate) fn serialize_tiered_input(
             | RolloutItem::WorldState(_)
             | RolloutItem::SecurityRiskScore(_)
             | RolloutItem::TokenUsageRecord(_)
+            | RolloutItem::TimingRecord(_)
             | RolloutItem::RetainedContext(_)
             | RolloutItem::EventMsg(_) => None,
         };

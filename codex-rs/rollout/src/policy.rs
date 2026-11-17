@@ -42,6 +42,7 @@ pub fn persisted_rollout_item(
         RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::TokenUsageRecord(_)
+        | RolloutItem::TimingRecord(_)
         | RolloutItem::WorldState(_)
         | RolloutItem::RetainedContext(_)
         | RolloutItem::SecurityRiskScore(_)

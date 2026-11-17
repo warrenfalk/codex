@@ -206,6 +206,7 @@ mod request_permissions;
 #[cfg(not(target_os = "windows"))]
 mod request_permissions_tool;
 mod request_plugin_install;
+mod request_timing;
 mod request_user_input;
 mod request_user_input_async;
 #[path = "required_access_program_tests.rs"]

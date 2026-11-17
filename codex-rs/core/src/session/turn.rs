@@ -1,3 +1,7 @@
+use codex_history::timing::TimingPhase;
+use codex_history::timing::TimingStatus;
+use codex_rollout_trace::StreamTimingCapture;
+use codex_rollout_trace::TimingContext;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -656,10 +660,23 @@ pub(crate) async fn run_turn(
                 .await;
 
             // Construct the input that we will send to the model.
+            let request_timing = TimingContext::new(
+                sess.thread_id,
+                turn_context.sub_id.clone(),
+                step_context.settings.model_info.slug.clone(),
+            );
+            let preparation = request_timing.span(TimingPhase::PrepareRequest);
+            super::timing::flush(&sess, &request_timing).await;
             let sampling_request_input = sess
                 .clone_history()
                 .instrument(trace_span!("run_turn.prepare_sampling_request_input"))
                 .await;
+            preparation.finish(
+                TimingStatus::Completed,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+            super::timing::flush(&sess, &request_timing).await;
 
             run_sampling_request(
                 Arc::clone(&sess),
@@ -669,6 +686,7 @@ pub(crate) async fn run_turn(
                 &mut client_session,
                 sampling_request_input,
                 cancellation_token.child_token(),
+                request_timing,
             )
             .await
         }
@@ -1966,6 +1984,7 @@ async fn run_sampling_request(
     client_session: &mut ModelClientSession,
     input: crate::context_manager::ContextManager,
     cancellation_token: CancellationToken,
+    timing: TimingContext,
 ) -> CodexResult<(SamplingRequestResult, Vec<String>)> {
     let turn_context = Arc::clone(&step_context.turn);
     let preempt = step_context.preempt.clone().unwrap_or_default();
@@ -2001,7 +2020,14 @@ async fn run_sampling_request(
     let mut initial_input = Some(input);
     let mut notify_messages = Vec::new();
     let mut executed_tool_calls_by_output = HashMap::new();
+    let mut timing_attempt = 0u32;
     loop {
+        timing_attempt = timing_attempt.saturating_add(1);
+        let attempt_timing = timing.for_attempt(timing_attempt);
+        let attempt_span = attempt_timing.span(TimingPhase::SamplingAttempt);
+        let attempt_timing = attempt_timing.under(&attempt_span);
+        let preparation = attempt_timing.span(TimingPhase::PrepareRequest);
+        super::timing::flush(&sess, &timing).await;
         // Running code-mode cells can request review while this response is in flight.
         // Keep the latest received ID until response.created replaces it.
         let first_attempt = initial_input.is_some();
@@ -2034,13 +2060,27 @@ async fn run_sampling_request(
             .responses_metadata(step_context.as_ref(), CodexResponsesRequestKind::Turn)
             .await;
         if crate::guardian::is_basic_session_source(&turn_context.session_source) {
-            crate::guardian::prepare_guardian_prompt(
+            let prepared = crate::guardian::prepare_guardian_prompt(
                 &sess,
                 &mut prompt,
                 step_context.as_ref(),
                 &responses_metadata,
             )
-            .await?;
+            .await;
+            if let Err(error) = prepared {
+                preparation.finish(
+                    TimingStatus::Failed,
+                    /*response_id*/ None,
+                    /*stream*/ None,
+                );
+                attempt_span.finish(
+                    TimingStatus::Failed,
+                    /*response_id*/ None,
+                    /*stream*/ None,
+                );
+                super::timing::flush(&sess, &timing).await;
+                return Err(error);
+            }
         }
         if first_attempt && turn_context.config.notify.is_some() {
             notify_messages = legacy_notify_input_messages(&prompt.input);
@@ -2075,7 +2115,13 @@ async fn run_sampling_request(
             (submitted, pending)
         };
         let mut draining_for_mailbox = false;
-        let err = match try_run_sampling_request(
+        preparation.finish(
+            TimingStatus::Completed,
+            /*response_id*/ None,
+            /*stream*/ None,
+        );
+        super::timing::flush(&sess, &timing).await;
+        let sampling_result = try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
             sampling_step_context,
@@ -2088,9 +2134,17 @@ async fn run_sampling_request(
             input_item_count,
             cancellation_token.child_token(),
             &mut draining_for_mailbox,
+            attempt_timing.clone(),
         )
-        .await
-        {
+        .await;
+        timing.cancel_open_transports();
+        attempt_span.finish(
+            super::timing::status(&sampling_result),
+            /*response_id*/ None,
+            /*stream*/ None,
+        );
+        super::timing::flush(&sess, &timing).await;
+        let err = match sampling_result {
             Ok(output) => {
                 return Ok((output, notify_messages));
             }
@@ -2128,7 +2182,11 @@ async fn run_sampling_request(
                 return Err(err);
             }
         }
-        let retry = handle_response_stream_error(
+        let recovery = timing
+            .for_attempt(timing_attempt)
+            .span(TimingPhase::RetryRecovery);
+        super::timing::flush(&sess, &timing).await;
+        let retry_result = handle_response_stream_error(
             &mut retry_state,
             max_retries,
             err,
@@ -2139,7 +2197,19 @@ async fn run_sampling_request(
         )
         .or_cancel(&preempt)
         .or_cancel(&cancellation_token)
-        .await?;
+        .await;
+        let recovery_status = match &retry_result {
+            Ok(Ok(Ok(()))) => TimingStatus::Completed,
+            Ok(Ok(Err(_))) => TimingStatus::Failed,
+            Ok(Err(_)) | Err(_) => TimingStatus::Cancelled,
+        };
+        recovery.finish(
+            recovery_status,
+            /*response_id*/ None,
+            /*stream*/ None,
+        );
+        super::timing::flush(&sess, &timing).await;
+        let retry = retry_result?;
         if cancellation_token.is_cancelled() {
             return Err(CodexErr::TurnAborted);
         }
@@ -2973,6 +3043,7 @@ async fn try_run_sampling_request(
     input_item_count: usize,
     cancellation_token: CancellationToken,
     draining_for_mailbox: &mut bool,
+    timing: TimingContext,
 ) -> CodexResult<SamplingRequestResult> {
     let turn_context = Arc::clone(&step_context.turn);
     feedback_tags!(
@@ -2988,11 +3059,19 @@ async fn try_run_sampling_request(
             step_context.settings.service_tier.as_deref(),
         ))),
     );
-    let inference_trace = sess.services.rollout_thread_trace.inference_trace_context(
-        turn_context.sub_id.as_str(),
-        step_context.settings.model_info.slug.as_str(),
-        turn_context.provider.info().name.as_str(),
-    );
+    let model_request = timing.span(TimingPhase::ModelRequest);
+    let model_timing = timing.under(&model_request);
+    let mut stream_capture = StreamTimingCapture::new(model_timing.clone());
+    super::timing::flush(&sess, &timing).await;
+    let inference_trace = sess
+        .services
+        .rollout_thread_trace
+        .inference_trace_context(
+            turn_context.sub_id.as_str(),
+            step_context.settings.model_info.slug.as_str(),
+            turn_context.provider.info().name.as_str(),
+        )
+        .with_timing(model_timing.clone());
     if client_session.inference_tools_changed(&step_context.tool_router.model_visible_specs()) {
         turn_context.turn_timing_state.record_tools_change();
     }
@@ -3085,12 +3164,44 @@ async fn try_run_sampling_request(
             .instrument(trace_span!("stream_request"))
             .await
     };
-    let stream = stream_request(&prompt)
-        .or_cancel(&cancellation_token)
-        .await?;
+    let stream_setup = model_timing.span(TimingPhase::StreamSetup);
+    super::timing::flush(&sess, &timing).await;
+    let stream = stream_request(&prompt).or_cancel(&cancellation_token).await;
+    let stream = match stream {
+        Ok(stream) => {
+            stream_setup.finish(
+                if stream.is_ok() {
+                    TimingStatus::Completed
+                } else {
+                    TimingStatus::Failed
+                },
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+            stream
+        }
+        Err(error) => {
+            stream_setup.finish(
+                TimingStatus::Cancelled,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+            model_request.finish(
+                TimingStatus::Cancelled,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+            return Err(error.into());
+        }
+    };
     let mut stream = match stream {
         Ok(stream) => stream,
         Err(error) => {
+            model_request.finish(
+                TimingStatus::Failed,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
             if let Some(finish_post_request) = finish_post_request {
                 finish_post_request(PostModelRequest {
                     status: ModelRequestStatus::Failed,
@@ -3109,6 +3220,11 @@ async fn try_run_sampling_request(
         && step_context.settings.model_info.use_responses_lite
         && stream.interrupt.is_some();
     if cancellation_token.is_cancelled() && !can_interrupt {
+        model_request.finish(
+            TimingStatus::Cancelled,
+            /*response_id*/ None,
+            /*stream*/ None,
+        );
         return Err(CodexErr::TurnAborted);
     }
     let mut in_flight: FuturesOrdered<InFlightFuture<'static>> = FuturesOrdered::new();
@@ -3174,6 +3290,8 @@ async fn try_run_sampling_request(
             .or_cancel(&preempt)
             .or_cancel(&cancellation_token)
             .await;
+        stream_capture.record_wait(receive_started.elapsed());
+        let _event_processing_timing = stream_capture.processing();
         // Split the existing iteration span without adding another span per streamed delta.
         handle_responses.record(
             "codex.response.receive_wait_ms",
@@ -3251,6 +3369,9 @@ async fn try_run_sampling_request(
             }
         };
 
+        if super::timing::observe(&mut stream_capture, &event) {
+            super::timing::flush(&sess, &timing).await;
+        }
         record_turn_ttft_metric(&turn_context, &event).await;
         let Some(event) = resampling.filter(event, &step_context.tool_router) else {
             continue;
@@ -3599,11 +3720,19 @@ async fn try_run_sampling_request(
                 should_emit_token_count = true;
             }
             ResponseEvent::ModelsEtag(etag) => {
+                let catalog_refresh = model_timing.span(TimingPhase::ModelCatalogRefresh);
+                super::timing::flush(&sess, &timing).await;
                 // Update internal state with latest models etag
                 sess.services
                     .models_manager
                     .refresh_if_new_etag(etag, turn_context.config.http_client_factory())
                     .await;
+                catalog_refresh.finish(
+                    TimingStatus::Completed,
+                    /*response_id*/ None,
+                    /*stream*/ None,
+                );
+                super::timing::flush(&sess, &timing).await;
             }
             ResponseEvent::Completed {
                 response_id,
@@ -3844,6 +3973,14 @@ async fn try_run_sampling_request(
         }
     }
     drop(stream);
+    let model_status = if !response_completed && outcome.is_ok() {
+        TimingStatus::Cancelled
+    } else {
+        super::timing::status(&outcome)
+    };
+    timing.cancel_open_transports();
+    stream_capture.finish(&model_request, model_status);
+    super::timing::flush(&sess, &timing).await;
     drop(sampling_span);
     drop(sampling_timing_guard);
     if let Some(finish_post_request) = finish_post_request {
@@ -3870,6 +4007,8 @@ async fn try_run_sampling_request(
     .await;
 
     if !in_flight.is_empty() {
+        let tool_wait = timing.span(TimingPhase::ToolWait);
+        super::timing::flush(&sess, &timing).await;
         let _tool_blocking_timing_guard = turn_context
             .turn_timing_state
             .begin_tool_blocking(tool_runtime.batch_timing());
@@ -3879,7 +4018,14 @@ async fn try_run_sampling_request(
             conversation.id = %sess.thread_id,
             turn.id = %turn_context.sub_id,
         );
-        drain_in_flight(&mut in_flight, sess.clone(), &step_context).await?;
+        let result = drain_in_flight(&mut in_flight, sess.clone(), &step_context).await;
+        tool_wait.finish(
+            super::timing::status(&result),
+            /*response_id*/ None,
+            /*stream*/ None,
+        );
+        super::timing::flush(&sess, &timing).await;
+        result?;
     }
 
     if should_emit_token_count {

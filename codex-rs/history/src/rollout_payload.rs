@@ -64,6 +64,9 @@ pub(super) enum RolloutItemWire<'a> {
     TokenUsageRecord {
         payload: Cow<'a, TokenUsageRecord>,
     },
+    TimingRecord {
+        payload: Cow<'a, crate::timing::TimingRecord>,
+    },
     WorldState {
         payload: Cow<'a, WorldStateItem>,
     },
@@ -212,6 +215,9 @@ impl<'a> From<&'a RolloutItem> for RolloutItemWire<'a> {
             RolloutItem::TokenUsageRecord(payload) => Self::TokenUsageRecord {
                 payload: Cow::Borrowed(payload),
             },
+            RolloutItem::TimingRecord(payload) => Self::TimingRecord {
+                payload: Cow::Borrowed(payload),
+            },
             RolloutItem::WorldState(payload) => Self::WorldState {
                 payload: Cow::Borrowed(payload),
             },
@@ -353,6 +359,7 @@ impl From<RolloutItemWire<'_>> for RolloutItem {
             RolloutItemWire::TokenUsageRecord { payload } => {
                 Self::TokenUsageRecord(payload.into_owned())
             }
+            RolloutItemWire::TimingRecord { payload } => Self::TimingRecord(payload.into_owned()),
             RolloutItemWire::WorldState { payload } => Self::WorldState(payload.into_owned()),
             RolloutItemWire::RetainedContext { payload } => {
                 Self::RetainedContext(payload.into_owned())

@@ -10,6 +10,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+use crate::TimingContext;
+use crate::TimingSpan;
+use codex_history::timing::TimingPhase;
+use codex_history::timing::TimingStatus;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
 use http::HeaderMap;
@@ -40,6 +44,7 @@ const INFERENCE_CALL_ID_HEADER: &str = "x-codex-inference-call-id";
 #[derive(Clone, Debug)]
 pub struct InferenceTraceContext {
     state: InferenceTraceContextState,
+    timing: Option<TimingContext>,
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +71,7 @@ struct EnabledInferenceTraceContext {
 #[derive(Debug)]
 pub struct InferenceTraceAttempt {
     state: InferenceTraceAttemptState,
+    timing: Option<TimingSpan>,
 }
 
 #[derive(Debug)]
@@ -100,6 +106,7 @@ impl InferenceTraceContext {
     pub fn disabled() -> Self {
         Self {
             state: InferenceTraceContextState::Disabled,
+            timing: None,
         }
     }
 
@@ -119,13 +126,21 @@ impl InferenceTraceContext {
                 model,
                 provider_name,
             }),
+            timing: None,
         }
     }
 
     /// Starts a new attempt after the concrete provider request has been built.
     pub fn start_attempt(&self) -> InferenceTraceAttempt {
+        let timing = self
+            .timing
+            .as_ref()
+            .map(|context| context.span(TimingPhase::TransportAttempt));
         let InferenceTraceContextState::Enabled(context) = &self.state else {
-            return InferenceTraceAttempt::disabled();
+            return InferenceTraceAttempt {
+                state: InferenceTraceAttemptState::Disabled,
+                timing,
+            };
         };
 
         InferenceTraceAttempt {
@@ -134,7 +149,14 @@ impl InferenceTraceContext {
                 inference_call_id: next_inference_call_id(),
                 terminal_recorded: AtomicBool::new(false),
             }),
+            timing,
         }
+    }
+
+    /// Enables compact rollout timing without enabling request/response payload tracing.
+    pub fn with_timing(mut self, timing: TimingContext) -> Self {
+        self.timing = Some(timing);
+        self
     }
 }
 
@@ -143,6 +165,7 @@ impl InferenceTraceAttempt {
     pub fn disabled() -> Self {
         Self {
             state: InferenceTraceAttemptState::Disabled,
+            timing: None,
         }
     }
 
@@ -218,6 +241,13 @@ impl InferenceTraceAttempt {
         token_usage: &Option<TokenUsage>,
         output_items: &[ResponseItem],
     ) {
+        if let Some(timing) = &self.timing {
+            timing.finish(
+                TimingStatus::Completed,
+                Some(response_id.to_string()),
+                /*stream*/ None,
+            );
+        }
         let Some(attempt) = self.take_terminal_attempt() else {
             return;
         };
@@ -249,6 +279,13 @@ impl InferenceTraceAttempt {
         upstream_request_id: Option<&str>,
         output_items: &[ResponseItem],
     ) {
+        if let Some(timing) = &self.timing {
+            timing.finish(
+                TimingStatus::Failed,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+        }
         let Some(attempt) = self.take_terminal_attempt() else {
             return;
         };
@@ -285,6 +322,13 @@ impl InferenceTraceAttempt {
         upstream_request_id: Option<&str>,
         output_items: &[ResponseItem],
     ) {
+        if let Some(timing) = &self.timing {
+            timing.finish(
+                TimingStatus::Cancelled,
+                /*response_id*/ None,
+                /*stream*/ None,
+            );
+        }
         let Some(attempt) = self.take_terminal_attempt() else {
             return;
         };

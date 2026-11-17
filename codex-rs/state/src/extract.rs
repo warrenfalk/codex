@@ -43,7 +43,7 @@ pub fn apply_rollout_item(
         | RolloutItem::RetainedContext(_)
         | RolloutItem::SecurityRiskScore(_) => {}
         RolloutItem::RealtimeItem(_) => {}
-        RolloutItem::TokenUsageRecord(_) => {}
+        RolloutItem::TokenUsageRecord(_) | RolloutItem::TimingRecord(_) => {}
     }
     if metadata.model_provider.is_empty() {
         metadata.model_provider = default_provider.to_string();
@@ -78,6 +78,7 @@ pub fn rollout_item_affects_thread_metadata(item: &RolloutItem) -> bool {
         | RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::TokenUsageRecord(_)
+        | RolloutItem::TimingRecord(_)
         | RolloutItem::WorldState(_) => false,
     }
 }
