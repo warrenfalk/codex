@@ -12,7 +12,6 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::turn_input::CyberAccessProgram;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Report;
 
 use crate::app_command::AppCommand;
@@ -24,6 +23,7 @@ use super::JSONRPC_INVALID_REQUEST;
 use super::JSONRPC_METHOD_NOT_FOUND;
 use super::ThreadParamsMode;
 use super::TurnPermissionsOverride;
+use super::TurnWorkspaceRoots;
 use super::UnsupportedLegacyPermissionProfile;
 
 // Both conventional transports return this before the request reaches its handler.
@@ -33,7 +33,7 @@ pub(crate) struct TurnStartSettings<'a> {
     pub(crate) approval_policy: Option<AskForApproval>,
     pub(crate) approvals_reviewer: Option<ApprovalsReviewer>,
     pub(crate) permissions: TurnPermissionsOverride,
-    pub(crate) workspace_roots: &'a [AbsolutePathBuf],
+    pub(crate) workspace_roots: TurnWorkspaceRoots<'a>,
 }
 
 pub(crate) enum UserMessageAdmission {

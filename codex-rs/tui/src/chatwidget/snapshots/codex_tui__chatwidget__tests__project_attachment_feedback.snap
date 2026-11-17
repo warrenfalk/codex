@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/project_mentions.rs
+expression: rendered
+---
+• Attached project directories for this session: /work/other-project The current permission profile and denied paths still apply.

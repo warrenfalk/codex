@@ -7,6 +7,7 @@ mod candidate;
 mod filter;
 mod footer;
 mod popup;
+mod projects;
 mod render;
 mod search_catalog;
 mod search_mode;

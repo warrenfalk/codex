@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::app_command::CloudSubmissionIntent;
+use crate::app_server_session::TurnWorkspaceRoots;
 use crate::app_server_session::UnsupportedLegacyPermissionProfile;
 use crate::app_server_session::user_message_submission::TurnStartSettings;
 use crate::app_server_session::user_message_submission::UserMessageAdmission;
@@ -19,12 +20,13 @@ pub(super) async fn try_submit_user_turn(
         turn_trigger,
         cloud_submission,
         client_user_message_id,
+        items,
         ..
     } = op
     else {
         return Ok(false);
     };
-    let intent = if *turn_trigger == "user" {
+    let mut intent = if *turn_trigger == "user" {
         match (*cloud_submission, app_server.thread_params_mode()) {
             (
                 CloudSubmissionIntent::QuestionAnswer { during_turn },
@@ -45,6 +47,38 @@ pub(super) async fn try_submit_user_turn(
         CloudSubmissionIntent::UseKnownTurn
     };
     let original_active = app.active_turn_id_for_thread(thread_id).await;
+    let mut workspace_roots = app
+        .chat_widget
+        .config_ref()
+        .permissions
+        .user_visible_workspace_roots()
+        .to_vec();
+    let added_roots = crate::project_mentions::selected_projects(items)
+        .into_iter()
+        .filter(|path| !workspace_roots.contains(path))
+        .collect::<Vec<_>>();
+    if !added_roots.is_empty() {
+        if original_active.is_some() {
+            app.chat_widget.user_message_admitted(
+                UserMessageAdmission::Queued(
+                    "Project attachments wait until the active turn finishes.".into(),
+                ),
+                op,
+                client_user_message_id,
+            );
+            return Ok(true);
+        }
+        // Cloud's ordinary send may steer. A new attachment requires a fresh turn.
+        if app_server.thread_params_mode() == crate::ThreadParamsMode::Cloud {
+            intent = CloudSubmissionIntent::StartIfIdle;
+        }
+        workspace_roots.extend(added_roots.iter().cloned());
+    }
+    let turn_workspace_roots = if added_roots.is_empty() {
+        TurnWorkspaceRoots::Configured(&workspace_roots)
+    } else {
+        TurnWorkspaceRoots::ProjectAttachment(&workspace_roots)
+    };
     let mut active = original_active.clone();
     let preflight = |model: &str| {
         let enabled = app.chat_widget.daybreak_enabled
@@ -57,17 +91,25 @@ pub(super) async fn try_submit_user_turn(
             enabled,
         )
     };
-    let start_settings = || turn_start_settings(app, thread_id, op);
-    let result = app_server
-        .submit_user_message(
-            thread_id,
-            op,
-            intent,
-            &mut active,
-            preflight,
-            start_settings,
-        )
-        .await;
+    let start_settings = || turn_start_settings(app, thread_id, op, turn_workspace_roots);
+    let result = if let Err(error) =
+        crate::project_mentions::validate_projects(&app_server.request_handle(), &added_roots).await
+    {
+        Err(UserMessageSubmissionFailure::Preflight(format!(
+            "Could not attach project: {error}"
+        )))
+    } else {
+        app_server
+            .submit_user_message(
+                thread_id,
+                op,
+                intent,
+                &mut active,
+                preflight,
+                start_settings,
+            )
+            .await
+    };
     if active != original_active
         && let Some(channel) = app.thread_event_channels.get(&thread_id)
     {
@@ -81,6 +123,18 @@ pub(super) async fn try_submit_user_turn(
         }
     }
 
+    if !added_roots.is_empty()
+        && matches!(
+            &result,
+            Ok((
+                UserMessageAdmission::Started(_) | UserMessageAdmission::StartResponse(_),
+                _
+            ))
+        )
+    {
+        app.record_project_roots(thread_id, workspace_roots, &added_roots)
+            .await;
+    }
     let ordinary = intent != CloudSubmissionIntent::UseKnownTurn;
     if let Err(UserMessageSubmissionFailure::Unhandled(error)) = result {
         return Err(error);
@@ -147,6 +201,7 @@ fn turn_start_settings<'a>(
     app: &'a App,
     thread_id: ThreadId,
     op: &AppCommand,
+    workspace_roots: TurnWorkspaceRoots<'a>,
 ) -> TurnStartSettings<'a> {
     let AppCommand::UserTurn {
         approval_policy,
@@ -198,6 +253,6 @@ fn turn_start_settings<'a>(
         approval_policy: turn_approval_policy,
         approvals_reviewer: turn_approvals_reviewer,
         permissions: permissions_override,
-        workspace_roots: config.permissions.user_visible_workspace_roots(),
+        workspace_roots,
     }
 }

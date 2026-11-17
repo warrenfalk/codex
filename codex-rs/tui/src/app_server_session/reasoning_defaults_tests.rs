@@ -146,7 +146,7 @@ stream_max_retries = 0
                     /*approval_policy*/ None,
                     /*approvals_reviewer*/ None,
                     TurnPermissionsOverride::Preserve,
-                    &config.workspace_roots,
+                    TurnWorkspaceRoots::Configured(&config.workspace_roots),
                     started.session.model.clone(),
                     /*effort*/ None,
                     /*summary*/ None,

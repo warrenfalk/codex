@@ -5,14 +5,16 @@ pub(super) enum SearchMode {
     Results,
     FilesystemOnly,
     Tools,
+    Projects,
 }
 
 impl SearchMode {
     pub(super) fn previous(self) -> Self {
         match self {
-            Self::Results => Self::Tools,
+            Self::Results => Self::Projects,
             Self::FilesystemOnly => Self::Results,
             Self::Tools => Self::FilesystemOnly,
+            Self::Projects => Self::Tools,
         }
     }
 
@@ -20,7 +22,8 @@ impl SearchMode {
         match self {
             Self::Results => Self::FilesystemOnly,
             Self::FilesystemOnly => Self::Tools,
-            Self::Tools => Self::Results,
+            Self::Tools => Self::Projects,
+            Self::Projects => Self::Results,
         }
     }
 
@@ -31,6 +34,7 @@ impl SearchMode {
                 matches!(mention_type, MentionType::File | MentionType::Directory)
             }
             Self::Tools => matches!(mention_type, MentionType::Plugin | MentionType::Skill),
+            Self::Projects => mention_type == MentionType::Project,
         }
     }
 
@@ -39,6 +43,7 @@ impl SearchMode {
             Self::Results => "All Results",
             Self::FilesystemOnly => "Filesystem Only",
             Self::Tools => "Plugins",
+            Self::Projects => "Projects",
         }
     }
 }

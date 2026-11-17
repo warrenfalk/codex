@@ -75,7 +75,11 @@ pub(super) fn render_popup(
     };
     for (offset, line) in [
         Line::from("Mentions".bold()),
-        Line::from("Files, directories, plugins, skills and tasks".dim()),
+        Line::from(if search_mode == SearchMode::Projects {
+            "Attach directory for this session; profile rules apply".dim()
+        } else {
+            "Files, directories, plugins, skills, tasks and projects".dim()
+        }),
     ]
     .into_iter()
     .take(usize::from(header.height))
@@ -94,6 +98,7 @@ pub(super) fn render_popup(
         SearchMode::Results,
         SearchMode::FilesystemOnly,
         SearchMode::Tools,
+        SearchMode::Projects,
     ];
     let active = modes
         .iter()
@@ -279,6 +284,7 @@ fn primary_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
         MentionType::Plugin => base_style.fg(crate::style::accent_color()),
         MentionType::Skill => base_style.dim(),
         MentionType::Task => base_style.cyan(),
+        MentionType::Project => base_style.green(),
         MentionType::File | MentionType::Directory => base_style,
     };
     if let Some(indices) = row.match_indices.as_ref() {
@@ -387,7 +393,7 @@ fn file_name_start(row: &SearchResult) -> usize {
             .rfind(['/', '\\'])
             .map(|idx| row.display_name[..idx + 1].chars().count())
             .unwrap_or(0),
-        Selection::File(_) | Selection::Tool { .. } => usize::MAX,
+        Selection::File(_) | Selection::Tool { .. } | Selection::BrowseProjects => usize::MAX,
     }
 }
 

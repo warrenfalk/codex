@@ -292,6 +292,7 @@ mod input_receipts;
 mod input_restore;
 mod input_submission;
 mod interrupts;
+mod project_mentions;
 mod questions;
 mod startup_submission;
 use self::interrupts::InterruptManager;

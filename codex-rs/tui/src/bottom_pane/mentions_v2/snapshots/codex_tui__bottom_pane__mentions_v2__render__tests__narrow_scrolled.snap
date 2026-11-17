@@ -3,7 +3,7 @@ source: tui/src/bottom_pane/mentions_v2/render_tests.rs
 expression: text(&buffer)
 ---
   Mentions
-  Files, directories, plugins, skills
+  Files, directories, plugins, skills,
 
    All Results   Filesystem Only     ›
 

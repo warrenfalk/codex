@@ -44,6 +44,7 @@ pub(crate) async fn make_test_app() -> Box<App> {
 
     Box::new(App {
         provider_writes: HashMap::new(),
+        project_search_task: None,
         feature_write_lock: Arc::default(),
         config_notification_test_generation: 0,
         config_notification_test_pending: None,

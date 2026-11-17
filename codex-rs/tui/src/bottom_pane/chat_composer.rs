@@ -73,6 +73,8 @@
 //! Warning and transcript views hide suggestions without losing the draft, query, or selection.
 //! Measurement, painting, and cursor placement share that layout, including clipped views.
 //! Unified mention tabs retain their position across filters; Left/Right also works at a bare `@`.
+//! The Projects tab binds explicit session attachments. Directory browsing uses server-side
+//! completion; selecting a project does not change permissions until the prompt is submitted.
 //! File completions insert Markdown code spans, using longer fences for paths containing backticks.
 //! Image completions keep their attachment behavior.
 //! Bare-command confirmations supplied by `ChatWidget` replace ambient footer hints.
@@ -430,6 +432,7 @@ pub(crate) use mouse::ClipboardPasteTarget;
 mod passive_hints;
 mod paste_input;
 mod popup_state;
+mod project_mentions;
 mod prompt_rewrite;
 mod reconnect;
 pub(crate) use reconnect::RestrictedInputMode;
@@ -684,6 +687,7 @@ pub(crate) struct ChatComposer {
     skills: Option<Vec<SkillMetadata>>,
     plugins: Option<Vec<PluginCapabilitySummary>>,
     task_mentions: Option<Vec<crate::task_mentions::TaskMention>>,
+    project_mentions: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
     connectors_snapshot: Option<ConnectorsSnapshot>,
     collaboration_modes_enabled: bool,
     config: ChatComposerConfig,
@@ -899,6 +903,7 @@ impl ChatComposer {
             skills: None,
             plugins: None,
             task_mentions: None,
+            project_mentions: Vec::new(),
             connectors_snapshot: None,
             collaboration_modes_enabled: false,
             config,
@@ -1049,6 +1054,7 @@ impl ChatComposer {
             self.skills.as_deref(),
             self.plugins.as_deref(),
             self.task_mentions.as_deref().unwrap_or_default(),
+            &self.project_mentions,
         ));
     }
 
@@ -2624,6 +2630,18 @@ impl ChatComposer {
                 .map(|(range, _)| range);
             if let (Some(selected), Some(token_range)) = (selected, token_range) {
                 match selected {
+                    MentionV2Selection::BrowseProjects => {
+                        self.draft
+                            .textarea
+                            .replace_range(token_range.clone(), "@./");
+                        self.draft.textarea.set_cursor(token_range.start + 3);
+                        self.popups.active = ActivePopup::None;
+                        self.sync_popups();
+                        if let ActivePopup::MentionV2(popup) = &mut self.popups.active {
+                            popup.show_projects();
+                        }
+                        return result;
+                    }
                     MentionV2Selection::File(path) => {
                         self.insert_selected_file_path(
                             token_range,
@@ -4437,6 +4455,19 @@ impl ChatComposer {
             return;
         }
 
+        let new_popup = !matches!(self.popups.active, ActivePopup::MentionV2(_));
+        if new_popup
+            || ((crate::project_mentions::is_path_query(&query)
+                || self
+                    .popups
+                    .current_file_query
+                    .as_deref()
+                    .is_some_and(crate::project_mentions::is_path_query))
+                && self.popups.current_file_query.as_deref() != Some(query.as_str()))
+        {
+            self.app_event_tx
+                .send(AppEvent::StartProjectSearch(query.clone()));
+        }
         if query.is_empty() {
             self.app_event_tx
                 .send(AppEvent::StartFileSearch(String::new()));
@@ -4465,6 +4496,7 @@ impl ChatComposer {
                     self.skills.as_deref(),
                     self.plugins.as_deref(),
                     self.task_mentions.as_deref().unwrap_or_default(),
+                    &self.project_mentions,
                 );
                 self.popups.active =
                     ActivePopup::MentionV2(MentionV2Popup::new(candidates, &query));
@@ -8089,6 +8121,9 @@ mod tests {
         composer.set_mentions_v2_enabled(/*enabled*/ true);
 
         composer.insert_str("@");
+        assert!(
+            matches!(rx.try_recv(), Ok(AppEvent::StartProjectSearch(query)) if query.is_empty())
+        );
         assert!(matches!(
             rx.try_recv(),
             Ok(AppEvent::StartFileSearch(query)) if query.is_empty()
@@ -8108,6 +8143,7 @@ mod tests {
         composer.set_text_content("@foo @foo".to_string(), Vec::new(), Vec::new());
         composer.draft.textarea.set_cursor("@f".len());
         composer.sync_popups();
+        assert!(matches!(rx.try_recv(), Ok(AppEvent::StartProjectSearch(query)) if query == "foo"));
         assert!(matches!(
             rx.try_recv(),
             Ok(AppEvent::StartFileSearch(query)) if query.is_empty()
