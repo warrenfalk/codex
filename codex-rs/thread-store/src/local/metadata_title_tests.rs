@@ -13,7 +13,7 @@ use crate::UpdateThreadMetadataParams;
 async fn history_derived_title_preserves_explicit_legacy_name() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
-    let uuid = Uuid::from_u128(319);
+    let uuid = Uuid::from_u128(/*v*/ 319);
     let thread_id =
         codex_protocol::ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
     write_session_file(home.path(), "2025-01-03T14-15-00", uuid).expect("session file");

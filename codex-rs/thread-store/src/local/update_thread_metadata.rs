@@ -540,6 +540,9 @@ async fn apply_metadata_update(
             if let Some(daybreak_enabled) = patch.daybreak_enabled {
                 metadata.daybreak_enabled = Some(daybreak_enabled);
             }
+            if let Some(existing) = existing.as_ref() {
+                metadata.prefer_existing_explicit_title(existing);
+            }
             let memory_mode = patch.memory_mode.map(memory_mode_as_str);
             let recency_at = existing.as_ref().and(advance_recency_at);
             let upsert_result = state_db
