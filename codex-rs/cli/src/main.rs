@@ -57,11 +57,13 @@ use supports_color::Stream;
 #[global_allocator]
 static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+mod agents_cmd;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
 mod config_override_args;
 mod daemon_install;
 mod daemon_telemetry;
+use agents_cmd::AgentsCommand;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod desktop_app;
 mod doctor;
@@ -381,23 +383,6 @@ struct DebugTraceReduceCommand {
     /// Output path for reduced RolloutTrace JSON. Defaults to TRACE_BUNDLE/state.json.
     #[arg(long = "output", short = 'o', value_name = "FILE")]
     output: Option<PathBuf>,
-}
-
-#[derive(Debug, Parser)]
-struct AgentsCommand {
-    /// Run the agents overview with an embedded app server.
-    #[arg(long)]
-    no_daemon: bool,
-    #[clap(flatten)]
-    remote: InteractiveRemoteOptions,
-
-    /// Use this directory for new tasks on a remote server.
-    #[arg(long = "cd", short = 'C', value_name = "DIR")]
-    cwd: Option<PathBuf>,
-
-    /// Disable alternate screen mode.
-    #[arg(long = "no-alt-screen", default_value_t = false)]
-    no_alt_screen: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -1337,6 +1322,9 @@ async fn dispatch_cli(
             run_interactive_tui(interactive, local, remote, auth_token_env, arg0_paths).await?;
         handle_app_exit(exit_info, daemon_cli_executable.as_deref())
     };
+    let agents_json = agents_options
+        .filter(|options| options.json)
+        .map(|options| options.watch);
     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
     match subcommand {
         None | Some(Subcommand::Agents(_)) => {
@@ -1345,6 +1333,11 @@ async fn dispatch_cli(
                 root_config_overrides.clone(),
             );
             if open_agents_overview {
+                if interactive.no_daemon && agents_json.is_some() {
+                    anyhow::bail!(
+                        "--no-daemon cannot be used with codex agents --json. JSON observation requires an existing server."
+                    );
+                }
                 if interactive.prompt.is_some() || !interactive.images.is_empty() {
                     anyhow::bail!("`codex agents` does not accept an initial prompt or images");
                 }
@@ -1366,6 +1359,17 @@ async fn dispatch_cli(
                     anyhow::bail!(
                         "`codex agents` cannot apply local provider or additional-directory overrides to a remote server"
                     );
+                }
+                if let Some(watch) = agents_json {
+                    agents_cmd::run_json(
+                        &interactive,
+                        root_local,
+                        root_remote,
+                        root_remote_auth_token_env,
+                        watch,
+                    )
+                    .await?;
+                    return Ok(None);
                 }
                 interactive.agents_overview = true;
             }
