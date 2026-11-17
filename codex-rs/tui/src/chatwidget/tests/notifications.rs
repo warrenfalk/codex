@@ -3,6 +3,32 @@ use codex_protocol::items::AgentMessageDelivery;
 use codex_protocol::items::AsyncUserInputQuestion;
 use pretty_assertions::assert_eq;
 
+#[tokio::test]
+async fn capacity_warning_notifies_without_ending_turn_and_replay_stays_quiet() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.on_task_started();
+    let event = ServerNotification::ModelCapacityWarning(
+        codex_app_server_protocol::ModelCapacityWarningNotification {
+            thread_id: "thread".into(),
+            turn_id: "turn".into(),
+            message: "The model has been at capacity for five minutes. Still retrying the same model; you can interrupt to choose another model.".into(),
+        },
+    );
+    chat.handle_server_notification(event.clone(), /*replay_kind*/ None);
+    assert!(chat.turn_lifecycle.agent_turn_running);
+    let notification = chat.pending_notification.take().expect("capacity alert");
+    assert_chatwidget_snapshot!("model_capacity_notification", notification.display());
+    let cells = drain_insert_history(&mut rx);
+    assert!(!cells[0].is_empty());
+    assert_chatwidget_snapshot!("model_capacity_warning", lines_to_single_string(&cells[0]));
+    chat.handle_server_notification(event, Some(ReplayKind::ResumeInitialMessages));
+    assert!(chat.pending_notification.is_none());
+
+    assert!(!notification.allowed_for(&Notifications::Enabled(false)));
+    assert!(notification.allowed_for(&Notifications::Custom(vec!["model-capacity".into()])));
+    assert!(!notification.allowed_for(&Notifications::Custom(vec!["agent-turn-complete".into()])));
+}
+
 fn async_question_completed(message_id: &str, titles: &[&str]) -> ServerNotification {
     ServerNotification::ItemCompleted(ItemCompletedNotification {
         thread_id: "thread".into(),

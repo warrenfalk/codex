@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/notifications.rs
+expression: "lines_to_single_string(&cells[0])"
+---
+⚠ The model has been at capacity for five minutes. Still retrying the same
+  model; you can interrupt to choose another model.

@@ -293,6 +293,7 @@ async fn run_compact_task_inner_impl(
 
     let max_retries = turn_context.provider.info().stream_max_retries();
     let mut retries = 0;
+    let mut capacity_retry = crate::capacity_retry::CapacityRetryState::default();
     // Reuse one client session so turn-scoped state (sticky routing and websocket incremental
     // request tracking) survives retries within this compact turn.
     let mut client_session = sess.services.model_client.new_session();
@@ -340,6 +341,10 @@ async fn run_compact_task_inner_impl(
         )
         .await;
 
+        if !matches!(&attempt_result, Err(error) if matches!(error.details(), CodexErrorDetails::ServerOverloaded))
+        {
+            capacity_retry = Default::default();
+        }
         match attempt_result {
             Ok(response) => {
                 break response;
@@ -356,6 +361,10 @@ async fn run_compact_task_inner_impl(
                 }
                 sess.set_total_tokens_full(turn_context.as_ref()).await;
                 return Err(e);
+            }
+            Err(e) if matches!(e.details(), CodexErrorDetails::ServerOverloaded) => {
+                capacity_retry.wait(&sess, &turn_context, &e).await;
+                continue;
             }
             Err(e) if retries < max_retries => {
                 retries += 1;

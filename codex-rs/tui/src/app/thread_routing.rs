@@ -1128,6 +1128,18 @@ impl App {
             return Ok(());
         }
         self.track_side_chat_title(thread_id, &notification);
+        if self.current_displayed_thread_id() != Some(thread_id)
+            && let ServerNotification::ModelCapacityWarning(warning) = &notification
+        {
+            self.chat_widget
+                .notify(crate::chatwidget::Notification::ModelCapacityWarning);
+            self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                crate::history_cell::new_visible_warning_event(format!(
+                    "Agent {thread_id}: {}",
+                    warning.message
+                )),
+            )));
+        }
         if self.current_displayed_thread_id() == Some(thread_id)
             && let ServerNotification::TurnCompleted(notification) = &notification
         {
