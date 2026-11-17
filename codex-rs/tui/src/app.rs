@@ -307,6 +307,7 @@ mod startup_prompts;
 mod startup_warnings;
 mod thread_archive;
 pub(crate) mod thread_attachment;
+mod thread_control;
 mod thread_event_buffer;
 mod thread_events;
 mod thread_goal_actions;
@@ -758,6 +759,7 @@ pub(crate) struct App {
     pending_hook_enabled_writes: HashMap<String, Option<bool>>,
     recap: recap::RecapState,
     pending_focus_ack: Option<(ThreadId, tokio::time::Instant)>,
+    thread_control: thread_control::ThreadControlUi,
     // App fixtures keep their home alive across widget replacement; drop it last.
     #[cfg(test)]
     _test_codex_home: Option<tempfile::TempDir>,
@@ -894,6 +896,7 @@ impl App {
         event: TuiEvent,
     ) -> Result<AppRunControl> {
         self.handle_unread_focus(tui, app_server, &event).await;
+        self.sync_thread_control_ui(app_server, &event).await;
         if let TuiEvent::Key(key) = &event
             && self.chat_widget.handle_speech_key(*key)
         {

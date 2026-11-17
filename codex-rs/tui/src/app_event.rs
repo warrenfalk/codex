@@ -383,6 +383,13 @@ impl CapturedSideWork {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, IntoStaticStr)]
 pub(crate) enum AppEvent {
+    ThreadControlCommand {
+        thread_id: ThreadId,
+        command: String,
+    },
+    ThreadControlUserInput {
+        thread_id: ThreadId,
+    },
     AccountEmailLoaded {
         request_id: uuid::Uuid,
         email: Option<String>,

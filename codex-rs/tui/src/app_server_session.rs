@@ -25,6 +25,7 @@ mod side_chat_history;
 use side_chat_history::side_context_checkpoint;
 mod side_conversation;
 mod startup_launch;
+mod thread_control;
 mod thread_list;
 mod thread_unread;
 mod turn_workspace_roots;

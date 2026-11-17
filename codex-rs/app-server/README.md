@@ -33,6 +33,12 @@ across account switches. Resume and revert preserve that distinction; forks are 
 Scoped requests skip candidates whose rollout header cannot be read. API-key
 logins see all local history. Direct access by thread ID remains available.
 
+# External thread control
+
+See [External thread control API](thread-control.md) for connecting an external
+MCP bridge, requesting revocable control of threads, and implementing the
+interactive permission UI.
+
 # Thread list exclusions
 
 `thread/list` accepts `excludedThreadIds`, an optional array of up to 100

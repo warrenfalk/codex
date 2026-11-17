@@ -117,6 +117,7 @@ fn server_notification_requires_delivery(notification: &ServerNotification) -> b
         ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::TurnCompleted(_)
+            | ServerNotification::ThreadControlChanged(_)
             | ServerNotification::ThreadQueueChanged(_)
             | ServerNotification::ThreadSettingsUpdated(_)
             | ServerNotification::ThreadAttachmentUpdated(_)

@@ -59,6 +59,7 @@ from .v2_all import TerminalInteractionNotification
 from .v2_all import ThreadArchivedNotification
 from .v2_all import ThreadAttachmentUpdatedNotification
 from .v2_all import ThreadClosedNotification
+from .v2_all import ThreadControlChangedNotification
 from .v2_all import ThreadDeletedNotification
 from .v2_all import ThreadGoalClearedNotification
 from .v2_all import ThreadGoalUpdatedNotification
@@ -149,6 +150,7 @@ KnownNotificationPayload: TypeAlias = (
     | ThreadArchivedNotification
     | ThreadAttachmentUpdatedNotification
     | ThreadClosedNotification
+    | ThreadControlChangedNotification
     | ThreadDeletedNotification
     | ThreadGoalClearedNotification
     | ThreadGoalUpdatedNotification
@@ -240,6 +242,7 @@ NOTIFICATION_MODELS: dict[str, type[KnownNotificationPayload]] = {
     "thread/attachment/updated": ThreadAttachmentUpdatedNotification,
     "thread/closed": ThreadClosedNotification,
     "thread/compacted": ContextCompactedNotification,
+    "thread/control/changed": ThreadControlChangedNotification,
     "thread/deleted": ThreadDeletedNotification,
     "thread/environment/connected": EnvironmentConnectionNotification,
     "thread/environment/disconnected": EnvironmentConnectionNotification,

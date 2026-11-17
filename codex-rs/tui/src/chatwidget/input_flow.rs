@@ -71,6 +71,7 @@ impl ChatWidget {
                     if self.only_user_shell_commands_running()
                         && !user_message.text.starts_with('!')
                     {
+                        self.revoke_control_on_submission();
                         self.queue_user_message(user_message);
                         return;
                     }
@@ -87,6 +88,7 @@ impl ChatWidget {
                         UserMessageSource::DirectEnter,
                     );
                 } else {
+                    self.revoke_control_on_submission();
                     self.queue_user_message(user_message);
                 }
             }
@@ -96,6 +98,9 @@ impl ChatWidget {
                 action,
                 pending_pastes,
             } => {
+                if action == QueuedInputAction::Plain {
+                    self.revoke_control_on_submission();
+                }
                 let user_message = self.user_message_from_submission(text, text_elements);
                 if self.queue_user_message_with_options(user_message, action, pending_pastes) {
                     self.app_event_tx.send(AppEvent::FollowTranscript);

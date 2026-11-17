@@ -25,6 +25,9 @@ use codex_utils_path_uri::PathUri;
 use crate::image_url::REMOTE_IMAGE_URL_ERROR;
 use crate::image_url::is_remote_image_url;
 
+mod thread_control;
+use thread_control::TurnStartBehavior;
+
 pub(super) fn validate_user_input_image_urls(
     input: &[V2UserInput],
 ) -> Result<(), JSONRPCErrorError> {
@@ -182,6 +185,7 @@ impl TurnRequestProcessor {
             app_server_client_name,
             app_server_client_version,
             TurnExecutionMode::Normal,
+            TurnStartBehavior::StartOrSteer,
         )
         .await
         .map(|response| Some(response.into()))
@@ -267,6 +271,7 @@ impl TurnRequestProcessor {
                 app_server_client_name,
                 app_server_client_version,
                 TurnExecutionMode::ModelOnly,
+                TurnStartBehavior::StartIfIdle,
             )
             .await?;
         Ok(Some(
@@ -627,6 +632,7 @@ impl TurnRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
         execution_mode: TurnExecutionMode,
+        start_behavior: TurnStartBehavior,
     ) -> Result<TurnStartResponse, JSONRPCErrorError> {
         let (thread_id, thread) =
             self.load_thread(&params.thread_id)
@@ -790,10 +796,10 @@ impl TurnRequestProcessor {
         let unread_state = self.thread_state_manager.thread_state(thread_id).await;
         let unread_lock = unread_state.lock().await.unread_lock.clone();
         let unread_guard = unread_lock.lock_owned().await;
-        let submission = match execution_mode {
-            TurnExecutionMode::Normal => thread.start_or_steer_turn(turn_request).await,
-            TurnExecutionMode::ModelOnly => {
-                thread
+        let submission =
+            match start_behavior {
+                TurnStartBehavior::StartOrSteer => thread.start_or_steer_turn(turn_request).await,
+                TurnStartBehavior::StartIfIdle => thread
                     .start_turn_if_idle(turn_request)
                     .await
                     .map(|submission| match submission {
@@ -807,17 +813,16 @@ impl TurnRequestProcessor {
                         StartIfIdleSubmission::NotSubmitted { reason } => {
                             TurnInputSubmission::NotSubmitted { reason }
                         }
-                    })
+                    }),
             }
-        }
-        .map_err(|err| {
-            let error = match err.details() {
-                CodexErrorDetails::InvalidRequest(message) => invalid_request(message.clone()),
-                _ => internal_error(format!("failed to submit turn input: {err}")),
-            };
-            self.track_error_response(&request_id, &error, /*error_type*/ None);
-            error
-        })?;
+            .map_err(|err| {
+                let error = match err.details() {
+                    CodexErrorDetails::InvalidRequest(message) => invalid_request(message.clone()),
+                    _ => internal_error(format!("failed to submit turn input: {err}")),
+                };
+                self.track_error_response(&request_id, &error, /*error_type*/ None);
+                error
+            })?;
         let (turn_id, root_turn_id, started) = match submission {
             TurnInputSubmission::Accepted => {
                 return Err(internal_error(

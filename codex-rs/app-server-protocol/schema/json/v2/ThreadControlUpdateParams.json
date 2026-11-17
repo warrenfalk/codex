@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadControlAction": {
+      "oneOf": [
+        {
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "approve"
+              ],
+              "title": "ApproveThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId",
+            "type"
+          ],
+          "title": "ApproveThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "deny"
+              ],
+              "title": "DenyThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId",
+            "type"
+          ],
+          "title": "DenyThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "revoke"
+              ],
+              "title": "RevokeThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "RevokeThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "lock"
+              ],
+              "title": "LockThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "LockThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "unlock"
+              ],
+              "title": "UnlockThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "UnlockThreadControlAction",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "controllerId": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "grant"
+              ],
+              "title": "GrantThreadControlActionType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "controllerId",
+            "type"
+          ],
+          "title": "GrantThreadControlAction",
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "action": {
+      "$ref": "#/definitions/ThreadControlAction"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "threadId"
+  ],
+  "title": "ThreadControlUpdateParams",
+  "type": "object"
+}
