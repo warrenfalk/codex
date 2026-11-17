@@ -213,6 +213,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Copy
+                | SlashCommand::Rename
                 | SlashCommand::Speak
                 | SlashCommand::Agents
                 | SlashCommand::Export
@@ -225,7 +226,6 @@ impl SlashCommand {
                 | SlashCommand::Pwd
                 | SlashCommand::Usage
                 | SlashCommand::Ide
-                | SlashCommand::Rename
         )
     }
 

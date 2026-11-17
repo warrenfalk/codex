@@ -2,7 +2,7 @@
 source: tui/src/app/tests.rs
 expression: "chooser.lines().filter_map(|line|\nline.split_once('│').map(|(_, sidebar)|\nsidebar.trim_end())).collect::<Vec<_>>().join(\"\\n\")"
 ---
- Side chat×                      +
+ (Side) SIDE_ID…×                      +
 
  Open in sidebar
 
@@ -11,7 +11,7 @@ expression: "chooser.lines().filter_map(|line|\nline.split_once('│').map(|(_, 
 
  Side chats  1
 
- › ○ Side chat
+ › ○ (Side) SIDE_ID…
 
 
 

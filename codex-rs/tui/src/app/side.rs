@@ -3,7 +3,8 @@
 //! A side conversation is a fork used for a quick /side question while keeping the
 //! primary thread focused. This module owns the app-level lifecycle for those forks: switching into
 //! them, returning to their parent, retaining them across normal navigation, and explicitly
-//! discarding them. The fork receives hidden developer instructions that make inherited history
+//! discarding them. Temporary views persist unless the parent is explicitly ephemeral.
+//! Side turns receive temporary developer instructions that make inherited history reference
 //! material only and steer the agent away from mutations unless the side conversation explicitly asks
 //! for them.
 
@@ -12,7 +13,6 @@ use crate::app_event::SideStartMode;
 use crate::app_server_session::SideChatStorage;
 use crate::chatwidget::InterruptedTurnNoticeMode;
 
-const SIDE_RENAME_BLOCK_MESSAGE: &str = "Side conversations cannot be renamed.";
 const SIDE_MAIN_THREAD_UNAVAILABLE_MESSAGE: &str =
     "'/side' is unavailable until the main thread is ready.";
 const SIDE_NO_STARTED_CONVERSATION_MESSAGE: &str = concat!(
@@ -76,15 +76,13 @@ impl SideParentStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_context_fragments::SideConversationPolicy;
-    use codex_context_fragments::side_conversation_boundary;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ResponseItem;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn side_boundary_prompt_marks_inherited_history_reference_only() {
-        let item = side_conversation_boundary();
+        let item = App::side_boundary_prompt_item();
         let ResponseItem::Message { role, content, .. } = item else {
             panic!("expected hidden side boundary prompt to be a user message");
         };
@@ -97,13 +95,11 @@ mod tests {
         assert!(text.contains("It is not your current task."));
         assert!(text.contains("Only messages submitted after this boundary are active"));
         assert!(text.contains("Do not continue, execute, or complete"));
-        assert!(text.contains("separate from the main thread"));
+        assert!(text.contains("separate fork of the main thread"));
         assert!(
             text.contains("External tools may be available according to this thread's current")
         );
         assert!(text.contains("Any tool calls or outputs visible before this boundary happened"));
-        assert!(text.contains("Sub-agents are off-limits in this side conversation."));
-        assert!(text.contains("Do not modify files"));
     }
 
     #[test]
@@ -125,20 +121,6 @@ mod tests {
         assert_eq!(
             App::side_start_error_message(&err),
             "Failed to start side conversation: transport disconnected"
-        );
-    }
-
-    #[test]
-    fn side_developer_instructions_appends_existing_policy() {
-        let developer_instructions =
-            SideConversationPolicy::Temporary.instructions(Some("Existing developer policy."));
-
-        assert!(developer_instructions.contains("Existing developer policy."));
-        assert!(
-            developer_instructions.contains("You are in a side conversation, not the main thread.")
-        );
-        assert!(
-            developer_instructions.contains("Sub-agents are off-limits in this side conversation.")
         );
     }
 }
@@ -215,7 +197,6 @@ impl App {
         let clear_side_ui = |chat_widget: &mut crate::chatwidget::ChatWidget| {
             chat_widget.set_side_conversation_context_label(/*label*/ None);
             chat_widget.set_side_conversation_active(/*active*/ false);
-            chat_widget.clear_thread_rename_block();
             chat_widget.set_interrupted_turn_notice_mode(InterruptedTurnNoticeMode::Default);
         };
         let Some(active_thread_id) = self.current_displayed_thread_id() else {
@@ -246,14 +227,10 @@ impl App {
             return;
         };
 
-        match storage {
-            SideChatStorage::Attached => self.chat_widget.clear_thread_rename_block(),
-            SideChatStorage::Temporary => self
-                .chat_widget
-                .set_thread_rename_block_message(SIDE_RENAME_BLOCK_MESSAGE),
-        }
         self.chat_widget
             .set_side_conversation_active(/*active*/ true);
+        self.chat_widget
+            .set_side_fork_promotion_available(storage == SideChatStorage::Temporary);
         self.chat_widget
             .set_interrupted_turn_notice_mode(InterruptedTurnNoticeMode::Suppress);
         let mut label_parts = Vec::new();
@@ -438,10 +415,16 @@ impl App {
                 return true;
             }
             let parent = side.parent_thread_id;
-            return self
-                .select_agent_thread_and_discard_side(tui, app_server, parent)
-                .await
-                .is_ok();
+            let result = self.select_agent_thread(tui, app_server, parent).await;
+            if result.is_ok() && self.current_displayed_thread_id() == Some(parent) {
+                self.discard_side_thread_in_background(app_server, target)
+                    .await;
+                return self
+                    .surface_pending_inactive_thread_interactive_requests()
+                    .await
+                    .is_ok();
+            }
+            return result.is_ok();
         }
         false
     }
@@ -471,15 +454,6 @@ impl App {
 
         self.chat_widget.open_side_conversation_close_prompt();
         true
-    }
-
-    pub(super) fn side_thread_to_discard_after_switch(
-        &self,
-        target_thread_id: ThreadId,
-    ) -> Option<ThreadId> {
-        let active_thread_id = self.current_displayed_thread_id()?;
-        let state = self.side_threads.get(&active_thread_id)?;
-        (target_thread_id == state.parent_thread_id).then_some(active_thread_id)
     }
 
     pub(super) async fn toggle_side_conversation(
@@ -540,13 +514,47 @@ impl App {
             self.add_agents_overview_error(message);
             return false;
         }
-        if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+        let close_result = match app_server
+            .thread_read(thread_id, /*include_turns*/ false)
+            .await
+        {
+            // Old replay snapshots can still refer to an ephemeral side.
+            Ok(thread)
+                if thread.ephemeral
+                    || self
+                        .side_threads
+                        .get(&thread_id)
+                        .is_some_and(|side| side.storage == SideChatStorage::Attached) =>
+            {
+                app_server.thread_unsubscribe(thread_id).await
+            }
+            Ok(_) => app_server.thread_delete(thread_id).await,
+            Err(err)
+                if self
+                    .thread_event_channels
+                    .get(&thread_id)
+                    .is_some_and(|channel| {
+                        channel.attachment() == ThreadEventAttachment::ReplayOnly
+                    })
+                    && err.chain().any(|cause| {
+                        let message = cause.to_string();
+                        message.contains("thread not found")
+                            || message.contains(&format!("thread not loaded: {thread_id}"))
+                            || message.contains("no rollout found for thread id")
+                    }) =>
+            {
+                app_server.thread_unsubscribe(thread_id).await
+            }
+            Err(err) => Err(err),
+        };
+        if let Err(err) = close_result {
             let message =
                 format!("Failed to close side conversation {thread_id}; it is still open: {err}");
             tracing::warn!("{message}");
             self.add_agents_overview_error(message);
             return false;
         }
+        app_server.side_conversation_threads.remove(&thread_id);
         self.abandoned_side_threads.insert(thread_id);
         self.discard_thread_local_state(thread_id).await;
         true
@@ -557,6 +565,7 @@ impl App {
         app_server: &mut AppServerSession,
         thread_id: ThreadId,
     ) {
+        app_server.side_conversation_threads.remove(&thread_id);
         self.abandoned_side_threads.insert(thread_id);
         self.pending_app_server_requests
             .cancel_thread_verification(&thread_id.to_string());
@@ -743,25 +752,6 @@ impl App {
         // conversations should visually start at the side boundary.
         session.forked_from_id = None;
         store.set_session(session, Vec::new());
-    }
-
-    pub(super) async fn select_agent_thread_and_discard_side(
-        &mut self,
-        tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
-        thread_id: ThreadId,
-    ) -> Result<()> {
-        let side_thread_to_discard = self.side_thread_to_discard_after_switch(thread_id);
-        self.select_agent_thread(tui, app_server, thread_id).await?;
-        if self.active_thread_id == Some(thread_id)
-            && let Some(side_thread_id) = side_thread_to_discard
-        {
-            self.discard_side_thread_in_background(app_server, side_thread_id)
-                .await;
-            self.surface_pending_inactive_thread_interactive_requests()
-                .await?;
-        }
-        Ok(())
     }
 
     pub(super) async fn handle_start_side(

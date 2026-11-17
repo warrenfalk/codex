@@ -9,6 +9,7 @@ use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use core_test_support::responses;
+use pretty_assertions::assert_eq;
 
 /// Captures one real model request and waits until its turn can be inherited by a fork.
 pub(super) async fn ask(
@@ -81,26 +82,61 @@ async fn temporary_side_chat_sends_policy_on_its_first_request() -> Result<()> {
             crate::app_server_session::SideChatStorage::Temporary,
         )
         .await?;
-    fork.boundary.expect("side-chat context injection");
-    let child = ask(
-        &mut server,
+    assert_eq!(fork.boundary, Ok(()));
+    server.observe_sidebar_fork(&fork);
+    let child_id = fork.thread.session.thread_id;
+    let child_response = responses::mount_sse_once(
         &model,
-        fork.thread.session.thread_id,
-        "Side question",
+        responses::sse(vec![
+            responses::ev_assistant_message("child-reply", "Side answer"),
+            responses::ev_completed("child-done"),
+        ]),
     )
-    .await?;
+    .await;
+    let op = AppCommand::user_turn(
+        "user",
+        crate::app_command::CloudSubmissionIntent::UseKnownTurn,
+        uuid::Uuid::new_v4().to_string(),
+        vec![UserInput::Text {
+            text: "Side question".into(),
+            text_elements: Vec::new(),
+        }],
+        app.config.cwd.to_path_buf(),
+        app.config.permissions.approval_policy.value().into(),
+        /*active_permission_profile*/ None,
+        app.chat_widget.current_model().to_string(),
+        /*effort*/ None,
+        /*summary*/ None,
+        /*service_tier*/ None,
+        /*final_output_json_schema*/ None,
+        /*collaboration_mode*/ None,
+    );
+    assert!(
+        Box::pin(app.try_submit_active_thread_op_via_app_server(&mut server, child_id, &op))
+            .await?
+    );
+    loop {
+        let event = server.next_event().await.expect("connected app-server");
+        if let AppServerEvent::ServerNotification(notification) = event.event
+            && matches!(notification.as_ref(), ServerNotification::TurnCompleted(turn) if turn.thread_id == child_id.to_string())
+        {
+            break;
+        }
+    }
+    let child = child_response.single_request();
     let policy = child
         .message_input_texts("developer")
         .into_iter()
         .find(|text| text.contains("<side_conversation>"))
         .expect("first child request must contain the side-chat developer policy");
     assert!(policy.contains("Scheduled updates"));
-    assert!(policy.contains("main conversation without calling create_worktree"));
+    assert!(policy.contains("Do not call create_worktree during this side-conversation turn"));
+    assert!(policy.contains("For this turn only"));
     assert!(
         child
             .message_input_texts("user")
             .iter()
-            .any(|text| text.starts_with("Side conversation boundary."))
+            .any(|text| text.contains("Side conversation boundary."))
     );
     server.shutdown().await?;
     Ok(())

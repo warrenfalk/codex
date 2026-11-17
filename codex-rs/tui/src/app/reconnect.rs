@@ -445,6 +445,12 @@ impl App {
         self.rate_limit_refresh_state.invalidate_recovery();
         session.worktree_source_config_builder = app_server.worktree_source_config_builder.clone();
         session.inherit_task_tool_capabilities(app_server);
+        session
+            .side_conversation_threads
+            .extend(self.side_threads.iter().filter_map(|(thread_id, side)| {
+                (side.storage == crate::app_server_session::SideChatStorage::Temporary)
+                    .then_some(*thread_id)
+            }));
         *app_server = session;
         #[cfg(any(target_os = "windows", test))]
         let interrupted_windows_setup = self.windows_sandbox.pending_setup.take().is_some();

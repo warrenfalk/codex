@@ -23,6 +23,7 @@ mod rollout_history;
 pub(crate) use read_state::unread_revision;
 mod side_chat_history;
 use side_chat_history::side_context_checkpoint;
+mod side_conversation;
 mod startup_launch;
 mod thread_list;
 pub(crate) mod user_message_submission;
@@ -233,11 +234,13 @@ impl SideChatStorage {
     }
 
     pub(crate) fn configure_fork(self, config: &mut Config) {
-        config.ephemeral = self == Self::Temporary;
-        config.developer_instructions = Some(
-            self.policy()
-                .instructions(config.developer_instructions.as_deref()),
-        );
+        if self == Self::Attached {
+            config.ephemeral = false;
+            config.developer_instructions = Some(
+                self.policy()
+                    .instructions(config.developer_instructions.as_deref()),
+            );
+        }
     }
 }
 
@@ -410,6 +413,7 @@ pub(crate) struct AppServerSession {
     pub(crate) frozen_receipt: Option<(ThreadId, String)>,
     pub(crate) unread_revisions: HashMap<ThreadId, String>,
     task_tool_threads: HashSet<ThreadId>,
+    pub(crate) side_conversation_threads: HashSet<ThreadId>,
     task_tool_capabilities_dir: Option<AbsolutePathBuf>,
     task_search_generation: Arc<AtomicU64>,
     remote_cwd_override: Option<PathBuf>,
@@ -631,6 +635,7 @@ impl AppServerSession {
             frozen_receipt: None,
             unread_revisions: HashMap::new(),
             task_tool_threads: HashSet::new(),
+            side_conversation_threads: HashSet::new(),
             task_tool_capabilities_dir: None,
             task_search_generation: Arc::new(AtomicU64::new(0)),
             remote_cwd_override: None,
@@ -717,6 +722,7 @@ impl AppServerSession {
         view.model_provider_override = self.model_provider_override.clone();
         view.history_support = self.history_support;
         view.thread_settings_update_supported = self.thread_settings_update_supported;
+        view.side_conversation_threads = self.side_conversation_threads.clone();
         view.default_model = self.default_model.clone();
         view.available_models = self.available_models.clone();
         view
@@ -1345,7 +1351,10 @@ impl AppServerSession {
                 result => result?,
             };
             let child = thread.session.thread_id;
-            let items = storage.policy().fork_items();
+            let items = match storage {
+                SideChatStorage::Attached => storage.policy().fork_items(),
+                SideChatStorage::Temporary => vec![crate::app::App::side_boundary_prompt_item()],
+            };
             let boundary = match view.thread_inject_items(child, items).await {
                 Ok(_) if storage == SideChatStorage::Attached => {
                     match side_context_checkpoint(thread.session.rollout_path.as_deref()).await {
@@ -1378,36 +1387,16 @@ impl AppServerSession {
     }
 
     pub(crate) fn observe_sidebar_fork(&mut self, fork: &SidebarFork) {
+        if fork.storage == SideChatStorage::Temporary {
+            self.side_conversation_threads
+                .insert(fork.thread.session.thread_id);
+        }
         if fork.legacy {
             self.history_support = ThreadHistorySupport::LegacyOnly;
         }
         if fork.thread.task_tools_available {
             self.remember_task_tool_thread(fork.thread.session.thread_id);
         }
-    }
-
-    pub(crate) async fn fork_side_thread(
-        &mut self,
-        local_settings: &LocalSettings,
-        mut config: Config,
-        thread_id: ThreadId,
-        selected_profile: Option<&PermissionProfileSelection>,
-        storage: SideChatStorage,
-    ) -> Result<AppServerStartedThread> {
-        storage.configure_fork(&mut config);
-        self.fork_thread_at_with_presentation(
-            local_settings,
-            config,
-            thread_id,
-            /*last_turn_id*/ None,
-            /*before_turn_id*/ None,
-            ForkGoalContinuation::StartIfIdle,
-            ForkPresentation::SideConversation(storage),
-            selected_profile,
-            ForkPermissionMode::InheritSaved,
-            ForkConfigSource::Session,
-        )
-        .await
     }
 
     #[expect(
@@ -1890,11 +1879,13 @@ impl AppServerSession {
         cyber_access_program: Option<codex_app_server_protocol::CyberAccessProgram>,
         cloud_selection: Option<&user_message_submission::CloudModelSelection>,
     ) -> Result<TurnStartResponse> {
+        let additional_context = self.side_turn_context(thread_id, &client_user_message_id);
         let mut params = TurnStartParams {
             thread_id: thread_id.to_string(),
             turn_trigger: Some(turn_trigger.to_string()),
             client_user_message_id: Some(client_user_message_id),
             input: items,
+            additional_context,
             output_schema,
             cyber_access_program,
             ..TurnStartParams::default()
@@ -4701,6 +4692,12 @@ mod tests {
                 Some("Source thread")
             );
             assert_eq!(side_fork.session.fork_parent_title, None);
+            assert!(
+                app_server
+                    .thread_read(side_fork.session.thread_id, /*include_turns*/ false)
+                    .await?
+                    .ephemeral
+            );
             app_server.shutdown().await?;
             Ok(())
         })

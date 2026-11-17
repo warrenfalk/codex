@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+expression: text
+---
+■ '/fork' is unavailable in side conversations. Press Ctrl+C to close the side conversation first.

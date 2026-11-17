@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+expression: "render_bottom_popup(&chat, 80)"
+---
+  Rename thread
+
+› Pilot
+
+  enter submit · esc back
