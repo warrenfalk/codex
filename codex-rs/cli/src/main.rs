@@ -154,7 +154,7 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Open the agent command center to browse and switch sessions.
+    /// Browse agent sessions or focus an attached TUI.
     Agents(AgentsCommand),
 
     /// Internal: forward SSH stdio or a local TCP socket through an HTTP/3 CONNECT proxy.
@@ -1322,9 +1322,17 @@ async fn dispatch_cli(
             run_interactive_tui(interactive, local, remote, auth_token_env, arg0_paths).await?;
         handle_app_exit(exit_info, daemon_cli_executable.as_deref())
     };
-    let agents_json = agents_options
-        .filter(|options| options.json)
-        .map(|options| options.watch);
+    let agents_action = agents_options.and_then(|options| {
+        options
+            .focus
+            .clone()
+            .map(|session_id| agents_cmd::AgentsAction::Focus { session_id })
+            .or_else(|| {
+                options.json.then_some(agents_cmd::AgentsAction::Json {
+                    watch: options.watch,
+                })
+            })
+    });
     let open_agents_overview = matches!(&subcommand, Some(Subcommand::Agents(_)));
     match subcommand {
         None | Some(Subcommand::Agents(_)) => {
@@ -1333,9 +1341,9 @@ async fn dispatch_cli(
                 root_config_overrides.clone(),
             );
             if open_agents_overview {
-                if interactive.no_daemon && agents_json.is_some() {
+                if interactive.no_daemon && agents_action.is_some() {
                     anyhow::bail!(
-                        "--no-daemon cannot be used with codex agents --json. JSON observation requires an existing server."
+                        "--no-daemon cannot be used with codex agents --json or --focus. It applies only to the interactive agents overview."
                     );
                 }
                 if interactive.prompt.is_some() || !interactive.images.is_empty() {
@@ -1360,13 +1368,13 @@ async fn dispatch_cli(
                         "`codex agents` cannot apply local provider or additional-directory overrides to a remote server"
                     );
                 }
-                if let Some(watch) = agents_json {
-                    agents_cmd::run_json(
+                if let Some(action) = agents_action {
+                    agents_cmd::run_noninteractive(
                         &interactive,
                         root_local,
                         root_remote,
                         root_remote_auth_token_env,
-                        watch,
+                        action,
                     )
                     .await?;
                     return Ok(None);

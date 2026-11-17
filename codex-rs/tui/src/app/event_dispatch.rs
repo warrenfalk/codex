@@ -74,8 +74,7 @@ impl App {
         {
             return Ok(AppRunControl::Exit(ExitReason::UserRequested));
         }
-        if self.reconnect.offline
-            && !matches!(
+        let allowed_offline = matches!(
                 &event,
                 AppEvent::OpenDaemonMenu
                     | AppEvent::OpenWarnings
@@ -126,8 +125,10 @@ impl App {
                     | AppEvent::BeginThreadSwitchHistoryReplayBuffer
                     | AppEvent::EndInitialHistoryReplayBuffer
                     | AppEvent::FatalExitRequest(_)
-            )
-        {
+        );
+        #[cfg(unix)]
+        let allowed_offline = allowed_offline || matches!(&event, AppEvent::AgentsFocusRequested(_));
+        if self.reconnect.offline && !allowed_offline {
             return Ok(AppRunControl::Continue);
         }
         let overview_action_thread = match &event {
@@ -1196,6 +1197,8 @@ impl App {
             AppEvent::FocusNotificationRequested => {
                 self.chat_widget.notify(Notification::FocusRequested);
             }
+            #[cfg(unix)]
+            AppEvent::AgentsFocusRequested(pending) => self.handle_agents_focus(tui, pending).await,
             AppEvent::Exit(mode)
                 if matches!(self.app_server_target, AppServerTarget::Embedded)
                     && (self.agents_overview.threads.iter().any(|(id, thread)| {
