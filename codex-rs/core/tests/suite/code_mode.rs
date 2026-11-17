@@ -481,6 +481,7 @@ async fn disabled_process_host_with_fallback_disabled_attempts_the_host() -> Res
     let server = responses::start_mock_server().await;
     let builder = test_codex()
         .with_model("test-gpt-5.1-codex")
+        .with_code_mode_host_program("codex-code-mode-host-does-not-exist".into())
         .with_config(|config| {
             config
                 .features
@@ -502,7 +503,7 @@ async fn disabled_process_host_with_fallback_disabled_attempts_the_host() -> Res
     let request = follow_up_mock.single_request();
     let (output, _) = custom_tool_output_body_and_success(&request, "call-1");
     assert!(
-        output.contains("failed to spawn code-mode host"),
+        output.contains("codex-code-mode-host-does-not-exist"),
         "disabled fallback must still attempt the standalone host: {output}"
     );
 
