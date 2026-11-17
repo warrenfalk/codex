@@ -2733,5 +2733,9 @@ mod device_permissions;
 mod device_permissions_tests;
 
 #[cfg(test)]
+#[path = "permissions/root_metadata_tests.rs"]
+mod root_metadata_tests;
+
+#[cfg(test)]
 #[path = "permissions_tests.rs"]
 mod tests;
