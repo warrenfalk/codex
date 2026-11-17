@@ -238,6 +238,7 @@ async fn resume_discovers_and_reopens_the_saved_gateway() -> Result<()> {
         &mut server,
         &config,
         /*cwd_filter*/ None,
+        crate::LastSessionScope::Cwd,
         /*include_non_interactive*/ false,
     )
     .await?
@@ -259,6 +260,7 @@ async fn resume_discovers_and_reopens_the_saved_gateway() -> Result<()> {
             &mut server,
             &config,
             /*cwd_filter*/ None,
+            crate::LastSessionScope::Cwd,
             /*include_non_interactive*/ false,
         )
         .await?

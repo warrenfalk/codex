@@ -1,3 +1,4 @@
+use crate::latest_session::LastSessionScope;
 use clap::Args;
 use clap::FromArgMatches;
 use clap::Parser;
@@ -27,7 +28,7 @@ pub struct Cli {
     pub resume_picker: bool,
 
     #[clap(skip)]
-    pub resume_last: bool,
+    pub resume_last: Option<LastSessionScope>,
 
     /// Internal: resume a specific recorded session by id (UUID). Set by the
     /// top-level `codex resume <SESSION_ID>` wrapper; not exposed as a public flag.

@@ -77,6 +77,8 @@ use uuid::Uuid;
 
 mod archive;
 mod catalog;
+#[cfg(test)]
+mod directory_filter;
 mod layout;
 mod page_loading;
 mod sources;
@@ -1166,6 +1168,7 @@ struct PickerState {
     filter_cwd: Option<PathBuf>,
     local_filter_cwd: Option<PathBuf>,
     repo_filter_available: bool,
+    default_repo_filter_pending: bool,
     toolbar_focus: ToolbarControl,
     density: SessionListDensity,
     launch_context: SessionPickerLaunchContext,
@@ -1348,6 +1351,8 @@ impl PickerState {
         filter_cwd: Option<PathBuf>,
         action: SessionPickerAction,
     ) -> Self {
+        let default_repo_filter_pending =
+            !show_all && filter_cwd.is_some() && matches!(action, SessionPickerAction::Fork);
         Self {
             backend_id,
             clock_format: ClockFormat::system(),
@@ -1380,6 +1385,7 @@ impl PickerState {
             local_cwd_matches: HashMap::new(),
             filter_cwd,
             repo_filter_available: false,
+            default_repo_filter_pending,
             toolbar_focus: ToolbarControl::Filter,
             density: SessionListDensity::Comfortable,
             launch_context: SessionPickerLaunchContext::Startup,
@@ -1445,6 +1451,10 @@ impl PickerState {
 
     fn set_repo_filter_available(&mut self, available: bool) {
         self.repo_filter_available = available;
+        if std::mem::take(&mut self.default_repo_filter_pending) && available {
+            self.filter_mode = SessionFilterMode::Repo;
+            self.start_initial_load();
+        }
         self.request_frame();
     }
 
@@ -2354,6 +2364,7 @@ impl PickerState {
     }
 
     fn change_filter_mode(&mut self, direction: ToolbarValueDirection) {
+        self.default_repo_filter_pending = false;
         let next_filter_mode = self.filter_mode.change(
             direction,
             self.filter_cwd.as_deref(),
@@ -2617,13 +2628,7 @@ pub(crate) fn repository_cwd_filter(
 }
 
 fn local_repo_filter_available(cwd: &Path) -> bool {
-    codex_git_utils::linked_worktree_cwds(cwd).is_some_and(|cwds| {
-        cwds.into_iter()
-            .filter_map(|cwd| dunce::canonicalize(cwd).ok())
-            .collect::<HashSet<_>>()
-            .len()
-            > 1
-    })
+    codex_git_utils::repository_identity(cwd).is_some()
 }
 
 fn paths_match(a: &Path, b: &Path) -> bool {
@@ -4178,7 +4183,9 @@ mod tests {
         }
     }
 
-    fn page_only_loader(loader: impl Fn(PageLoadRequest) + Send + Sync + 'static) -> PickerLoader {
+    pub(super) fn page_only_loader(
+        loader: impl Fn(PageLoadRequest) + Send + Sync + 'static,
+    ) -> PickerLoader {
         Arc::new(move |request| {
             if let PickerLoadRequest::Page(request) = request {
                 loader(request);
@@ -4478,7 +4485,9 @@ mod tests {
         drop(bg_rx);
         loader.task.await.unwrap();
         let local = crate::latest_session_lookup_params(
+            /*uses_remote_filesystem*/ false,
             /*model_providers*/ None,
+            crate::LastSessionScope::Cwd,
             Some(&primary),
             /*include_non_interactive*/ false,
             crate::LatestSessionLookupMode::StateDbOnly,
@@ -4486,7 +4495,9 @@ mod tests {
         assert_eq!(local.cwd, Some(single.clone()));
         assert_eq!(
             crate::latest_session_lookup_params(
+                /*uses_remote_filesystem*/ true,
                 /*model_providers*/ None,
+                crate::LastSessionScope::Cwd,
                 Some(&primary),
                 /*include_non_interactive*/ false,
                 crate::LatestSessionLookupMode::StateDbOnly,
