@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tts_tests.rs
+expression: "lines.join(\"\\n\")"
+---
+■ Text to speech disabled: "sh" exited with exit status: 7. Check tui.tts.command, then use /speak to retry.

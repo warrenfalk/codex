@@ -64,6 +64,14 @@ impl LocalSettings {
             ),
             tui: Tui {
                 default_hosts: Default::default(),
+                // This preference belongs to the client; the core runtime does not consume it.
+                tts: config
+                    .config_layer_stack
+                    .effective_config()
+                    .get("tui")
+                    .and_then(|tui| tui.get("tts"))
+                    .and_then(|value| value.clone().try_into().ok())
+                    .unwrap_or_default(),
                 notification_settings: config.tui_notifications.clone(),
                 animations: config.animations,
                 screen_reader_detection_done: None,

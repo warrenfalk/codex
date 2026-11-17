@@ -886,6 +886,12 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
+        if let TuiEvent::Key(key) = &event
+            && self.chat_widget.handle_speech_key(*key)
+        {
+            self.cancel_pending_key_chord();
+            return Ok(AppRunControl::Continue);
+        }
         self.transcript_view
             .sync_patch_approval(self.chat_widget.current_patch_approval());
         // A chooser action must never decide a modal that has not been painted yet.
