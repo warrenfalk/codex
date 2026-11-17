@@ -39,12 +39,20 @@ pub(super) fn snapshot(
     let mut sessions = Vec::new();
     for (id, family) in families {
         let root = threads[&id];
-        let status = family
+        let mut status = family
             .iter()
             .map(|thread| AgentsOverviewGroup::for_status(&thread.status))
             .min()
             .unwrap_or(AgentsOverviewGroup::Finished);
         let working = family.iter().any(|thread| matches!(&thread.status, ThreadStatus::Active { active_flags } if active_flags.is_empty()));
+        if root.unread
+            && matches!(
+                status,
+                AgentsOverviewGroup::Ready | AgentsOverviewGroup::Finished
+            )
+        {
+            status = AgentsOverviewGroup::Unread;
+        }
         let mut attention = Vec::new();
         for (reason, flag) in [
             ("approval", ThreadActiveFlag::WaitingOnApproval),
@@ -58,6 +66,9 @@ pub(super) fn snapshot(
         {
             attention.push("error");
         }
+        if status == AgentsOverviewGroup::Unread {
+            attention.push("unread");
+        }
         sessions.push(serde_json::json!({
             "id": id, "title": display_title(root), "cwd": root.cwd,
             "name": root.name, "preview": root.preview, "createdAt": root.created_at,
@@ -65,7 +76,7 @@ pub(super) fn snapshot(
             "status": status, "rootStatus": root.status,
             "project": AgentsOverviewProjectGroup::for_thread(root, options.worktree_grouping),
             "loaded": family.iter().any(|thread| !matches!(thread.status, ThreadStatus::NotLoaded)),
-            "working": working, "attention": attention,
+            "working": working, "unread": root.unread, "attention": attention,
         }));
     }
     Ok(serde_json::json!({

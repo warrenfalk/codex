@@ -313,6 +313,7 @@ mod thread_routing;
 mod thread_session_state;
 mod thread_settings;
 mod thread_title;
+mod thread_unread;
 mod transcript_export;
 mod tui_mode_picker;
 mod user_turn_submission;
@@ -754,6 +755,7 @@ pub(crate) struct App {
     // persist an older toggle after a newer one.
     pending_hook_enabled_writes: HashMap<String, Option<bool>>,
     recap: recap::RecapState,
+    pending_focus_ack: Option<(ThreadId, tokio::time::Instant)>,
     // App fixtures keep their home alive across widget replacement; drop it last.
     #[cfg(test)]
     _test_codex_home: Option<tempfile::TempDir>,
@@ -889,6 +891,7 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
+        self.handle_unread_focus(tui, app_server, &event).await;
         if let TuiEvent::Key(key) = &event
             && self.chat_widget.handle_speech_key(*key)
         {
@@ -1396,9 +1399,11 @@ impl App {
             if previous != visible {
                 app_server.attempted_revision = None;
             }
-            // Opening a full view counts immediately. Within the same view a new result's
-            // receipt can arrive just before the terminal event that finishes rendering it.
+            // Read-only views acknowledge their frozen snapshot. Normal conversations use
+            // one-shot open/focus attempts so redraws cannot erase explicit unread marks
+            // or retry an acknowledgement ignored while the session family was working.
             if let Some(id) = visible
+                && frozen
                 && (previous != visible || !self.chat_widget.is_agent_turn_running())
                 && let Some(revision) = app_server.viewed_revision(id, frozen)
             {
@@ -1456,6 +1461,7 @@ impl App {
             return self.render_owned_transcript(tui, screen_size);
         }
         self.prepare_frame_images();
+        self.sync_thread_unread_indicator();
         self.chat_widget
             .empty_state_animation
             .borrow_mut()

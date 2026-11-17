@@ -305,6 +305,7 @@ mod pets;
 pub(crate) use self::pets::ConfiguredPetLoadGeneration;
 mod session_flow;
 mod session_header;
+mod session_indicators;
 use self::session_header::SessionHeader;
 mod clipboard;
 pub(crate) use clipboard::ClipboardPasteContext;

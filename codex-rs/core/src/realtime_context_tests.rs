@@ -31,6 +31,7 @@ fn stored_thread(cwd: &str, title: &str, first_user_message: &str) -> StoredThre
     StoredThread {
         creator_user_id: None,
         creator_account_id: None,
+        unread: false,
         originator: None,
         thread_id: ThreadId::new(),
         extra_config: None,

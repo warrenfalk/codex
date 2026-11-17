@@ -100,6 +100,7 @@ fn bindings(props: &FooterProps) -> [(&'static str, Vec<Entry>); 3] {
             [previous_agent_shortcut(), next_agent_shortcut()],
         ),
         Entry::hint(hints.focus_activity, "Inspect activity"),
+        Entry::hint(hints.toggle_unread, "Toggle unread"),
         Entry::key(
             key_hint::ctrl(K::Char('c')),
             if props.is_task_running {

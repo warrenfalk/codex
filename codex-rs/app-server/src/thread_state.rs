@@ -125,6 +125,8 @@ impl TurnSummary {
 #[derive(Default)]
 pub(crate) struct ThreadState {
     goal_resume_lock: Arc<Mutex<()>>,
+    /// Orders prompt acceptance and acknowledgement with observed turn starts.
+    pub(crate) unread_lock: Arc<Mutex<()>>,
     pub(crate) pending_interrupts: PendingInterruptQueue,
     pub(crate) network_approvals: HashMap<String, PendingNetworkApproval>,
     pub(crate) turn_summary: TurnSummary,

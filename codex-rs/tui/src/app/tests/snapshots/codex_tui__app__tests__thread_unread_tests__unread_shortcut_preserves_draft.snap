@@ -1,0 +1,9 @@
+---
+source: tui/src/app/tests/thread_unread_tests.rs
+expression: "render_bottom_popup(&app.chat_widget, 65)"
+---
+unread
+
+› Draft to finish later!
+
+                                              100% context left

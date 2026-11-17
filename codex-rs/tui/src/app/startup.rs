@@ -604,6 +604,7 @@ impl App {
         let mut read_only_thread = false;
         let mut provider_error = None;
         let mut history_notice = None;
+        let acknowledge_resumed = matches!(&session_selection, SessionSelection::Resume(_));
         let (mut chat_widget, initial_started_thread) = match session_selection {
             SessionSelection::StartFresh
             | SessionSelection::Exit
@@ -1140,6 +1141,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
             recap: recap::RecapState::default(),
+            pending_focus_ack: None,
             #[cfg(test)]
             _test_codex_home: None,
         };
@@ -1217,6 +1219,10 @@ See the Codex keymap documentation for supported actions and examples."
                 }
             }
             app.remember_attached_host_project(&app_server);
+            if acknowledge_resumed {
+                app.acknowledge_opened_thread(&mut app_server, thread_id)
+                    .await;
+            }
             if let Some(error) = provider_error {
                 app.chat_widget
                     .show_provider_error(error, /*rejected_message_id*/ None);

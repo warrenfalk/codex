@@ -408,6 +408,7 @@ impl ChatWidget {
             | ServerNotification::ThreadStatusChanged(_)
             | ServerNotification::ThreadReadStateChanged(_)
             | ServerNotification::ThreadSectionChanged(_)
+            | ServerNotification::ThreadUnreadChanged(_)
             | ServerNotification::ThreadProjectEnvStatusChanged(_)
             | ServerNotification::ThreadQueueChanged(_)
             | ServerNotification::ThreadPredictionUpdated(_)

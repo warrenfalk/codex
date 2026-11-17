@@ -39,6 +39,7 @@ pub(crate) fn parent_id(thread: &Thread) -> Option<String> {
 pub(crate) enum AgentsOverviewGroup {
     #[serde(rename = "needsInput")]
     NeedsYou,
+    Unread,
     Working,
     Ready,
     Finished,

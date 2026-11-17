@@ -12,6 +12,7 @@ expression: terminal.backend()
 "  ⌃⌥v     Paste image          ←        Agents (empty prompt)                   "
 "  ⌃x ⌃e   External editor      ⌥← / ⌥→  Subagents (empty prompt)                "
 "  esc     Edit last message    f4       Inspect activity                        "
+"                               ⌃x u     Toggle unread                           "
 "                               ⌃c       Quit                                    "
 "                                                                                "
 "                               Transcript (open first)                          "

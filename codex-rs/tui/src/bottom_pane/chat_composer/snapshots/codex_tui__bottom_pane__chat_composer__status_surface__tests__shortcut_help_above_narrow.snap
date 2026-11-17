@@ -28,6 +28,7 @@ expression: text
   ⌥.       More reasoning
   ⌥← / ⌥→  Subagents (empty prompt)
   f4       Inspect activity
+  ⌥m       Toggle unread
   ⌃c       Quit
 
   Transcript (open first)

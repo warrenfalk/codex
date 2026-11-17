@@ -18,12 +18,12 @@ impl ChatWidget {
                 generation,
             });
         }
-        self.bottom_pane.set_notes_indicator(self.notes.indicator());
+        self.refresh_session_indicators();
     }
 
     pub(super) fn record_note(&mut self, id: String, text: String) {
         self.notes.record(NoteToSelf { id, text });
-        self.bottom_pane.set_notes_indicator(self.notes.indicator());
+        self.refresh_session_indicators();
     }
 
     pub(crate) fn finish_notes_load(
@@ -32,7 +32,7 @@ impl ChatWidget {
         result: Result<Vec<NoteToSelf>, String>,
     ) {
         if self.notes.finish_load(generation, result) {
-            self.bottom_pane.set_notes_indicator(self.notes.indicator());
+            self.refresh_session_indicators();
             self.request_redraw();
         }
     }

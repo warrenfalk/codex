@@ -59,6 +59,35 @@ fn thread(id: &str, status: Value) -> Thread {
     .unwrap()
 }
 
+#[test]
+fn unread_json_distinguishes_pending_work_from_stopped_attention() {
+    let mut model = AgentsModel::default();
+    for (id, status) in [
+        (ROOT, json!({"type": "idle"})),
+        (TASK, json!({"type": "active", "activeFlags": []})),
+        (FINISHED, json!({"type": "notLoaded"})),
+    ] {
+        let mut thread = thread(id, status);
+        thread.unread = true;
+        model.threads.insert(
+            codex_protocol::ThreadId::from_string(id).unwrap(),
+            Some(thread),
+        );
+    }
+    let options = AgentsJsonOptions {
+        endpoint: RemoteAppServerEndpoint::WebSocket {
+            websocket_url: "ws://127.0.0.1:1".into(),
+            auth_token: None,
+        },
+        watch: false,
+        worktree_grouping: false,
+        implicit_local_daemon: false,
+    };
+    let mut snapshot = snapshot::snapshot(&model, &options).unwrap();
+    normalize_snapshot(&mut snapshot);
+    insta::assert_snapshot!(serde_json::to_string_pretty(&snapshot).unwrap());
+}
+
 struct Mock {
     options: AgentsJsonOptions,
     threads: Arc<Mutex<BTreeMap<String, Thread>>>,
@@ -438,7 +467,7 @@ async fn watch_retains_started_threads_when_metadata_or_history_reads_race_unloa
                     "recencyAt": null, "gitInfo": null, "status": "finished",
                     "rootStatus": {"type": "notLoaded"},
                     "project": {"key": [task.cwd, ""], "heading": task.cwd},
-                    "loaded": false, "working": false, "attention": []
+                    "loaded": false, "working": false, "unread": false, "attention": []
                 }]
             });
             assert_eq!(rx.recv().await.unwrap(), expected);

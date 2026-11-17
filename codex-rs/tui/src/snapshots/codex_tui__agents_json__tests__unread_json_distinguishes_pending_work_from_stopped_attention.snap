@@ -1,0 +1,98 @@
+---
+source: tui/src/agents_json_tests.rs
+expression: "serde_json::to_string_pretty(&snapshot).unwrap()"
+---
+{
+  "version": 1,
+  "connection": "connected",
+  "counts": {
+    "total": 3,
+    "working": 1,
+    "needsAttention": 2
+  },
+  "sessions": [
+    {
+      "id": "finished",
+      "title": "Original prompt",
+      "cwd": "/project",
+      "name": null,
+      "preview": " Original prompt\nmore",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "unread",
+      "rootStatus": {
+        "type": "notLoaded"
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": false,
+      "working": false,
+      "unread": true,
+      "attention": [
+        "unread"
+      ]
+    },
+    {
+      "id": "root",
+      "title": "Original prompt",
+      "cwd": "/project",
+      "name": null,
+      "preview": " Original prompt\nmore",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "unread",
+      "rootStatus": {
+        "type": "idle"
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": true,
+      "working": false,
+      "unread": true,
+      "attention": [
+        "unread"
+      ]
+    },
+    {
+      "id": "task",
+      "title": "Original prompt",
+      "cwd": "/project",
+      "name": null,
+      "preview": " Original prompt\nmore",
+      "createdAt": 1,
+      "updatedAt": 2,
+      "recencyAt": null,
+      "gitInfo": null,
+      "status": "working",
+      "rootStatus": {
+        "type": "active",
+        "activeFlags": []
+      },
+      "project": {
+        "key": [
+          "/project",
+          ""
+        ],
+        "heading": "/project"
+      },
+      "loaded": true,
+      "working": true,
+      "unread": true,
+      "attention": []
+    }
+  ]
+}

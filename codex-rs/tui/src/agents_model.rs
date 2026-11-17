@@ -59,6 +59,7 @@ impl AgentsModel {
             ServerNotification::ThreadUnarchived(event) => &event.thread_id,
             ServerNotification::ThreadClosed(event) => &event.thread_id,
             ServerNotification::ThreadStatusChanged(event) => &event.thread_id,
+            ServerNotification::ThreadUnreadChanged(event) => &event.thread_id,
             ServerNotification::ThreadNameUpdated(event) => &event.thread_id,
             ServerNotification::ThreadSettingsUpdated(event) => &event.thread_id,
             ServerNotification::ThreadReverted(event) => &event.thread_id,
@@ -104,6 +105,11 @@ impl AgentsModel {
             ServerNotification::ThreadNameUpdated(event) => {
                 if let Some(thread) = self.threads.get_mut(&id).and_then(Option::as_mut) {
                     thread.name.clone_from(&event.thread_name);
+                }
+            }
+            ServerNotification::ThreadUnreadChanged(event) => {
+                if let Some(thread) = self.threads.get_mut(&id).and_then(Option::as_mut) {
+                    thread.unread = event.unread;
                 }
             }
             ServerNotification::ThreadSettingsUpdated(event) => {

@@ -149,6 +149,7 @@ mod tests {
             section_entered_at: None,
             project_id: None,
             daybreak_enabled: None,
+            unread: false,
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
             model: None,

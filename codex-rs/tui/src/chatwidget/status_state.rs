@@ -124,6 +124,7 @@ pub(super) struct StatusState {
     pub(super) program_status_after_turn: ProgramStatus,
     pub(super) retry_status_header: Option<String>,
     pub(super) pending_status_indicator_restore: bool,
+    pub(super) unread_indicator: bool,
 }
 
 impl Default for StatusState {
@@ -138,6 +139,7 @@ impl Default for StatusState {
             program_status_after_turn: ProgramStatus::Idle,
             retry_status_header: None,
             pending_status_indicator_restore: false,
+            unread_indicator: false,
         }
     }
 }
