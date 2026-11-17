@@ -5,7 +5,7 @@ expression: "normalize_voice_snapshot_directory(&format!(\"Other task:\\n{other_
 Other task:
 › Ask Codex to do anything
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   ? for shortcuts
 Restored owner:
  voice ● listening                                      f9 mute     /voice stop
@@ -13,7 +13,7 @@ Restored owner:
 
 › Ask Codex to do anything
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   ? for shortcuts
 
   >_ OpenAI Codex (v0.0.0 (warrenfalk custom))

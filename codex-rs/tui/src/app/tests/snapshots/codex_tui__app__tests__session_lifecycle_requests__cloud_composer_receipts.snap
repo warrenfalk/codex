@@ -12,7 +12,7 @@ expression: "rendered_receipts.join(\"\\n\\n\")"
 
 › Ask Codex to do anything
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   ? for shortcuts
 
 ── Steered ──
@@ -20,7 +20,7 @@ expression: "rendered_receipts.join(\"\\n\\n\")"
 ■ Conversation interrupted - use /feedback if something went wrong
 › follow up
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
 
 ── Unconfirmed ──
 ■ Cloud submission could not be confirmed: cloud/submitUserMessage transport error: cloud backend dropped its response
@@ -31,7 +31,7 @@ expression: "rendered_receipts.join(\"\\n\\n\")"
 
 › Ask Codex to do anything
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   ? for shortcuts
 
 ── Rejected ──
@@ -41,7 +41,7 @@ expression: "rendered_receipts.join(\"\\n\\n\")"
 
 › follow up
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   tab to queue message
 
 ── Duplicate ──
@@ -52,5 +52,5 @@ expression: "rendered_receipts.join(\"\\n\\n\")"
 
 › Ask Codex to do anything
 
-  gpt-test default · /tmp/project
+  test default · tmp/project
   ? for shortcuts

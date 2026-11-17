@@ -1,4 +1,6 @@
-//! Theme-derived styling for the configurable footer statusline.
+//! Compact display values and theme-derived styling for the configurable footer statusline.
+
+use std::path::Path;
 
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -139,6 +141,28 @@ where
     for (item, mut text) in segments {
         // Paragraph skips control characters, so they must not enter this single row's link offsets.
         text.retain(|ch| !ch.is_control());
+        let text = if matches!(
+            item,
+            StatusLineItem::ModelName | StatusLineItem::ModelWithReasoning
+        ) {
+            text.strip_prefix("gpt-")
+                .or_else(|| text.strip_prefix("GPT-"))
+                .map(str::to_owned)
+                .unwrap_or(text)
+        } else if item == StatusLineItem::ContextRemaining {
+            text.strip_prefix("Context ")
+                .map(str::to_owned)
+                .unwrap_or(text)
+        } else if item == StatusLineItem::CurrentDir {
+            let path = Path::new(&text);
+            path.parent()
+                .and_then(Path::file_name)
+                .zip(path.file_name())
+                .map(|(parent, name)| Path::new(parent).join(name).display().to_string())
+                .unwrap_or(text)
+        } else {
+            text
+        };
         if !line.line.spans.is_empty() {
             line.line
                 .push_span(STATUS_LINE_SEPARATOR.set_style(secondary_text_style()));
@@ -250,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn status_line_segments_preserve_order_and_plain_text() {
+    fn status_line_segments_keep_order_and_apply_compact_formatting() {
         let line = status_line_from_segments_with_resolver(
             [
                 (StatusLineItem::ModelName, "gpt-5".to_string()),
@@ -265,7 +289,7 @@ mod tests {
         .expect("status line")
         .line;
 
-        assert_eq!(line_text(&line), "gpt-5 · /repo · main");
+        assert_eq!(line_text(&line), "5 · /repo · main");
         assert_eq!(line.spans[0].style.fg, Some(Color::Cyan));
         assert!(!line.spans[0].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(line.spans[2].style.fg, Some(Color::Green));
@@ -363,7 +387,7 @@ mod tests {
         .expect("status line")
         .line;
 
-        assert_eq!(line_text(&line), "gpt-5 · Context 12% used");
+        assert_eq!(line_text(&line), "5 · Context 12% used");
         assert_eq!(line.spans[0].style, secondary_text_style());
         assert_eq!(line.spans[1].style, secondary_text_style());
         assert_eq!(line.spans[2].style, secondary_text_style());
@@ -504,18 +528,22 @@ mod tests {
             Buffer {
                 area: Rect { x: 0, y: 0, width: 30, height: 1 },
                 content: [
-                    "gpt-5 · ~/code · 12k tokens   ",
+                    "5 · ~/code · 12k tokens       ",
                 ],
                 styles: [
                     x: 0, y: 0, fg: Cyan, bg: Reset, underline: Reset, modifier: NONE,
-                    x: 5, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-                    x: 8, y: 0, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
-                    x: 14, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-                    x: 17, y: 0, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
-                    x: 27, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+                    x: 1, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+                    x: 4, y: 0, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+                    x: 10, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+                    x: 13, y: 0, fg: Green, bg: Reset, underline: Reset, modifier: NONE,
+                    x: 23, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
                 ]
             }
             "###);
         }
     }
 }
+
+#[cfg(test)]
+#[path = "status_line_compact_tests.rs"]
+mod compact_tests;

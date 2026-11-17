@@ -125,7 +125,7 @@ async fn cloud_archive_preserves_attached_child_and_other_tasks() -> Result<()> 
           Archive “Cloud parent”?
     › Ke  This stops any running work in this task and archives it. Child
           agents stay unchanged. Its history can be restored from the resume
-      gp  picker.
+      te  picker.
 
 
         › 1. Cancel

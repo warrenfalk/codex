@@ -73,11 +73,7 @@ async fn tmux_split_preserves_fresh_session_composer_row_after_resize_reflow() -
         "resize reflow sentinel",
         Duration::from_secs(/*secs*/ 15),
     )?;
-    wait_for_capture_contains(
-        &codex_pane,
-        "gpt-5.4 default",
-        Duration::from_secs(/*secs*/ 15),
-    )?;
+    wait_for_capture_contains(&codex_pane, "5.4 default", Duration::from_secs(/*secs*/ 15))?;
     let draft = "Notice where we are here in terms of y location.";
     check(
         Command::new("tmux")
@@ -237,11 +233,7 @@ async fn tmux_width_resize_restore_keeps_visible_content_anchored() -> Result<()
         "resize reflow sentinel",
         Duration::from_secs(/*secs*/ 15),
     )?;
-    wait_for_capture_contains(
-        &codex_pane,
-        "gpt-5.4 default",
-        Duration::from_secs(/*secs*/ 15),
-    )?;
+    wait_for_capture_contains(&codex_pane, "5.4 default", Duration::from_secs(/*secs*/ 15))?;
     let draft = "Notice where we are here in terms of y location.";
     check(
         Command::new("tmux")
@@ -358,11 +350,7 @@ async fn tmux_scrolled_composer_resize_preserves_visible_draft_text() -> Result<
     )?;
     let codex_pane = stdout_text(&start_output).trim().to_string();
     anyhow::ensure!(!codex_pane.is_empty(), "tmux did not report a pane id");
-    wait_for_capture_contains(
-        &codex_pane,
-        "gpt-5.6-terra",
-        Duration::from_secs(/*secs*/ 15),
-    )?;
+    wait_for_capture_contains(&codex_pane, "5.6-terra", Duration::from_secs(/*secs*/ 15))?;
 
     for index in 1..=9 {
         let line = format!("probe-{index:02} clean words");
@@ -488,11 +476,7 @@ async fn run_repeated_resize_smoke() -> Result<()> {
         "resize reflow sentinel",
         Duration::from_secs(/*secs*/ 15),
     )?;
-    wait_for_capture_contains(
-        &codex_pane,
-        "gpt-5.4 default",
-        Duration::from_secs(/*secs*/ 15),
-    )?;
+    wait_for_capture_contains(&codex_pane, "5.4 default", Duration::from_secs(/*secs*/ 15))?;
     let draft = "Notice where we are here in terms of y location.";
     check(
         Command::new("tmux")
