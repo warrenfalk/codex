@@ -33,6 +33,7 @@ pub(super) enum ThreadAttachPresentation {
     /// A fresh thread whose startup composer is already visible.
     FreshWithDraft,
     SessionLineage,
+    PromptEdit,
 }
 
 pub(super) struct PreparedFreshSession {
@@ -1519,7 +1520,9 @@ impl App {
                 tui.defer_thread_switch_clear();
                 presentation
             }
-            ThreadAttachPresentation::Fresh | ThreadAttachPresentation::SessionLineage => {
+            ThreadAttachPresentation::Fresh
+            | ThreadAttachPresentation::SessionLineage
+            | ThreadAttachPresentation::PromptEdit => {
                 tui.clear_for_thread_switch()?;
                 presentation
             }
