@@ -29,9 +29,14 @@ not a replacement test runner. Rust tests still run through `just test`.
 
 Use the same recorded environment for the final workspace suite. If workspace
 feature unification requires an explicit feature, record and test that choice.
-For v0.155.1, the full suite needed `codex-v8-poc/sandbox` to match the sandbox
-already enabled by code-mode runtime. This is a diagnostic hint for later
-versions, not a permanent instruction to enable arbitrary features or all features.
+For v0.155.1 and v0.169.0, the full suite needs `codex-v8-poc/sandbox` to match
+the sandbox already enabled by code-mode runtime. For the latter checkout use
+`just test --workspace --features codex-v8-poc/sandbox`, with any separately
+recorded test-concurrency settings. Without this flag, the proof-of-concept's
+`sandbox_feature_matches_linked_v8` test compares a disabled crate feature with
+the sandbox-enabled shared V8 library. This is a configuration mismatch, not
+evidence of a runtime regression. Recheck the manifests on later releases;
+do not carry the flag forward blindly or enable arbitrary/all features.
 
 ## Prepare tests without redundant builds
 
