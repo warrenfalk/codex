@@ -965,6 +965,21 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadNoteCreateResponse,
     },
+    ThreadTimingRead => "thread/timing/read" {
+        params: v2::ThreadTimingReadParams,
+        serialization: None,
+        response: v2::ThreadTimingReadResponse,
+    },
+    ThreadTimingSubscribe => "thread/timing/subscribe" {
+        params: v2::ThreadTimingSubscribeParams,
+        serialization: None,
+        response: v2::ThreadTimingSubscribeResponse,
+    },
+    ThreadTimingUnsubscribe => "thread/timing/unsubscribe" {
+        params: v2::ThreadTimingUnsubscribeParams,
+        serialization: None,
+        response: v2::ThreadTimingUnsubscribeResponse,
+    },
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
         // Explicitly concurrent: this primarily reads append-only rollout storage.
@@ -2145,6 +2160,8 @@ server_notification_definitions! {
     EnvironmentDisconnected => "thread/environment/disconnected" (v2::EnvironmentConnectionNotification),
     #[experimental("thread/settings/updated")]
     ThreadSettingsUpdated => "thread/settings/updated" (v2::ThreadSettingsUpdatedNotification),
+    ThreadTimingUpdated => "thread/timing/updated" (v2::ThreadTimingUpdatedNotification),
+    ThreadTimingSubscriptionClosed => "thread/timing/subscriptionClosed" (v2::ThreadTimingSubscriptionClosedNotification),
     ThreadTokenUsageUpdated => "thread/tokenUsage/updated" (v2::ThreadTokenUsageUpdatedNotification),
     TurnStarted => "turn/started" (v2::TurnStartedNotification),
     HookStarted => "hook/started" (v2::HookStartedNotification),

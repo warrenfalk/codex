@@ -23,6 +23,9 @@ mod thread_history;
 mod thread_history_materialization;
 mod thread_rollout_resolver;
 mod thread_sections;
+mod timing;
+#[cfg(test)]
+mod timing_tests;
 mod unarchive_thread;
 mod update_thread_metadata;
 
@@ -522,6 +525,12 @@ impl LocalThreadStore {
 }
 
 impl ThreadStore for LocalThreadStore {
+    fn read_timing(
+        &self,
+        params: crate::ReadTimingParams,
+    ) -> ThreadStoreFuture<'_, crate::TimingPage> {
+        Box::pin(timing::read(self, params))
+    }
     fn default_history_mode(&self) -> ThreadHistoryMode {
         ThreadHistoryMode::Paginated
     }

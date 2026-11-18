@@ -38,6 +38,7 @@ struct TimingShared {
 struct TimingBuffer {
     pending: Vec<TimingRecord>,
     open_transports: Vec<OpenTransport>,
+    active: std::collections::HashMap<String, live::LiveSpan>,
 }
 
 #[derive(Debug)]
@@ -61,7 +62,7 @@ pub struct TimingSpan {
 
 impl TimingContext {
     pub fn new(thread_id: ThreadId, turn_id: String, model: String) -> Self {
-        Self {
+        let context = Self {
             shared: Arc::new(TimingShared {
                 thread_id,
                 turn_id,
@@ -71,7 +72,9 @@ impl TimingContext {
             }),
             attempt: 0,
             parent_span_id: None,
-        }
+        };
+        live::register(&context.shared);
+        context
     }
 
     pub fn for_attempt(&self, attempt: u32) -> Self {
@@ -106,14 +109,23 @@ impl TimingContext {
                 finished: Arc::clone(&finished),
             });
         }
-        buffer.pending.push(self.record(
+        let record = self.record(
             &span_id,
             phase,
             TimingEvent::Started {
                 at_ms: now_ms(),
                 model: self.shared.model.clone(),
             },
-        ));
+        );
+        buffer.active.insert(
+            span_id.clone(),
+            live::LiveSpan {
+                record: record.clone(),
+                started,
+                stream: None,
+            },
+        );
+        buffer.pending.push(record);
         TimingSpan {
             context: self.clone(),
             span_id,
@@ -133,6 +145,7 @@ impl TimingContext {
         let open = std::mem::take(&mut buffer.open_transports);
         for transport in open {
             if !transport.finished.swap(true, Ordering::AcqRel) {
+                buffer.active.remove(&transport.span_id);
                 let context = Self {
                     attempt: transport.attempt,
                     parent_span_id: transport.parent_span_id,
@@ -204,6 +217,7 @@ impl TimingSpan {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !self.finished.swap(true, Ordering::AcqRel) {
+            buffer.active.remove(&self.span_id);
             if self.phase == TimingPhase::TransportAttempt {
                 buffer
                     .open_transports
@@ -234,7 +248,10 @@ impl Drop for TimingSpan {
     }
 }
 
+mod live;
 mod stream;
+pub use live::ActiveTiming;
+pub use live::active_timing;
 pub use stream::StreamObservation;
 pub use stream::StreamTimingCapture;
 

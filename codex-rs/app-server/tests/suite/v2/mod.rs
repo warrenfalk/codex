@@ -182,6 +182,7 @@ mod thread_shell_command;
 mod thread_start;
 mod thread_status;
 mod thread_timeline;
+mod thread_timing;
 mod thread_unarchive;
 mod thread_unload;
 #[path = "thread_unread_tests.rs"]

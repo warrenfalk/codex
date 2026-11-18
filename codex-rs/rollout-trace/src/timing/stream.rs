@@ -37,10 +37,17 @@ struct OutputTiming {
     metrics: ItemTiming,
 }
 
+#[derive(Debug, Default)]
+pub(super) struct StreamState {
+    pub metrics: StreamTiming,
+    pub receiving: Option<Instant>,
+    pub processing: Option<Instant>,
+}
+
 /// Bounded stream/item counters. Repeated deltas update counters without adding log records.
 pub struct StreamTimingCapture {
     context: TimingContext,
-    summary: Arc<Mutex<StreamTiming>>,
+    summary: Arc<Mutex<StreamState>>,
     open_items: HashMap<String, OutputTiming>,
     active_item: Option<String>,
     response_id: Option<String>,
@@ -48,9 +55,20 @@ pub struct StreamTimingCapture {
 
 impl StreamTimingCapture {
     pub fn new(context: TimingContext) -> Self {
+        let summary = Arc::new(Mutex::new(StreamState::default()));
+        if let Some(id) = &context.parent_span_id {
+            let mut buffer = context
+                .shared
+                .buffer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(span) = buffer.active.get_mut(id) {
+                span.stream = Some(Arc::clone(&summary));
+            }
+        }
         Self {
             context,
-            summary: Arc::new(Mutex::new(StreamTiming::default())),
+            summary,
             open_items: HashMap::new(),
             active_item: None,
             response_id: None,
@@ -65,9 +83,9 @@ impl StreamTimingCapture {
                 .summary
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            summary.event_count = summary.event_count.saturating_add(1);
-            summary.first_event_at_ms.get_or_insert(at_ms);
-            summary.last_event_at_ms = Some(at_ms);
+            summary.metrics.event_count = summary.metrics.event_count.saturating_add(1);
+            summary.metrics.first_event_at_ms.get_or_insert(at_ms);
+            summary.metrics.last_event_at_ms = Some(at_ms);
         }
         match event {
             StreamObservation::Event => false,
@@ -77,7 +95,8 @@ impl StreamTimingCapture {
                     .summary
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                summary.omitted_item_count = summary.omitted_item_count.saturating_add(1);
+                summary.metrics.omitted_item_count =
+                    summary.metrics.omitted_item_count.saturating_add(1);
                 false
             }
             StreamObservation::Completed(id) => {
@@ -106,7 +125,8 @@ impl StreamTimingCapture {
                         .summary
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    summary.omitted_item_count = summary.omitted_item_count.saturating_add(1);
+                    summary.metrics.omitted_item_count =
+                        summary.metrics.omitted_item_count.saturating_add(1);
                     return false;
                 }
                 let span_id = Uuid::new_v4().to_string();
@@ -160,10 +180,10 @@ impl StreamTimingCapture {
                         .summary
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    summary.delta_count = summary.delta_count.saturating_add(1);
-                    summary.delta_bytes = summary.delta_bytes.saturating_add(bytes);
-                    summary.first_delta_at_ms.get_or_insert(at_ms);
-                    summary.last_delta_at_ms = Some(at_ms);
+                    summary.metrics.delta_count = summary.metrics.delta_count.saturating_add(1);
+                    summary.metrics.delta_bytes = summary.metrics.delta_bytes.saturating_add(bytes);
+                    summary.metrics.first_delta_at_ms.get_or_insert(at_ms);
+                    summary.metrics.last_delta_at_ms = Some(at_ms);
                 }
                 // Some adapters cannot identify the source of a text delta. Keep it
                 // request-wide when overlapping items make attribution ambiguous.
@@ -184,13 +204,31 @@ impl StreamTimingCapture {
             .summary
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        metrics.receive_wait_us = metrics.receive_wait_us.saturating_add(micros(duration));
+        metrics.metrics.receive_wait_us = metrics
+            .metrics
+            .receive_wait_us
+            .saturating_add(micros(duration));
+    }
+
+    pub fn waiting(&self) -> ReceiveWaitTiming {
+        self.summary
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .receiving = Some(Instant::now());
+        ReceiveWaitTiming {
+            summary: Arc::clone(&self.summary),
+        }
     }
 
     pub fn processing(&self) -> EventProcessingTiming {
+        let started = Instant::now();
+        self.summary
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .processing = Some(started);
         EventProcessingTiming {
             summary: Arc::clone(&self.summary),
-            started: Instant::now(),
+            started,
         }
     }
 
@@ -199,6 +237,7 @@ impl StreamTimingCapture {
             .summary
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .metrics
             .clone();
         span.finish(status, self.response_id.clone(), Some(summary));
     }
@@ -206,7 +245,7 @@ impl StreamTimingCapture {
 
 /// Accounts for event processing even when its handler breaks, returns, or is cancelled.
 pub struct EventProcessingTiming {
-    summary: Arc<Mutex<StreamTiming>>,
+    summary: Arc<Mutex<StreamState>>,
     started: Instant,
 }
 
@@ -216,8 +255,30 @@ impl Drop for EventProcessingTiming {
             .summary
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        summary.event_processing_us = summary
+        summary.processing = None;
+        summary.metrics.event_processing_us = summary
+            .metrics
             .event_processing_us
             .saturating_add(micros(self.started.elapsed()));
+    }
+}
+
+/// Accounts for pending stream waits, including an interrupted or dropped consumer.
+pub struct ReceiveWaitTiming {
+    summary: Arc<Mutex<StreamState>>,
+}
+
+impl Drop for ReceiveWaitTiming {
+    fn drop(&mut self) {
+        let mut state = self
+            .summary
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(started) = state.receiving.take() {
+            state.metrics.receive_wait_us = state
+                .metrics
+                .receive_wait_us
+                .saturating_add(micros(started.elapsed()));
+        }
     }
 }

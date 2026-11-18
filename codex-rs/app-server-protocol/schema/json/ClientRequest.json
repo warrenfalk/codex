@@ -6263,6 +6263,77 @@
       ],
       "type": "string"
     },
+    "ThreadTimingReadParams": {
+      "properties": {
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingSubscribeParams": {
+      "properties": {
+        "cursor": {
+          "description": "Omit to backfill from the beginning, or pass a read/update cursor to resume.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subscriptionId": {
+          "description": "Client-chosen connection-local identity, also present on early notifications.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingUnsubscribeParams": {
+      "properties": {
+        "subscriptionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionId"
+      ],
+      "type": "object"
+    },
     "ThreadTurnsListParams": {
       "properties": {
         "cursor": {
@@ -7846,6 +7917,78 @@
         "params"
       ],
       "title": "Thread/note/createRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/timing/read"
+          ],
+          "title": "Thread/timing/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadTimingReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/timing/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/timing/subscribe"
+          ],
+          "title": "Thread/timing/subscribeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadTimingSubscribeParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/timing/subscribeRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/timing/unsubscribe"
+          ],
+          "title": "Thread/timing/unsubscribeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadTimingUnsubscribeParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/timing/unsubscribeRequest",
       "type": "object"
     },
     {

@@ -54,7 +54,8 @@ accounting, or cancellation decisions. Timing-only batches do not update thread 
 touches, or release deferred metadata updates. Timing records survive resume and remain excluded from model context,
 memory-extraction input, child-agent inherited context, chat history projections, and session search text. Rollout
 migration excludes timing records associated with historically rolled-back turns. Consumers of the JSONL format
-must recognize or ignore the new record type; this feature adds no live chat-item or app-server notification type.
+must recognize or ignore the new record type. Timing remains separate from live chat items;
+dedicated historical/live app-server access is described in `app-server-turn-timing.md`.
 
 Reasoning added/done times describe the lifecycle exposed by the provider. If a provider delivers an already
 produced reasoning chunk with adjacent added/done events, the harness cannot recover the chunk's actual compute

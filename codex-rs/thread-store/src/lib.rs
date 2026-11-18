@@ -16,6 +16,7 @@ mod store;
 mod thread_attachments;
 mod thread_metadata_sync;
 mod thread_sections;
+mod timing;
 mod types;
 
 pub use codex_state::AddThreadAttachmentOutcome;
@@ -76,6 +77,8 @@ pub use thread_sections::ListThreadSectionsParams;
 pub use thread_sections::RenameThreadSectionParams;
 pub use thread_sections::StoredThreadSection;
 pub use thread_sections::StoredThreadSectionsPage;
+pub use timing::ReadTimingParams;
+pub use timing::TimingPage;
 pub use types::AppendThreadItemsParams;
 pub use types::ArchiveThreadParams;
 pub use types::ArchiveThreadsParams;

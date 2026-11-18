@@ -7479,6 +7479,137 @@ class TurnStartedThreadTimelineEntry(BaseModel):
     type: Annotated[Literal["turnStarted"], Field(title="TurnStartedThreadTimelineEntryType")]
 
 
+class StartedThreadTimingEvent(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    at_ms: int
+    model: str
+    type: Annotated[Literal["started"], Field(title="StartedThreadTimingEventType")]
+
+
+class ResponseCreatedThreadTimingEvent(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    at_ms: int
+    response_id: str
+    type: Annotated[Literal["responseCreated"], Field(title="ResponseCreatedThreadTimingEventType")]
+
+
+class ThreadTimingItem(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    delta_bytes: Annotated[int, Field(alias="deltaBytes", ge=0)]
+    delta_count: Annotated[int, Field(alias="deltaCount", ge=0)]
+    first_delta_at_ms: Annotated[int | None, Field(alias="firstDeltaAtMs")] = None
+    last_delta_at_ms: Annotated[int | None, Field(alias="lastDeltaAtMs")] = None
+
+
+class ThreadTimingItemBoundary(Enum):
+    added = "added"
+    done = "done"
+
+
+class ThreadTimingPhase(Enum):
+    prepare_request = "prepareRequest"
+    sampling_attempt = "samplingAttempt"
+    model_request = "modelRequest"
+    transport_attempt = "transportAttempt"
+    stream_setup = "streamSetup"
+    model_catalog_refresh = "modelCatalogRefresh"
+    tool_wait = "toolWait"
+    retry_recovery = "retryRecovery"
+    model_output = "modelOutput"
+
+
+class ThreadTimingReadParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cursor: str | None = None
+    limit: Annotated[int | None, Field(ge=0)] = None
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str | None, Field(alias="turnId")] = None
+
+
+class ThreadTimingStatus(Enum):
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class ThreadTimingStream(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    delta_bytes: Annotated[int, Field(alias="deltaBytes", ge=0)]
+    delta_count: Annotated[int, Field(alias="deltaCount", ge=0)]
+    event_count: Annotated[int, Field(alias="eventCount", ge=0)]
+    event_processing_us: Annotated[int, Field(alias="eventProcessingUs", ge=0)]
+    first_delta_at_ms: Annotated[int | None, Field(alias="firstDeltaAtMs")] = None
+    first_event_at_ms: Annotated[int | None, Field(alias="firstEventAtMs")] = None
+    last_delta_at_ms: Annotated[int | None, Field(alias="lastDeltaAtMs")] = None
+    last_event_at_ms: Annotated[int | None, Field(alias="lastEventAtMs")] = None
+    omitted_item_count: Annotated[int, Field(alias="omittedItemCount", ge=0)]
+    receive_wait_us: Annotated[int, Field(alias="receiveWaitUs", ge=0)]
+
+
+class ThreadTimingSubscribeParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    cursor: Annotated[
+        str | None,
+        Field(
+            description="Omit to backfill from the beginning, or pass a read/update cursor to resume."
+        ),
+    ] = None
+    subscription_id: Annotated[
+        str,
+        Field(
+            alias="subscriptionId",
+            description="Client-chosen connection-local identity, also present on early notifications.",
+        ),
+    ]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str | None, Field(alias="turnId")] = None
+
+
+class ThreadTimingSubscribeResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
+class ThreadTimingSubscriptionClosedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    error: Annotated[
+        str,
+        Field(
+            description="A failed reader requires an explicit resubscription; its last cursor stays valid."
+        ),
+    ]
+    subscription_id: Annotated[str, Field(alias="subscriptionId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+
+
+class ThreadTimingUnsubscribeParams(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    subscription_id: Annotated[str, Field(alias="subscriptionId")]
+
+
+class ThreadTimingUnsubscribeResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
+
 class ThreadUnarchiveParams(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -8614,6 +8745,37 @@ class ThreadNoteCreateRequest(BaseModel):
     id: RequestId
     method: Annotated[Literal["thread/note/create"], Field(title="Thread/note/createRequestMethod")]
     params: ThreadNoteCreateParams
+
+
+class ThreadTimingReadRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[Literal["thread/timing/read"], Field(title="Thread/timing/readRequestMethod")]
+    params: ThreadTimingReadParams
+
+
+class ThreadTimingSubscribeRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/timing/subscribe"], Field(title="Thread/timing/subscribeRequestMethod")
+    ]
+    params: ThreadTimingSubscribeParams
+
+
+class ThreadTimingUnsubscribeRequest(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: RequestId
+    method: Annotated[
+        Literal["thread/timing/unsubscribe"], Field(title="Thread/timing/unsubscribeRequestMethod")
+    ]
+    params: ThreadTimingUnsubscribeParams
 
 
 class ThreadItemsListRequest(BaseModel):
@@ -11230,6 +11392,24 @@ class ThreadProjectUpdatedServerNotification(BaseModel):
     params: ThreadProjectUpdatedNotification
 
 
+class ThreadTimingSubscriptionClosedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/timing/subscriptionClosed"],
+        Field(title="Thread/timing/subscriptionClosedNotificationMethod"),
+    ]
+    params: ThreadTimingSubscriptionClosedNotification
+
+
 class HookStartedServerNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -12434,6 +12614,61 @@ class RealtimeThreadTimelineEntry(BaseModel):
     item: ThreadRealtimeItem
     position: Annotated[int, Field(ge=0)]
     type: Annotated[Literal["realtime"], Field(title="RealtimeThreadTimelineEntryType")]
+
+
+class CompletedThreadTimingEvent(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    at_ms: int
+    duration_us: Annotated[int, Field(ge=0)]
+    response_id: str | None = None
+    status: ThreadTimingStatus
+    stream: ThreadTimingStream | None = None
+    type: Annotated[Literal["completed"], Field(title="CompletedThreadTimingEventType")]
+
+
+class ItemThreadTimingEvent(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    at_ms: int
+    boundary: ThreadTimingItemBoundary
+    item_id: str
+    item_type: str
+    stream: ThreadTimingItem | None = None
+    type: Annotated[Literal["item"], Field(title="ItemThreadTimingEventType")]
+
+
+class ThreadTimingEvent(
+    RootModel[
+        StartedThreadTimingEvent
+        | CompletedThreadTimingEvent
+        | ItemThreadTimingEvent
+        | ResponseCreatedThreadTimingEvent
+    ]
+):
+    root: (
+        StartedThreadTimingEvent
+        | CompletedThreadTimingEvent
+        | ItemThreadTimingEvent
+        | ResponseCreatedThreadTimingEvent
+    )
+
+
+class ThreadTimingRecord(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    attempt: Annotated[int, Field(ge=0)]
+    event: ThreadTimingEvent
+    parent_span_id: Annotated[str | None, Field(alias="parentSpanId")] = None
+    phase: ThreadTimingPhase
+    request_id: Annotated[str, Field(alias="requestId")]
+    span_id: Annotated[str, Field(alias="spanId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+    version: Annotated[int, Field(ge=0)]
 
 
 class ThreadTokenUsage(BaseModel):
@@ -14124,6 +14359,85 @@ class ThreadTimelineEntry(
     ]
 
 
+class ThreadTimingActiveSpan(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    elapsed_us: Annotated[int, Field(alias="elapsedUs", ge=0)]
+    record: ThreadTimingRecord
+    stream: ThreadTimingStream | None = None
+
+
+class ThreadTimingEntry(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    id: Annotated[
+        str,
+        Field(
+            description="Stable identity in this rollout, suitable for deduplicating a replayed page."
+        ),
+    ]
+    record: ThreadTimingRecord
+
+
+class ThreadTimingPage(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    active: list[ThreadTimingActiveSpan]
+    cursor: str
+    data: list[ThreadTimingEntry]
+    next_cursor: Annotated[str | None, Field(alias="nextCursor")] = None
+    observed_at_ms: Annotated[int, Field(alias="observedAtMs")]
+    skipped_record_count: Annotated[int, Field(alias="skippedRecordCount", ge=0)]
+
+
+class ThreadTimingReadResponse(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    active: Annotated[
+        list[ThreadTimingActiveSpan],
+        Field(
+            description="Process-local provisional counters, replaced by durable completions when available."
+        ),
+    ]
+    cursor: Annotated[
+        str,
+        Field(
+            description="Resume after the scanned prefix, including when data is empty or at EOF."
+        ),
+    ]
+    data: list[ThreadTimingEntry]
+    next_cursor: Annotated[
+        str | None,
+        Field(
+            alias="nextCursor",
+            description="Continue backfill immediately when present; otherwise wait for new observations.",
+        ),
+    ] = None
+    observed_at_ms: Annotated[int, Field(alias="observedAtMs")]
+    skipped_record_count: Annotated[
+        int,
+        Field(
+            alias="skippedRecordCount",
+            description="Malformed rollout lines or unsupported timing records encountered in this page.",
+            ge=0,
+        ),
+    ]
+
+
+class ThreadTimingUpdatedNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    page: ThreadTimingPage
+    subscription_id: Annotated[str, Field(alias="subscriptionId")]
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str | None, Field(alias="turnId")] = None
+
+
 class Turn(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -14576,6 +14890,23 @@ class ThreadControlChangedServerNotification(BaseModel):
         Literal["thread/control/changed"], Field(title="Thread/control/changedNotificationMethod")
     ]
     params: ThreadControlChangedNotification
+
+
+class ThreadTimingUpdatedServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["thread/timing/updated"], Field(title="Thread/timing/updatedNotificationMethod")
+    ]
+    params: ThreadTimingUpdatedNotification
 
 
 class TurnStartedServerNotification(BaseModel):
@@ -15226,6 +15557,9 @@ class ClientRequest(
         | ThreadLoadedListRequest
         | ThreadReadRequest
         | ThreadNoteCreateRequest
+        | ThreadTimingReadRequest
+        | ThreadTimingSubscribeRequest
+        | ThreadTimingUnsubscribeRequest
         | ThreadTurnsListRequest
         | ThreadItemsListRequest
         | ThreadInjectItemsRequest
@@ -15349,6 +15683,9 @@ class ClientRequest(
         | ThreadLoadedListRequest
         | ThreadReadRequest
         | ThreadNoteCreateRequest
+        | ThreadTimingReadRequest
+        | ThreadTimingSubscribeRequest
+        | ThreadTimingUnsubscribeRequest
         | ThreadTurnsListRequest
         | ThreadItemsListRequest
         | ThreadInjectItemsRequest
@@ -15718,6 +16055,8 @@ class ServerNotification(
         | ThreadEnvironmentConnectedServerNotification
         | ThreadEnvironmentDisconnectedServerNotification
         | ThreadSettingsUpdatedServerNotification
+        | ThreadTimingUpdatedServerNotification
+        | ThreadTimingSubscriptionClosedServerNotification
         | ThreadTokenUsageUpdatedServerNotification
         | TurnStartedServerNotification
         | HookStartedServerNotification
@@ -15812,6 +16151,8 @@ class ServerNotification(
         | ThreadEnvironmentConnectedServerNotification
         | ThreadEnvironmentDisconnectedServerNotification
         | ThreadSettingsUpdatedServerNotification
+        | ThreadTimingUpdatedServerNotification
+        | ThreadTimingSubscriptionClosedServerNotification
         | ThreadTokenUsageUpdatedServerNotification
         | TurnStartedServerNotification
         | HookStartedServerNotification

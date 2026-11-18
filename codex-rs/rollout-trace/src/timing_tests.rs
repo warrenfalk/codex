@@ -9,6 +9,39 @@ fn context() -> TimingContext {
 }
 
 #[test]
+fn live_snapshots_include_pending_waits_and_retire_finished_spans() {
+    let timing = context();
+    let id = timing.shared.thread_id;
+    let request = timing
+        .for_attempt(/*attempt*/ 1)
+        .span(TimingPhase::ModelRequest);
+    let mut capture = StreamTimingCapture::new(timing.under(&request));
+    let initial = timing.drain();
+    let waiting = capture.waiting();
+    let snapshot = active_timing(id, Some("turn"));
+    assert_eq!(snapshot.len(), 1);
+    assert_eq!(snapshot[0].record, initial[0]);
+    assert!(snapshot[0].stream.as_ref().unwrap().receive_wait_us > 0);
+    assert!(timing.drain().is_empty());
+    assert!(active_timing(id, Some("other")).is_empty());
+    drop(waiting);
+    let processing = capture.processing();
+    capture.observe(StreamObservation::Delta { id: None, bytes: 7 });
+    let snapshot = active_timing(id, None);
+    let stream = snapshot[0].stream.as_ref().unwrap();
+    assert_eq!((stream.delta_count, stream.delta_bytes), (1, 7));
+    assert!(stream.event_processing_us > 0);
+    drop(processing);
+    capture.finish(&request, TimingStatus::Completed);
+    assert!(active_timing(id, None).is_empty());
+    assert_eq!(timing.drain().len(), 1);
+    let cancelled = timing.span(TimingPhase::StreamSetup);
+    assert_eq!(active_timing(id, None).len(), 1);
+    drop(cancelled);
+    assert!(active_timing(id, None).is_empty());
+}
+
+#[test]
 fn streamed_deltas_are_aggregated_without_per_delta_records() {
     let timing = context();
     let request = timing

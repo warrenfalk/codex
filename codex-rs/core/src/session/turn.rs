@@ -3284,13 +3284,14 @@ async fn try_run_sampling_request(
         );
 
         let receive_started = Instant::now();
+        let receive_wait = stream_capture.waiting();
         let event = resampling
             .next(&mut stream)
             .instrument(trace_span!(parent: &handle_responses, "receiving"))
             .or_cancel(&preempt)
             .or_cancel(&cancellation_token)
             .await;
-        stream_capture.record_wait(receive_started.elapsed());
+        drop(receive_wait);
         let _event_processing_timing = stream_capture.processing();
         // Split the existing iteration span without adding another span per streamed delta.
         handle_responses.record(

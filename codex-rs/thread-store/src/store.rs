@@ -340,6 +340,18 @@ pub trait ThreadStore: Any + Send + Sync {
         })
     }
 
+    /// Reads a bounded prefix of content-free timing observations, including archived threads.
+    fn read_timing(
+        &self,
+        _params: crate::ReadTimingParams,
+    ) -> ThreadStoreFuture<'_, crate::TimingPage> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "thread/timing/read",
+            })
+        })
+    }
+
     /// Reads a thread summary and optionally its persisted history.
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread>;
 

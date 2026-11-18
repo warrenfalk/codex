@@ -3255,6 +3255,78 @@
             },
             "method": {
               "enum": [
+                "thread/timing/read"
+              ],
+              "title": "Thread/timing/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadTimingReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/timing/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/timing/subscribe"
+              ],
+              "title": "Thread/timing/subscribeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadTimingSubscribeParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/timing/subscribeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/timing/unsubscribe"
+              ],
+              "title": "Thread/timing/unsubscribeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadTimingUnsubscribeParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/timing/unsubscribeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/turns/list"
               ],
               "title": "Thread/turns/listRequestMethod",
@@ -20020,6 +20092,46 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/timing/updated"
+              ],
+              "title": "Thread/timing/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadTimingUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/timing/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/timing/subscriptionClosed"
+              ],
+              "title": "Thread/timing/subscriptionClosedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadTimingSubscriptionClosedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/timing/subscriptionClosedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/tokenUsage/updated"
               ],
               "title": "Thread/tokenUsage/updatedNotificationMethod",
@@ -27430,6 +27542,602 @@
           "type": "object"
         }
       ]
+    },
+    "ThreadTimingActiveSpan": {
+      "properties": {
+        "elapsedUs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "record": {
+          "$ref": "#/definitions/ThreadTimingRecord"
+        },
+        "stream": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadTimingStream"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "elapsedUs",
+        "record"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingEntry": {
+      "properties": {
+        "id": {
+          "description": "Stable identity in this rollout, suitable for deduplicating a replayed page.",
+          "type": "string"
+        },
+        "record": {
+          "$ref": "#/definitions/ThreadTimingRecord"
+        }
+      },
+      "required": [
+        "id",
+        "record"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingEvent": {
+      "oneOf": [
+        {
+          "properties": {
+            "at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "model": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "started"
+              ],
+              "title": "StartedThreadTimingEventType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "model",
+            "type"
+          ],
+          "title": "StartedThreadTimingEvent",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "duration_us": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "response_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "$ref": "#/definitions/ThreadTimingStatus"
+            },
+            "stream": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ThreadTimingStream"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "completed"
+              ],
+              "title": "CompletedThreadTimingEventType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "duration_us",
+            "status",
+            "type"
+          ],
+          "title": "CompletedThreadTimingEvent",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "boundary": {
+              "$ref": "#/definitions/ThreadTimingItemBoundary"
+            },
+            "item_id": {
+              "type": "string"
+            },
+            "item_type": {
+              "type": "string"
+            },
+            "stream": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ThreadTimingItem"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "item"
+              ],
+              "title": "ItemThreadTimingEventType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "boundary",
+            "item_id",
+            "item_type",
+            "type"
+          ],
+          "title": "ItemThreadTimingEvent",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "at_ms": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "response_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "responseCreated"
+              ],
+              "title": "ResponseCreatedThreadTimingEventType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "response_id",
+            "type"
+          ],
+          "title": "ResponseCreatedThreadTimingEvent",
+          "type": "object"
+        }
+      ]
+    },
+    "ThreadTimingItem": {
+      "properties": {
+        "deltaBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "deltaCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "firstDeltaAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lastDeltaAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "deltaBytes",
+        "deltaCount"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingItemBoundary": {
+      "enum": [
+        "added",
+        "done"
+      ],
+      "type": "string"
+    },
+    "ThreadTimingPage": {
+      "description": "A notification page is separate from the RPC response in exported schema namespaces.",
+      "properties": {
+        "active": {
+          "items": {
+            "$ref": "#/definitions/ThreadTimingActiveSpan"
+          },
+          "type": "array"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "data": {
+          "items": {
+            "$ref": "#/definitions/ThreadTimingEntry"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "skippedRecordCount": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "active",
+        "cursor",
+        "data",
+        "observedAtMs",
+        "skippedRecordCount"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingPhase": {
+      "enum": [
+        "prepareRequest",
+        "samplingAttempt",
+        "modelRequest",
+        "transportAttempt",
+        "streamSetup",
+        "modelCatalogRefresh",
+        "toolWait",
+        "retryRecovery",
+        "modelOutput"
+      ],
+      "type": "string"
+    },
+    "ThreadTimingReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadTimingReadParams",
+      "type": "object"
+    },
+    "ThreadTimingReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "active": {
+          "description": "Process-local provisional counters, replaced by durable completions when available.",
+          "items": {
+            "$ref": "#/definitions/ThreadTimingActiveSpan"
+          },
+          "type": "array"
+        },
+        "cursor": {
+          "description": "Resume after the scanned prefix, including when data is empty or at EOF.",
+          "type": "string"
+        },
+        "data": {
+          "items": {
+            "$ref": "#/definitions/ThreadTimingEntry"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "description": "Continue backfill immediately when present; otherwise wait for new observations.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "skippedRecordCount": {
+          "description": "Malformed rollout lines or unsupported timing records encountered in this page.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "active",
+        "cursor",
+        "data",
+        "observedAtMs",
+        "skippedRecordCount"
+      ],
+      "title": "ThreadTimingReadResponse",
+      "type": "object"
+    },
+    "ThreadTimingRecord": {
+      "properties": {
+        "attempt": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "event": {
+          "$ref": "#/definitions/ThreadTimingEvent"
+        },
+        "parentSpanId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phase": {
+          "$ref": "#/definitions/ThreadTimingPhase"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "spanId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "version": {
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt",
+        "event",
+        "phase",
+        "requestId",
+        "spanId",
+        "threadId",
+        "turnId",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingStatus": {
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "ThreadTimingStream": {
+      "properties": {
+        "deltaBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "deltaCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "eventCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "eventProcessingUs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "firstDeltaAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "firstEventAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lastDeltaAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lastEventAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "omittedItemCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "receiveWaitUs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deltaBytes",
+        "deltaCount",
+        "eventCount",
+        "eventProcessingUs",
+        "omittedItemCount",
+        "receiveWaitUs"
+      ],
+      "type": "object"
+    },
+    "ThreadTimingSubscribeParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cursor": {
+          "description": "Omit to backfill from the beginning, or pass a read/update cursor to resume.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subscriptionId": {
+          "description": "Client-chosen connection-local identity, also present on early notifications.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "threadId"
+      ],
+      "title": "ThreadTimingSubscribeParams",
+      "type": "object"
+    },
+    "ThreadTimingSubscribeResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ThreadTimingSubscribeResponse",
+      "type": "object"
+    },
+    "ThreadTimingSubscriptionClosedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "error": {
+          "description": "A failed reader requires an explicit resubscription; its last cursor stays valid.",
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "subscriptionId",
+        "threadId"
+      ],
+      "title": "ThreadTimingSubscriptionClosedNotification",
+      "type": "object"
+    },
+    "ThreadTimingUnsubscribeParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "subscriptionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionId"
+      ],
+      "title": "ThreadTimingUnsubscribeParams",
+      "type": "object"
+    },
+    "ThreadTimingUnsubscribeResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ThreadTimingUnsubscribeResponse",
+      "type": "object"
+    },
+    "ThreadTimingUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "page": {
+          "$ref": "#/definitions/ThreadTimingPage"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "page",
+        "subscriptionId",
+        "threadId"
+      ],
+      "title": "ThreadTimingUpdatedNotification",
+      "type": "object"
     },
     "ThreadTokenUsage": {
       "properties": {

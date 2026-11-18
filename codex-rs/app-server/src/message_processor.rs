@@ -158,6 +158,7 @@ fn reject_removed_permission_profile(request: &JSONRPCRequest) -> Result<(), JSO
 }
 
 pub(crate) struct MessageProcessor {
+    thread_timing: crate::thread_timing::ThreadTimingService,
     thread_control: Arc<crate::thread_control::ThreadControlService>,
     pub(crate) turn_admission: TurnAdmission,
     user_verification: Arc<crate::user_verification::Service>,
@@ -693,6 +694,10 @@ impl MessageProcessor {
         );
 
         Self {
+            thread_timing: crate::thread_timing::ThreadTimingService::new(
+                Arc::clone(&thread_store),
+                Arc::clone(&outgoing),
+            ),
             thread_control,
             turn_admission,
             user_verification,
@@ -1014,6 +1019,7 @@ impl MessageProcessor {
                 "timed out waiting for connection RPCs to drain"
             );
         }
+        self.thread_timing.connection_closed(connection_id).await;
         self.outgoing.connection_closed(connection_id).await;
         self.fs_processor.connection_closed(connection_id).await;
         self.command_exec_processor
@@ -1784,6 +1790,22 @@ impl MessageProcessor {
             ClientRequest::ThreadNoteCreate { params, .. } => {
                 self.thread_processor.thread_note_create(params).await
             }
+            ClientRequest::ThreadTimingRead { params, .. } => self
+                .thread_timing
+                .read(params)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::ThreadTimingSubscribe { params, .. } => self
+                .thread_timing
+                .subscribe(request_id.connection_id, params)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::ThreadTimingUnsubscribe { params, .. } => Ok(Some(
+                self.thread_timing
+                    .unsubscribe(request_id.connection_id, params.subscription_id)
+                    .await
+                    .into(),
+            )),
             ClientRequest::ThreadTurnsList { params, .. } => {
                 self.thread_processor.thread_turns_list(params).await
             }

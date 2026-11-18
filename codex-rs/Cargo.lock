@@ -2146,6 +2146,7 @@ dependencies = [
  "codex-queue-extension",
  "codex-rmcp-client",
  "codex-rollout",
+ "codex-rollout-trace",
  "codex-runtime-agent-instance",
  "codex-sandboxing",
  "codex-shell-command",
