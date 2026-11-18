@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 GIB = 1024**3
@@ -134,7 +135,7 @@ def resource_plan(cwd, paths, jobs, memory_per_job_gib, disk_required_gib):
 
 @contextmanager
 def heavy_lock(state_dir):
-    """Keep the lock inherited by a launched child if the logger exits early."""
+    """Lease the lock to a supervisor if the logger exits early."""
     try:
         import fcntl
     except ImportError as error:
@@ -149,3 +150,27 @@ def heavy_lock(state_dir):
             ) from error
         # Do not explicitly unlock: a surviving child must retain the lock.
         yield handle.fileno()
+
+
+def supervised_command(command):
+    """Hold the inherited lease without exposing it to the workload or helpers."""
+    return [sys.executable, str(Path(__file__).resolve()), *command]
+
+
+if __name__ == "__main__":
+    # Popen closes the inherited lock descriptor in the actual workload. Only
+    # this supervisor retains it, so background helpers cannot prolong the lease.
+    try:
+        workload = subprocess.Popen(sys.argv[1:], close_fds=True)
+    except OSError as error:
+        print(f"Could not launch command: {error}", file=sys.stderr)
+        sys.exit(127)
+    while True:
+        try:
+            status = workload.wait()
+            break
+        except KeyboardInterrupt:
+            # Keep the lease until the workload actually exits, even when the
+            # logger is interrupted. Do not terminate a running compiler.
+            continue
+    sys.exit(status if status >= 0 else 128 - status)

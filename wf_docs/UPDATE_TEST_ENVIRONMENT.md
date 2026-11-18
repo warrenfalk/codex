@@ -89,8 +89,10 @@ On Linux and macOS, an OS-held lock prevents two guarded commands using the same
 state directory from overlapping. It fails promptly instead of queuing another
 large build. All heavy commands for this replay must use that state directory;
 ordinary logging, other replays, and commands launched outside it are not locked.
-The launched process inherits the lock so a logger exit alone does not release
-it while that process remains alive. This is not a background-job supervisor.
+An isolated supervisor retains the lock so a logger exit alone does not release
+it while the command remains alive. The command and its helpers do not inherit
+the lock descriptor, so surviving background helpers cannot keep a completed
+command locked. This one-shot supervisor does not manage background jobs.
 Other platforms retain ordinary logging; guarded mode reports unsupported locking.
 
 Compiler jobs are selected from CPU availability and currently available RAM,

@@ -9,6 +9,8 @@ exhaustion without assuming a particular workstation's RAM, CPU count, or paths.
   Ordinary logged commands remain compatible and can run concurrently.
 - A running child retains exclusion if its logger exits. Completed commands
   release exclusion without deleting stale PID files or requiring manual cleanup.
+  Workloads and their background helpers do not inherit the lock descriptor;
+  background helpers surviving a completed command cannot prolong its lease.
 - Compiler parallelism uses available memory and CPU constraints, including
   available Linux cgroup v2 ancestor limits. Unknown memory falls back to serial
   compilation. Insufficient estimated one-job memory stops preflight.
@@ -26,5 +28,6 @@ exhaustion without assuming a particular workstation's RAM, CPU count, or paths.
   platforms report their limitation while ordinary logging remains available.
 
 Validation must exercise constrained memory/CPU selection, unknown-memory
-fallback, low disk rejection, lock contention and child inheritance, and a guarded
+fallback, low disk rejection, lock contention and lease survival without workload
+descriptor inheritance, and a guarded
 child failure retaining its actual exit status and recorded effective settings.

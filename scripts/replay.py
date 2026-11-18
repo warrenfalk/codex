@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 
-from replay_resources import heavy_lock, resource_plan
+from replay_resources import heavy_lock, resource_plan, supervised_command
 
 
 def write_record(path: Path, record: dict) -> None:
@@ -145,7 +145,7 @@ def run_command(
         process = None
         try:
             process = subprocess.Popen(
-                command,
+                supervised_command(command) if lock_fd is not None else command,
                 cwd=cwd,
                 stdout=handle,
                 stderr=subprocess.STDOUT,

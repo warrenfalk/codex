@@ -95,6 +95,40 @@ class ResourcePreflightTest(unittest.TestCase):
             pass
 
     @unittest.skipUnless(os.name == "posix", "POSIX advisory locks")
+    def test_supervisor_holds_lease_without_leaking_it_to_workload(self):
+        workload = (
+            "import os,sys; "
+            "target=os.stat(sys.argv[1]); "
+            "fds=[]\n"
+            "for fd in range(3,256):\n"
+            " try:\n"
+            "  st=os.fstat(fd)\n"
+            "  if (st.st_dev,st.st_ino)==(target.st_dev,target.st_ino): fds.append(fd)\n"
+            " except OSError: pass\n"
+            "print(fds,flush=True); sys.stdin.read(); sys.exit(7)"
+        )
+        with resources.heavy_lock(self.root) as descriptor:
+            child = subprocess.Popen(
+                resources.supervised_command(
+                    [sys.executable, "-c", workload, str(self.root / "heavy.lock")]
+                ),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                pass_fds=(descriptor,),
+            )
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "[]")
+            with self.assertRaisesRegex(ValueError, "Another heavy command"):
+                with resources.heavy_lock(self.root):
+                    self.fail("supervisor must retain the lease")
+        finally:
+            child.communicate(timeout=10)
+        self.assertEqual(child.returncode, 7)
+        with resources.heavy_lock(self.root):
+            pass
+
+    @unittest.skipUnless(os.name == "posix", "POSIX advisory locks")
     def test_guard_records_effective_jobs_and_preserves_command_failure(self):
         script = Path(replay.__file__).resolve()
         result = subprocess.run(
