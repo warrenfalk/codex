@@ -26,6 +26,10 @@ not a replacement test runner. Rust tests still run through `just test`.
    output as well as failures. Record test names, counts, and actual behavior.
    Repeat affected preflight checks after changing the launcher, before another
    broad suite.
+   When shared test startup or state isolation changes, include ordinary tests,
+   authentication fixtures that re-execute their test binary, and helpers run
+   inside read-only sandboxes. Passing one consumer does not establish that the
+   other subprocess roles still work.
 
 Use the same recorded environment for the final workspace suite. If workspace
 feature unification requires an explicit feature, record and test that choice.
