@@ -60,6 +60,11 @@ Cargo's build profiles, which control compilation and debug information.
    --bin <helper-name>` in the same shell, target directory, feature configuration,
    and compatible Cargo profile. Verify that the launched binary is the current
    one. Use the concrete baseline examples below only when that release needs them.
+   Rebuilding a helper after cache cleanup does not restore its resource layout:
+   restore and verify required links too. For v0.169.0, sandboxed exec tests with
+   a restricted PATH require `target/debug/codex-resources/bwrap` to resolve to
+   the prepared `target/debug/bwrap`, even when other sandbox tests find bwrap
+   on the development shell's PATH.
 4. Run a small behavioral probe to verify helper discovery and fixture paths;
    an early return for a missing binary does not count as coverage. Then run the
    planned checkpoint tests. Reuse their build artifacts for the final suite.
