@@ -13,6 +13,8 @@ import sys
 import time
 import uuid
 
+from replay_resources import heavy_lock, resource_plan
+
 
 def write_record(path: Path, record: dict) -> None:
     """Replace a complete record atomically and flush it before returning."""
@@ -69,7 +71,14 @@ def tail(path: Path) -> str:
         )
 
 
-def run_command(state_dir: Path, label: str, cwd: Path, command: list[str]) -> int:
+def run_command(
+    state_dir: Path,
+    label: str,
+    cwd: Path,
+    command: list[str],
+    resources=None,
+    lock_fd=None,
+) -> int:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", label):
         raise ValueError(
             "Use a label of 1-120 letters, digits, dots, hyphens or underscores"
@@ -121,6 +130,11 @@ def run_command(state_dir: Path, label: str, cwd: Path, command: list[str]) -> i
         "status": "running",
         "exit_code": None,
     }
+    environment = os.environ.copy()
+    if resources is not None:
+        record["resources"] = resources
+        environment["CARGO_BUILD_JOBS"] = str(resources["jobs"])
+        record["environment"]["CARGO_BUILD_JOBS"] = environment["CARGO_BUILD_JOBS"]
     start = time.monotonic()
     with log.open("w", encoding="utf-8") as handle:
         handle.write(f"cwd: {cwd}\ncommand: {shlex.join(command)}\nhead: {head}\n\n")
@@ -131,7 +145,12 @@ def run_command(state_dir: Path, label: str, cwd: Path, command: list[str]) -> i
         process = None
         try:
             process = subprocess.Popen(
-                command, cwd=cwd, stdout=handle, stderr=subprocess.STDOUT
+                command,
+                cwd=cwd,
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                env=environment,
+                **({"pass_fds": (lock_fd,)} if lock_fd is not None else {}),
             )
         except OSError as error:
             handle.write(f"Could not launch command: {error}\n")
@@ -300,6 +319,33 @@ def main() -> int:
     run.add_argument("--state-dir", type=Path, required=True)
     run.add_argument("--label", required=True)
     run.add_argument("--cwd", type=Path, default=Path.cwd())
+    run.add_argument(
+        "--heavy",
+        action="store_true",
+        help="lock this replay and check local build resources",
+    )
+    run.add_argument(
+        "--jobs", type=int, help="override adaptive compiler jobs (requires --heavy)"
+    )
+    run.add_argument(
+        "--memory-per-job-gib",
+        type=float,
+        default=8,
+        help="estimated compiler RAM per job, default 8 GiB",
+    )
+    run.add_argument(
+        "--disk-required-gib",
+        type=float,
+        default=0,
+        help="estimated additional build space, plus 2 GiB reserve",
+    )
+    run.add_argument(
+        "--disk-path",
+        type=Path,
+        action="append",
+        default=[],
+        help="additional output/store filesystem to check",
+    )
     run.add_argument("command", nargs=argparse.REMAINDER)
     timing = actions.add_parser(
         "report", help="summarize a state directory or legacy attempts.jsonl"
@@ -311,6 +357,53 @@ def main() -> int:
             init_queue(args.state_dir, args.cwd, args.base, args.source, args.target)
         elif args.action == "run":
             command = args.command[1:] if args.command[:1] == ["--"] else args.command
+            if args.heavy:
+                with heavy_lock(args.state_dir) as descriptor:
+                    resources = resource_plan(
+                        args.cwd.resolve(),
+                        args.disk_path,
+                        args.jobs,
+                        args.memory_per_job_gib,
+                        args.disk_required_gib,
+                    )
+                    # Direct local Nix builds must also limit daemon parallelism.
+                    if (
+                        len(command) >= 2
+                        and Path(command[0]).name == "nix"
+                        and command[1] == "build"
+                    ):
+                        if any(
+                            arg in ("--cores", "--max-jobs", "-j", "--option")
+                            or arg.startswith(("--cores=", "--max-jobs=", "-j"))
+                            for arg in command[2:]
+                        ):
+                            raise ValueError(
+                                "With --heavy use --jobs instead of Nix concurrency/options flags"
+                            )
+                        command = [
+                            *command[:2],
+                            "--cores",
+                            str(resources["jobs"]),
+                            "--max-jobs",
+                            "1",
+                            *command[2:],
+                        ]
+                    print(f"Heavy build resources: {json.dumps(resources)}", flush=True)
+                    return run_command(
+                        args.state_dir,
+                        args.label,
+                        args.cwd,
+                        command,
+                        resources=resources,
+                        lock_fd=descriptor,
+                    )
+            if (
+                args.jobs is not None
+                or args.disk_path
+                or args.disk_required_gib
+                or args.memory_per_job_gib != 8
+            ):
+                raise ValueError("Resource overrides require --heavy")
             return run_command(args.state_dir, args.label, args.cwd, command)
         else:
             report(args.path)
