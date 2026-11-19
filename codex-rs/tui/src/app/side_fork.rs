@@ -101,7 +101,7 @@ impl App {
             ));
             return Ok(false);
         }
-        self.chat_widget.expect_manual_thread_name(thread_id, name);
+        self.chat_widget.display_thread_name(thread_id, name);
         self.cancel_thread_title_generation(thread_id);
         let transition = AdditionalContextDeveloperFragment::new(
             "side_conversation_end".into(),
