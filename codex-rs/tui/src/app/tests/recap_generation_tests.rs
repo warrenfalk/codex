@@ -3,6 +3,7 @@ use crate::app::session_lifecycle::ThreadAttachPresentation;
 use crate::app::tests::session_lifecycle_requests::recorded_params;
 use crate::app::tests::session_lifecycle_requests::start_recording_remote_app_server;
 use crate::app_event::RecapTrigger;
+use crate::temporary_structured_request::TemporaryRequestKind;
 use crate::temporary_structured_request::TemporaryThreadKind;
 use codex_app_server_client::AppServerClient;
 use codex_model_provider_info::ModelProviderInfo;
@@ -510,8 +511,13 @@ async fn temporary_recap_threads_disable_memories_and_remote_mcp_servers() -> Re
     .await?;
     let thread_id = ThreadId::from_string(&response.thread.id)?;
     let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-    app.temporary_structured_requests
-        .insert(thread_id, (TemporaryThreadKind::Recap, sender));
+    app.temporary_structured_requests.insert(
+        thread_id,
+        (
+            TemporaryRequestKind::Structured(TemporaryThreadKind::Recap),
+            sender,
+        ),
+    );
     // Even if a hidden thread reaches visible routing, it must not prompt.
     app.primary_thread_id = Some(thread_id);
     app.active_thread_id = Some(thread_id);
@@ -534,8 +540,13 @@ async fn temporary_recap_threads_disable_memories_and_remote_mcp_servers() -> Re
     // Its request stays unanswered and never enters the visible chat.
     let title_id = ThreadId::new();
     let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-    app.temporary_structured_requests
-        .insert(title_id, (TemporaryThreadKind::Title, sender));
+    app.temporary_structured_requests.insert(
+        title_id,
+        (
+            TemporaryRequestKind::Structured(TemporaryThreadKind::Title),
+            sender,
+        ),
+    );
     let question = request_user_input_request(title_id, "title-turn", "question");
     app.handle_app_server_event(
         &app_server,

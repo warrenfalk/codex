@@ -14,6 +14,7 @@ use crate::app_server_session::ThreadSettingsOwner;
 use crate::history_cell::ThreadRecapHistoryCell;
 use crate::history_cell::ThreadRecapLoadingCell;
 use crate::pager_overlay::Overlay;
+use crate::temporary_structured_request::TemporaryRequestKind;
 use crate::temporary_structured_request::TemporaryStructuredThreadOptions;
 use crate::temporary_structured_request::TemporaryThreadKind;
 use crate::temporary_structured_request::run_temporary_structured_turn;
@@ -336,8 +337,13 @@ impl App {
         }
 
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.temporary_structured_requests
-            .insert(temporary_thread_id, (TemporaryThreadKind::Recap, sender));
+        self.temporary_structured_requests.insert(
+            temporary_thread_id,
+            (
+                TemporaryRequestKind::Structured(TemporaryThreadKind::Recap),
+                sender,
+            ),
+        );
 
         let request_handle = app_server.request_handle();
         let event_sender = self.app_event_tx.clone();

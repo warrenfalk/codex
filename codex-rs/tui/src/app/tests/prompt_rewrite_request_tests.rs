@@ -18,7 +18,13 @@ async fn prompt_rewrite_requests_reject_without_visible_events_or_pending_approv
     for active in [true, false] {
         if active {
             let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-            app.temporary_structured_requests.insert(thread_id, sender);
+            app.temporary_structured_requests.insert(
+                thread_id,
+                (
+                    crate::temporary_structured_request::TemporaryRequestKind::PromptRewrite,
+                    sender,
+                ),
+            );
         } else {
             app.temporary_structured_requests.remove(&thread_id);
         }

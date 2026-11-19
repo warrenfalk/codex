@@ -671,8 +671,12 @@ impl App {
         {
             // Managed policy can allow a title turn to ask a question. Keep it on
             // the hidden thread until the structured turn times out, as on desktop.
-            if *kind == crate::temporary_structured_request::TemporaryThreadKind::Title
-                && matches!(request, ServerRequest::ToolRequestUserInput { params, .. } if params.is_blocking)
+            if matches!(
+                kind,
+                crate::temporary_structured_request::TemporaryRequestKind::Structured(
+                    crate::temporary_structured_request::TemporaryThreadKind::Title
+                )
+            ) && matches!(request, ServerRequest::ToolRequestUserInput { params, .. } if params.is_blocking)
             {
                 return;
             }

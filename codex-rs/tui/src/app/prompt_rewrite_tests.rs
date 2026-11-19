@@ -156,8 +156,10 @@ async fn completed_hidden_turn_applies_rewrite_without_registering_visible_routi
     app.mark_prompt_rewrite_thread(child_thread_id);
     app.pending_prompt_rewrite = Some(PendingPromptRewrite { child_thread_id });
     let (sender, _receiver) = unbounded_channel();
-    app.temporary_structured_requests
-        .insert(child_thread_id, sender);
+    app.temporary_structured_requests.insert(
+        child_thread_id,
+        (TemporaryRequestKind::PromptRewrite, sender),
+    );
 
     app.finish_prompt_rewrite(PromptRewriteCompletion {
         child_thread_id,

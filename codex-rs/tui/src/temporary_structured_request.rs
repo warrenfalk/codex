@@ -37,6 +37,12 @@ pub(crate) enum TemporaryThreadKind {
     Recap,
 }
 
+/// Identifies the active request for routing replies from a hidden thread.
+pub(crate) enum TemporaryRequestKind {
+    Structured(TemporaryThreadKind),
+    PromptRewrite,
+}
+
 /// Settings for an isolated structured request using the visible thread's provider.
 pub(crate) struct TemporaryStructuredThreadOptions {
     pub(crate) kind: TemporaryThreadKind,

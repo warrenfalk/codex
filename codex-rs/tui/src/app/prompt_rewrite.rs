@@ -3,6 +3,7 @@
 use super::*;
 use crate::app_event::PromptRewriteCompletion;
 use crate::prompt_rewrite::PromptRewriteRequest;
+use crate::temporary_structured_request::TemporaryRequestKind;
 use crate::temporary_structured_request::collect_structured_response;
 use crate::temporary_structured_request::unsubscribe_temporary_thread;
 use codex_app_server_protocol::UserInput;
@@ -57,6 +58,10 @@ impl App {
 
     pub(super) fn is_prompt_rewrite_thread(&self, thread_id: ThreadId) -> bool {
         self.prompt_rewrite_thread_tombstones.contains(&thread_id)
+            || matches!(
+                self.temporary_structured_requests.get(&thread_id),
+                Some((TemporaryRequestKind::PromptRewrite, _))
+            )
     }
 
     pub(super) async fn handle_start_prompt_rewrite(&mut self, app_server: &mut AppServerSession) {
@@ -116,8 +121,10 @@ impl App {
         self.pending_prompt_rewrite = Some(PendingPromptRewrite { child_thread_id });
         let model_input = request.model_input();
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.temporary_structured_requests
-            .insert(child_thread_id, sender);
+        self.temporary_structured_requests.insert(
+            child_thread_id,
+            (TemporaryRequestKind::PromptRewrite, sender),
+        );
         let result = app_server
             .turn_start_model_only(
                 child_thread_id,

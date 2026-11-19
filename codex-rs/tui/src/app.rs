@@ -672,7 +672,7 @@ pub(crate) struct App {
     temporary_structured_requests: HashMap<
         ThreadId,
         (
-            crate::temporary_structured_request::TemporaryThreadKind,
+            crate::temporary_structured_request::TemporaryRequestKind,
             mpsc::UnboundedSender<ServerNotification>,
         ),
     >,

@@ -10,6 +10,7 @@ use crate::app_event::AppEvent;
 use crate::app_event::ThreadTitleDestination;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::ThreadSettingsOwner;
+use crate::temporary_structured_request::TemporaryRequestKind;
 use crate::temporary_structured_request::TemporaryStructuredThreadOptions;
 use crate::temporary_structured_request::TemporaryThreadKind;
 use crate::temporary_structured_request::run_temporary_structured_turn;
@@ -186,8 +187,13 @@ impl App {
         };
 
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.temporary_structured_requests
-            .insert(temporary_thread_id, (TemporaryThreadKind::Title, sender));
+        self.temporary_structured_requests.insert(
+            temporary_thread_id,
+            (
+                TemporaryRequestKind::Structured(TemporaryThreadKind::Title),
+                sender,
+            ),
+        );
 
         let request_handle = app_server.request_handle();
         let event_sender = self.app_event_tx.clone();
