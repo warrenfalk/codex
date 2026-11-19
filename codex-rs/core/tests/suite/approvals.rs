@@ -4611,9 +4611,12 @@ allow_local_binding = true
         .with_cloud_config_bundle(managed_network_requirements_loader())
         .with_config(move |config| {
             config.permissions.approval_policy = Constrained::allow_any(approval_policy);
+            config.workspace_roots_explicit = false;
             config
-                .set_legacy_sandbox_policy(sandbox_policy_for_config)
+                .permissions
+                .set_legacy_sandbox_policy(sandbox_policy_for_config, config.cwd.as_path())
                 .expect("set sandbox policy");
+            config.workspace_roots = config.permissions.workspace_roots().to_vec();
         });
     let test = builder.build(&server).await?;
     assert!(
