@@ -110,7 +110,10 @@ fn status_line_and_setup_preview_use_the_same_compact_values() {
             .status_line_for_items(values.iter().map(|(item, _)| *item), use_theme_colors)
             .expect("compact preview");
 
-        assert_eq!(FooterContent::HyperlinkLine(rendered.clone()), preview);
+        assert_eq!(
+            FooterContent::HyperlinkLine(Box::new(rendered.clone())),
+            preview,
+        );
         assert_eq!(
             rendered.line.to_string().replace('\\', "/"),
             "5.4 xhigh fast · 100% left · codex-cli/codex · gpt-feature"
