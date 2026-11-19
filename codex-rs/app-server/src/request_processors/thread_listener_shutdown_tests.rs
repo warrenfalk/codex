@@ -392,15 +392,14 @@ async fn resume_preserves_recovery_turn_before_status_publication() -> Result<()
     resumed.map_err(|err| anyhow::anyhow!(err.message))?;
     let completed = tokio::time::timeout(TIMEOUT, async {
         loop {
-            if let OutgoingEnvelope::ToConnection {
-                connection_id: recipient,
+            if let OutgoingEnvelope::ToConnections {
+                connection_ids: recipients,
                 message: OutgoingMessage::AppServerNotification(notification),
-                ..
             } = outgoing
                 .recv()
                 .await
                 .expect("reconnecting client channel closed")
-                && recipient == connection_id
+                && recipients == [connection_id]
                 && let ServerNotification::TurnCompleted(completed) = notification.notification
             {
                 return completed;
