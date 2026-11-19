@@ -811,6 +811,9 @@ fn wait_for_bwrap_child(pid: libc::pid_t) -> libc::c_int {
 fn register_synthetic_mount_targets(
     targets: &[crate::bwrap::SyntheticMountTarget],
 ) -> Vec<SyntheticMountTargetRegistration> {
+    if targets.is_empty() {
+        return Vec::new();
+    }
     with_synthetic_mount_registry_lock(|| {
         targets
             .iter()
@@ -942,6 +945,9 @@ fn scan_synthetic_mount_marker_dir(
 }
 
 pub(crate) fn cleanup_synthetic_mount_targets(targets: &[SyntheticMountTargetRegistration]) {
+    if targets.is_empty() {
+        return;
+    }
     with_synthetic_mount_registry_lock(|| {
         for target in targets.iter().rev() {
             match fs::symlink_metadata(&target.marker_file) {
