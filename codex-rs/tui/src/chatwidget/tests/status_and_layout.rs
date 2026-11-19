@@ -4691,10 +4691,10 @@ async fn status_line_model_with_reasoning_speed_footer_snapshots() {
 
     chat.local_settings.tui.status_line = Some(vec!["model-with-reasoning".to_string()]);
     chat.set_service_tier(Some(ServiceTier::Flex.request_value().to_string()));
-    insta::assert_snapshot!(status_line_text(&chat).expect("status line"), @"gpt-5.4 xhigh flex");
+    insta::assert_snapshot!(status_line_text(&chat).expect("status line"), @"5.4 xhigh flex");
 
     chat.set_service_tier(Some("low_latency".to_string()));
-    insta::assert_snapshot!(status_line_text(&chat).expect("status line"), @"gpt-5.4 xhigh low latency");
+    insta::assert_snapshot!(status_line_text(&chat).expect("status line"), @"5.4 xhigh low latency");
 }
 
 #[tokio::test]
