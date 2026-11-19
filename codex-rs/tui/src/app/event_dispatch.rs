@@ -641,7 +641,8 @@ impl App {
                 unreachable!("backend selection is handled by the session manager")
             }
             AppEvent::ArchiveCurrentThread(mode) => {
-                return self.archive_current_thread(tui, app_server, mode).await;
+                return crate::boxed_future!(self.archive_current_thread(tui, app_server, mode))
+                    .await;
             }
             AppEvent::DeleteCurrentThread => {
                 return self.delete_current_thread(tui, app_server).await;
