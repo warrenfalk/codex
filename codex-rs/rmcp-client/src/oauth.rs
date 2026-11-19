@@ -1790,7 +1790,7 @@ mod tests {
         let local_key = compute_store_key("local:ema-idp:demo", &tokens.url)?;
         let entry = FallbackTokenEntry::from(&tokens);
         write_fallback_file(&FallbackFile::from([
-            (key.clone(), entry.clone()),
+            (key, entry.clone()),
             (local_key.clone(), entry),
         ]))?;
 
