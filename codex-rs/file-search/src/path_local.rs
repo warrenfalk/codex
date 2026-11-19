@@ -53,7 +53,11 @@ fn collect_path_local_matches(query: &str, search_directories: &[PathBuf]) -> Ve
     let name_prefix = name_prefix.to_lowercase();
 
     let mut matches = Vec::new();
+    let mut seen_roots = HashSet::new();
     for root in search_directories {
+        if !seen_roots.insert(root) {
+            continue;
+        }
         let directory = root.join(&relative_dir);
         let Ok(entries) = fs::read_dir(directory) else {
             continue;
