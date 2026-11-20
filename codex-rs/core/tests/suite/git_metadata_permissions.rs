@@ -4,6 +4,8 @@ use codex_file_system::CreateDirectoryOptions;
 use codex_file_system::ExecutorFileSystem;
 use codex_file_system::WriteFileOptions;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::protocol::TurnEnvironmentRequests;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
@@ -26,6 +28,15 @@ use tempfile::TempDir;
 
 const GIT_CONFIG: &str =
     "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tlogallrefupdates = true\n";
+const GIT_WORKSPACE_CONFIG: &str = r#"approval_policy = "never"
+default_permissions = "git-workspace"
+
+[permissions.git-workspace]
+extends = ":workspace"
+
+[permissions.git-workspace.filesystem]
+":git_metadata" = "write"
+"#;
 
 async fn create_directory(
     fs: &dyn ExecutorFileSystem,
@@ -60,6 +71,24 @@ async fn write_file(
     Ok(())
 }
 
+async fn init_git_fixture(fs: &dyn ExecutorFileSystem, cwd: &AbsolutePathBuf) -> Result<()> {
+    for path in [
+        ".git/objects/info",
+        ".git/objects/pack",
+        ".git/refs/heads",
+        ".git/refs/tags",
+        ".git/hooks",
+        ".git/info",
+        ".git/branches",
+    ] {
+        create_directory(fs, cwd, path).await?;
+    }
+    write_file(fs, cwd, ".git/HEAD", "ref: refs/heads/main\n").await?;
+    write_file(fs, cwd, ".git/config", GIT_CONFIG).await?;
+    write_file(fs, cwd, "tracked.txt", "initial\n").await?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn opted_in_profile_can_commit_and_manage_worktrees_but_cannot_change_git_controls()
 -> Result<()> {
@@ -70,39 +99,12 @@ async fn opted_in_profile_can_commit_and_manage_worktrees_but_cannot_change_git_
     );
 
     let home = Arc::new(TempDir::new()?);
-    fs::write(
-        home.path().join("config.toml"),
-        r#"approval_policy = "never"
-default_permissions = "git-workspace"
-
-[permissions.git-workspace]
-extends = ":workspace"
-
-[permissions.git-workspace.filesystem]
-":git_metadata" = "write"
-"#,
-    )?;
+    fs::write(home.path().join("config.toml"), GIT_WORKSPACE_CONFIG)?;
 
     let builder = test_codex()
         .with_home(home)
         .with_model("gpt-5.4")
-        .with_workspace_setup(|cwd, fs| async move {
-            for path in [
-                ".git/objects/info",
-                ".git/objects/pack",
-                ".git/refs/heads",
-                ".git/refs/tags",
-                ".git/hooks",
-                ".git/info",
-                ".git/branches",
-            ] {
-                create_directory(fs.as_ref(), &cwd, path).await?;
-            }
-            write_file(fs.as_ref(), &cwd, ".git/HEAD", "ref: refs/heads/main\n").await?;
-            write_file(fs.as_ref(), &cwd, ".git/config", GIT_CONFIG).await?;
-            write_file(fs.as_ref(), &cwd, "tracked.txt", "initial\n").await?;
-            Ok(())
-        });
+        .with_workspace_setup(|cwd, fs| async move { init_git_fixture(fs.as_ref(), &cwd).await });
     let harness = TestCodexHarness::with_auto_env_builder(builder).await?;
 
     let call_id = "git-commit";
@@ -190,5 +192,96 @@ extends = ":workspace"
             .await?
     );
     assert!(harness.path_exists(".git/refs/heads/main").await?);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn opted_in_profile_can_stage_in_an_attached_project_with_git_controls_protected()
+-> Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_target_windows!(
+        Ok(()),
+        "the remote Windows test image does not provide a native Git executable"
+    );
+
+    let home = Arc::new(TempDir::new()?);
+    fs::write(home.path().join("config.toml"), GIT_WORKSPACE_CONFIG)?;
+    let builder = test_codex()
+        .with_home(home)
+        .with_model("gpt-5.4")
+        .with_workspace_setup(|cwd, fs| async move {
+            init_git_fixture(fs.as_ref(), &cwd).await?;
+            init_git_fixture(fs.as_ref(), &cwd.join("attached")).await
+        });
+    let harness = TestCodexHarness::with_auto_env_builder(builder).await?;
+    let test = harness.test();
+    let mut environment = test.executor_environment().request();
+    environment.workspace_roots = vec![environment.cwd.clone(), environment.cwd.join("attached")?];
+
+    let call_id = "stage-in-both-projects";
+    let command = concat!(
+        "set -eu; ",
+        "git add tracked.txt; ",
+        "git -C attached add tracked.txt; ",
+        "if git -C attached config codex.must-not-persist true; then exit 41; fi; ",
+        "if printf '#!/bin/sh\\n' > attached/.git/hooks/pre-commit; then exit 42; fi; ",
+        "git -C attached ls-files --error-unmatch tracked.txt"
+    );
+    let args = serde_json::to_string(&json!({
+        "cmd": command,
+        "yield_time_ms": 30_000,
+        "login": false,
+    }))?;
+    mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_function_call(call_id, "exec_command", &args),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    let cwd = test.config.cwd.clone();
+    test.codex
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
+                text: "stage the file in both projects".to_string(),
+                text_elements: Vec::new(),
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
+                runtime_workspace_roots: Some(vec![cwd.clone(), cwd.join("attached")]),
+                environments: Some(TurnEnvironmentRequests::new(cwd, vec![environment])),
+                ..Default::default()
+            }),
+        )
+        .await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let output = harness.function_call_stdout(call_id).await;
+    assert!(
+        output.contains("Process exited with code 0"),
+        "unexpected output: {output}"
+    );
+    assert!(harness.path_exists(".git/index").await?);
+    assert!(harness.path_exists("attached/.git/index").await?);
+    assert_eq!(
+        harness.read_file_text("attached/.git/config").await?,
+        GIT_CONFIG
+    );
+    assert!(
+        !harness
+            .path_exists("attached/.git/hooks/pre-commit")
+            .await?
+    );
     Ok(())
 }

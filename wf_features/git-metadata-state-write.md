@@ -3,8 +3,8 @@
 ## Intent
 
 Let an explicitly trusted permission profile run ordinary stateful Git commands without granting a
-repository-specific path for every checkout. The permission follows the active turn's repository,
-including linked worktrees, so one profile works across repositories and cwd changes.
+repository-specific path for every checkout. The permission covers the turn's working repository
+and its attached projects, including linked worktrees.
 
 ## Configuration
 
@@ -20,8 +20,10 @@ symbolic path, so sharing the config with an older binary does not broaden that 
 
 ## Required behavior
 
-- Resolve the repository independently for every turn on the selected executor. Do not persist an
-  absolute repository path in user configuration.
+- Resolve the repository containing the working directory and each runtime workspace root
+  independently for every turn on the selected executor. This includes roots added through the
+  project mention picker. Do not search beneath workspace roots for repositories or persist
+  absolute Git metadata paths in user configuration.
 - Enable the permission only when the selected named profile contains the opt-in and the repository
   worktree is already writable under that profile.
 - Support ordinary repositories and standard linked worktrees created by `git worktree`.
@@ -34,8 +36,7 @@ symbolic path, so sharing the config with an older binary does not broaden that 
   another checkout's files.
 - Fail closed for missing repositories, read-only profiles, malformed pointers, symlinked Git
   metadata roots, non-standard external Git directories, and mismatched worktree back-pointers.
-- Recompute the grant after cwd, environment, or permission-profile changes so access from a prior
-  repository does not remain active.
+- Recompute the grants after cwd, workspace-root, environment, or permission-profile changes.
 - Apply the grant and protected controls to every executed step, including later steps within the
   same turn. Each environment must use a named profile that explicitly opts in.
 - Missing protected controls may require temporary host filesystem entries while a sandbox is
@@ -87,6 +88,8 @@ repository already contained.
 
 - In an ordinary repository, a sandboxed Git add and commit succeed while local config writes and
   hook creation fail.
+- When another repository is attached, sandboxed staging works in both repositories while Git
+  config and hooks remain protected in the attached repository.
 - In a linked worktree, shared refs/objects and the active private index are writable while the
   `.git` pointer and private control pointers remain read-only.
 - From ordinary repositories and linked worktrees, comparison worktrees can be created and used,
@@ -104,8 +107,8 @@ repository already contained.
 - Nested sandbox execution removes its own temporary controls after completion or termination of
   its supervisor while the parent remains active. It preserves pre-existing empty files without
   needing write access to the parent sandbox's cleanup records.
-- A read-only project, malformed or forged pointer, unrelated repository, or later cwd does not
-  inherit the grant.
+- A read-only project, malformed or forged pointer, or unrelated repository does not inherit the
+  grant. Removing a workspace root drops its grant if the turn no longer selects that repository.
 - An empty or structurally incomplete `.git` directory does not receive the grant or prevent a
   sandboxed command from starting.
 - The same resolution behavior works through local and remote executor filesystems; unsupported

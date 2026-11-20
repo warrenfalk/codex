@@ -16,6 +16,7 @@ use codex_protocol::permissions::FileSystemSandboxPolicyContext;
 use codex_protocol::protocol::EnvironmentConfigState;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 
 const MAX_GIT_POINTER_BYTES: u64 = 4096;
@@ -107,78 +108,100 @@ pub(crate) async fn with_git_metadata_write_access(
         return permission_profile;
     }
 
-    let Ok(cwd) = context.cwd.to_abs_path() else {
-        return permission_profile;
-    };
-    let cwd_uri = context.cwd;
-    let base = match fs
-        .get_metadata(
-            cwd_uri,
-            GetMetadataOptions::default(),
+    let mut seen_repositories = HashSet::new();
+    let mut layouts = Vec::new();
+    let workspace_roots = context
+        .workspace_roots
+        .iter()
+        .filter(|root| *root != context.cwd);
+    for project in std::iter::once(context.cwd).chain(workspace_roots) {
+        let Ok(path) = project.to_abs_path() else {
+            continue;
+        };
+        let base = match fs
+            .get_metadata(
+                project,
+                GetMetadataOptions::default(),
+                /*sandbox*/ None,
+            )
+            .await
+        {
+            Ok(metadata) if metadata.is_directory => path,
+            _ if project == context.cwd => {
+                let Some(parent) = path.parent() else {
+                    continue;
+                };
+                parent
+            }
+            _ => continue,
+        };
+        let Some(repo_root) = find_nearest_native_ancestor_with_markers(
+            fs,
+            &base,
+            vec![".git".to_string()],
+            FindUpErrorPolicy::Ignore,
             /*sandbox*/ None,
         )
         .await
-    {
-        Ok(metadata) if metadata.is_directory => cwd.clone(),
-        _ => {
-            let Some(parent) = cwd.parent() else {
-                return permission_profile;
-            };
-            parent
+        .ok()
+        .flatten() else {
+            continue;
+        };
+        if !seen_repositories.insert(repo_root.clone())
+            || !file_system_policy.can_write_path(
+                &PathUri::from_abs_path(&repo_root.join(WRITE_PROBE_NAME)),
+                context,
+            )
+        {
+            continue;
         }
-    };
-    let Some(repo_root) = find_nearest_native_ancestor_with_markers(
-        fs,
-        &base,
-        vec![".git".to_string()],
-        FindUpErrorPolicy::Ignore,
-        /*sandbox*/ None,
-    )
-    .await
-    .ok()
-    .flatten() else {
-        return permission_profile;
-    };
-    if !file_system_policy.can_write_path(
-        &PathUri::from_abs_path(&repo_root.join(WRITE_PROBE_NAME)),
-        context,
-    ) {
+        if let Some(layout) = resolve_git_metadata_layout(fs, &repo_root).await {
+            layouts.push(layout);
+        }
+    }
+    if layouts.is_empty() {
         return permission_profile;
     }
+    // Check each checkout against the original policy before granting any Git writes.
+    for layout in layouts {
+        append_git_metadata_permissions(&mut file_system_policy.entries, layout);
+    }
 
-    let Some(layout) = resolve_git_metadata_layout(fs, &repo_root).await else {
-        return permission_profile;
-    };
+    permission_profile.with_runtime_permissions(
+        &file_system_policy,
+        permission_profile.network_sandbox_policy(),
+    )
+}
 
+fn append_git_metadata_permissions(
+    entries: &mut Vec<FileSystemSandboxEntry>,
+    layout: GitMetadataLayout,
+) {
     append_path_entry(
-        &mut file_system_policy.entries,
+        entries,
         layout.common_git_dir.clone(),
         FileSystemAccessMode::Write,
     );
     append_path_entry(
-        &mut file_system_policy.entries,
+        entries,
         layout.private_git_dir.clone(),
         FileSystemAccessMode::Write,
     );
 
     if let Some(dot_git_pointer) = layout.dot_git_pointer {
-        append_path_entry(
-            &mut file_system_policy.entries,
-            dot_git_pointer,
-            FileSystemAccessMode::Read,
-        );
+        append_path_entry(entries, dot_git_pointer, FileSystemAccessMode::Read);
     }
 
     for relative_path in COMMON_READ_ONLY_PATHS {
         append_path_entry(
-            &mut file_system_policy.entries,
+            entries,
             layout.common_git_dir.join(relative_path),
             FileSystemAccessMode::Read,
         );
     }
     for relative_path in PRIVATE_READ_ONLY_PATHS {
         append_path_entry(
-            &mut file_system_policy.entries,
+            entries,
             layout.private_git_dir.join(relative_path),
             FileSystemAccessMode::Read,
         );
@@ -186,17 +209,12 @@ pub(crate) async fn with_git_metadata_write_access(
     if layout.linked_worktree {
         for relative_path in ["commondir", "gitdir"] {
             append_path_entry(
-                &mut file_system_policy.entries,
+                entries,
                 layout.private_git_dir.join(relative_path),
                 FileSystemAccessMode::Read,
             );
         }
     }
-
-    permission_profile.with_runtime_permissions(
-        &file_system_policy,
-        permission_profile.network_sandbox_policy(),
-    )
 }
 
 async fn resolve_git_metadata_layout(

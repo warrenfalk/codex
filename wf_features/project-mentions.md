@@ -22,6 +22,8 @@ restarting the conversation or changing the working directory.
 - Submitting a project mention adds its directory to the existing runtime workspace roots for that
   turn and later turns. Existing roots, working directory, profile selection, network restrictions,
   and denied paths are preserved. Access remains subject to the selected profile and managed rules.
+- If the profile opts in to [Git metadata state writes](git-metadata-state-write.md), an attached
+  writable repository receives the same scoped Git access as the working repository.
 - An attachment is not a request to load the other project's configuration or instructions.
 - Explicit selections also reach servers that own thread settings; ordinary local defaults
   do not replace those servers' model, permission, working-directory, or workspace-root settings.
