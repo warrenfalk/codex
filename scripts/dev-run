@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+project_dir="${DEV_PROJECT_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Use Cargo's artifact path so custom target directories work without changing
+# the working directory or environment that Codex inherits.
+codex_bin="$(
+  cd -- "$project_dir/codex-rs" || exit
+  nix develop --no-write-lock-file ..#default --command \
+    cargo build --locked --package codex-cli --bin codex --message-format=json-render-diagnostics |
+    jq -Rr '
+      fromjson?
+      | select(.reason == "compiler-artifact" and .target.kind == ["bin"] and .target.name == "codex")
+      | .executable // empty
+    '
+)"
+
+if [[ ! -x "$codex_bin" ]]; then
+  echo 'dev codex: Cargo did not produce a Codex executable' >&2
+  exit 1
+fi
+
+exec "$codex_bin" "$@"
