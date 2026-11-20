@@ -134,6 +134,16 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<bool> {
+        if let Some(Overlay::Transcript(transcript)) = &mut self.overlay
+            && let Some(preview) = &mut transcript.markdown_preview
+        {
+            preview.handle_event(tui, event)?;
+            if preview.is_done() {
+                transcript.markdown_preview = None;
+                tui.frame_requester().schedule_frame();
+            }
+            return Ok(true);
+        }
         if !matches!(self.overlay, Some(Overlay::Transcript(_))) {
             self.overlay_forward_event(tui, event)?;
             return Ok(true);
@@ -238,7 +248,7 @@ impl App {
             return;
         }
         let _ = tui.leave_alt_screen();
-        let was_backtrack = self.backtrack.overlay_preview_active;
+        let closing_markdown = matches!(&self.overlay, Some(Overlay::Markdown(_)));
         if !self.deferred_history_lines.is_empty() {
             let lines = std::mem::take(&mut self.deferred_history_lines);
             tui.insert_history_hyperlink_lines_with_wrap_policy(
@@ -255,12 +265,12 @@ impl App {
         {
             tracing::warn!(error = %err, "failed to refresh thread usage after closing overlay");
         }
-        self.backtrack.overlay_preview_active = false;
-        tui.frame_requester().schedule_frame();
-        if was_backtrack {
+        if !closing_markdown && self.backtrack.overlay_preview_active {
             // Ensure backtrack state is fully reset when overlay closes (e.g. via 'q').
+            self.backtrack.overlay_preview_active = false;
             self.reset_backtrack_state();
         }
+        tui.frame_requester().schedule_frame();
     }
 
     /// Initialize backtrack state and show composer hint.
@@ -448,12 +458,13 @@ impl App {
             });
             // Refresh visible rows before selection captures this live revision.
             let result = tui.with_shortcut_hud(hud, |tui| {
-                if input { t.draw(tui) } else { Ok(()) }.and_then(|()| t.handle_event(tui, event))
+                if input { t.draw(tui) } else { Ok(()) }
+                    .and_then(|()| t.handle_event_with_link(tui, event))
             });
             if result.is_err() {
                 let _ = tui.set_mouse_capture(tui::MouseCapture::Inherit);
             }
-            let completed_copy = result?;
+            let (completed_copy, link) = result?;
             let close_overlay = t.is_done();
             let select_mode_closed = was_select_mode && (!t.is_select_mode() || close_overlay);
             let pending_follow_id = t.pending_follow_id();
@@ -482,6 +493,12 @@ impl App {
             if close_overlay {
                 self.close_transcript_overlay(tui);
                 tui.frame_requester().schedule_frame();
+            }
+            if let Some(url) = link
+                && !self.try_open_markdown_link(tui, &url)
+                && let Some(Overlay::Transcript(transcript)) = &mut self.overlay
+            {
+                transcript.open_link_in_browser(&url);
             }
             return Ok(());
         }

@@ -251,6 +251,7 @@ mod input;
 mod link_hover;
 mod loaded_threads;
 mod managed_worktree_creation;
+mod markdown_preview;
 mod misalignment_policy;
 mod model_defaults;
 mod new_session;
@@ -620,7 +621,7 @@ pub(crate) struct App {
     last_thread_usage_status_cell: Option<history_ui::ThreadUsageStatusHistory>,
     pub(crate) pending_thread_usage_history_refresh: bool,
 
-    // Alternate-screen overlays: transcript, diff, and analytics.
+    // Alternate-screen overlays.
     pub(crate) overlay: Option<Overlay>,
     pub(crate) retained_analytics: Option<Box<crate::analytics::AnalyticsView>>,
     pub(crate) deferred_history_lines: Vec<crate::terminal_hyperlinks::HyperlinkLine>,
@@ -1141,7 +1142,7 @@ impl App {
                     if press.modifiers.is_empty() {
                         self.passive_link_drag = Some((current.passive_thread, painted.passive));
                         self.handle_passive_transcript_event(tui, current.passive_thread, &event);
-                    } else {
+                    } else if !self.try_open_markdown_link(tui, &url) {
                         self.open_url_in_browser(url);
                     }
                     return Ok(AppRunControl::Continue);
@@ -1238,7 +1239,10 @@ impl App {
         }
         if self.reconnect.offline
             && !self.chat_widget.keymap_contexts().is_warnings()
-            && !matches!(&self.overlay, Some(Overlay::Transcript(_)))
+            && !matches!(
+                &self.overlay,
+                Some(Overlay::Transcript(_) | Overlay::Markdown(_))
+            )
             && let TuiEvent::Key(key) = &event
             && !(self.overlay.is_none()
                 && self.chat_widget.no_modal_or_popup_active()
@@ -1392,10 +1396,15 @@ impl App {
         }
         if draws_history {
             let frozen = self.chat_widget.is_external_writer_view();
+            let transcript_visible = match &self.overlay {
+                None => true,
+                Some(Overlay::Transcript(transcript)) => transcript.markdown_preview.is_none(),
+                _ => false,
+            };
             let visible = self.current_displayed_thread_id().filter(|&id| {
                 tui.is_terminal_focused()
                     && !self.conversation_frame.panel_covers_transcript()
-                    && matches!(self.overlay, None | Some(Overlay::Transcript(_)))
+                    && transcript_visible
                     && self.chat_widget.no_modal_or_popup_active()
                     && self.initial_history_replay_buffer.is_none()
                     && (!self.thread_unavailable(id) || frozen)

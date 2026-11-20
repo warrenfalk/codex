@@ -25,6 +25,7 @@ pub(crate) struct TranscriptOverlay {
     cursor: Option<(u16, u16)>,
     notice: Option<String>,
     pub(crate) browsing_footer: Option<Line<'static>>,
+    pub(crate) markdown_preview: Option<Box<MarkdownOverlay>>,
     find_transcript: Vec<crate::key_hint::KeyBinding>,
     select_transcript: Vec<crate::key_hint::KeyBinding>,
     pub(super) pending_follow_close: Option<(u64, bool)>,
@@ -70,6 +71,7 @@ impl TranscriptOverlay {
             cursor: None,
             notice: None,
             browsing_footer: None,
+            markdown_preview: None,
             find_transcript: Vec::new(),
             select_transcript: Vec::new(),
             pending_follow_close: None,
@@ -190,6 +192,18 @@ impl TranscriptOverlay {
         tui: &mut tui::Tui,
         event: TuiEvent,
     ) -> Result<Option<u64>> {
+        let (completed_copy, link) = self.handle_event_with_link(tui, event)?;
+        if let Some(url) = link {
+            self.open_link_in_browser(&url);
+        }
+        Ok(completed_copy)
+    }
+
+    pub(crate) fn handle_event_with_link(
+        &mut self,
+        tui: &mut tui::Tui,
+        event: TuiEvent,
+    ) -> Result<(Option<u64>, Option<String>)> {
         let completed_copy = if let Some(completion) = tui.clipboard.poll() {
             let id = completion.0;
             self.finish_pending_copy(completion);
@@ -222,7 +236,7 @@ impl TranscriptOverlay {
             }
             TuiEvent::Paste(text) => {
                 if self.view.is_select_mode() && !self.view.is_search_editing() {
-                    return Ok(completed_copy);
+                    return Ok((completed_copy, None));
                 }
                 if self.view.is_search_editing() {
                     self.view.end_selection(&self.cells);
@@ -235,15 +249,16 @@ impl TranscriptOverlay {
                         .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL);
                 }
                 self.draw(tui)?;
-                return Ok(completed_copy);
+                return Ok((completed_copy, None));
             }
             TuiEvent::FocusLost => None,
         };
         if let Some(action) = action {
-            self.apply_action(tui, action);
+            let link = self.apply_action(tui, action);
             tui.frame_requester().schedule_frame();
+            return Ok((completed_copy, link));
         }
-        Ok(completed_copy)
+        Ok((completed_copy, None))
     }
 
     pub(crate) fn is_done(&self) -> bool {
@@ -511,7 +526,7 @@ impl TranscriptOverlay {
         }
     }
 
-    fn apply_action(&mut self, tui: &mut tui::Tui, action: ViewAction) {
+    fn apply_action(&mut self, tui: &mut tui::Tui, action: ViewAction) -> Option<String> {
         self.notice = None;
         let resume_following = matches!(action, ViewAction::CopyAndFollow(_));
         let close_overlay = self.view.is_select_mode() || self.browsing_footer.is_some();
@@ -544,9 +559,14 @@ impl TranscriptOverlay {
                 Ok(status) => Some(status.message("selection")),
                 Err(error) => Some(error),
             };
-        } else if let ViewAction::OpenLink(url) = action
-            && let Err(error) = webbrowser::open(&url)
-        {
+        } else if let ViewAction::OpenLink(url) = action {
+            return Some(url);
+        }
+        None
+    }
+
+    pub(crate) fn open_link_in_browser(&mut self, url: &str) {
+        if let Err(error) = webbrowser::open(url) {
             self.notice = Some(format!("Could not open link: {error}"));
         }
     }

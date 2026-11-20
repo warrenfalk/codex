@@ -10401,7 +10401,10 @@ async fn clean_scrollback_syncs_transcript_overlay_to_filtered_and_full_cells() 
         let mut buffer = Buffer::empty(area);
         match overlay {
             Overlay::Transcript(transcript) => transcript.render(area, &mut buffer),
-            Overlay::Static(_) | Overlay::Analytics(_) | Overlay::Notes(_) => {
+            Overlay::Static(_)
+            | Overlay::Analytics(_)
+            | Overlay::Notes(_)
+            | Overlay::Markdown(_) => {
                 panic!("expected transcript overlay")
             }
         }

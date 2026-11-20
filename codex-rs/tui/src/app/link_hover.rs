@@ -71,7 +71,9 @@ impl App {
             crate::clipboard_copy::CopyFormat::Markdown,
         ) {
             self.transcript_view.show_copy_feedback(&result, count);
-        } else if let ViewAction::OpenLink(url) = action {
+        } else if let ViewAction::OpenLink(url) = action
+            && !self.try_open_markdown_link(tui, &url)
+        {
             self.open_url_in_browser(url);
         }
         tui.frame_requester().schedule_frame();
@@ -127,13 +129,30 @@ impl App {
     }
 
     pub(super) fn refresh_link_hover(&self, tui: &mut Tui) -> std::io::Result<()> {
+        let markdown_preview = match &self.overlay {
+            Some(crate::pager_overlay::Overlay::Markdown(preview)) => Some(preview.as_ref()),
+            Some(crate::pager_overlay::Overlay::Transcript(transcript)) => {
+                transcript.markdown_preview.as_deref()
+            }
+            _ => None,
+        };
         let shape = if tui
             .link_hover
             .mouse
             .is_some_and(|mouse| tui.shortcut_hud_contains(mouse))
-            || !tui.is_owned_screen()
-            || self.overlay.is_some()
         {
+            PointerShape::Default
+        } else if let Some(preview) = markdown_preview {
+            if tui
+                .link_hover
+                .mouse
+                .is_some_and(|mouse| preview.source_at(mouse))
+            {
+                PointerShape::Link
+            } else {
+                PointerShape::Default
+            }
+        } else if !tui.is_owned_screen() || self.overlay.is_some() {
             PointerShape::Default
         } else if self.conversation_focus_available(tui)
             && (self.divider_drag.is_some()

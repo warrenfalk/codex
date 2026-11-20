@@ -4,6 +4,7 @@ use regex_lite::Regex;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
+use url::Url;
 
 static NON_WHITESPACE_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(r"\S+") {
     Ok(regex) => regex,
@@ -124,7 +125,6 @@ pub(crate) fn resolve_file_reference_uri(
     let (raw_path, line, column) = split_file_reference_location(token)?;
     let resolved_path = resolve_file_reference_path(raw_path, cwd)?;
     let scheme = file_opener_scheme(file_opener)?;
-    let path = resolved_path.to_string_lossy().replace('\\', "/");
     let location = match line {
         Some(line) => match column {
             Some(column) => format!(":{line}:{column}"),
@@ -132,7 +132,7 @@ pub(crate) fn resolve_file_reference_uri(
         },
         None => String::new(),
     };
-    Some(format!("{scheme}://file{path}{location}"))
+    Some(editor_file_href(scheme, &resolved_path, &location))
 }
 
 pub(crate) fn file_opener_scheme(file_opener: UriBasedFileOpener) -> Option<&'static str> {
@@ -143,6 +143,46 @@ pub(crate) fn file_opener_scheme(file_opener: UriBasedFileOpener) -> Option<&'st
         UriBasedFileOpener::Cursor => Some("cursor"),
         UriBasedFileOpener::None => None,
     }
+}
+
+pub(crate) fn editor_file_href(scheme: &str, path: &Path, location: &str) -> String {
+    // Markdown links must round-trip into local paths, including URL punctuation in filenames.
+    if is_markdown_file(path)
+        && let Ok(url) = Url::from_file_path(path)
+        && url.host().is_none()
+    {
+        return format!("{scheme}://file{}{location}", url.path());
+    }
+    let path = path.to_string_lossy().replace('\\', "/");
+    format!("{scheme}://file{path}{location}")
+}
+
+/// Resolve a clickable desktop file link to the local Markdown file it names.
+pub(crate) fn markdown_link_path(destination: &str) -> Option<PathBuf> {
+    if destination.chars().any(char::is_control) {
+        return None;
+    }
+    let url = Url::parse(destination).ok()?;
+    let path = match url.scheme() {
+        "file" if url.host().is_none() => url.to_file_path().ok()?,
+        "vscode" | "vscode-insiders" | "windsurf" | "cursor" if url.host_str() == Some("file") => {
+            let (path, _, _) = split_file_reference_location(url.path())?;
+            if !path.starts_with('/') || path.starts_with("//") {
+                return None;
+            }
+            Url::parse(&format!("file://{path}"))
+                .ok()?
+                .to_file_path()
+                .ok()?
+        }
+        _ => return None,
+    };
+    is_markdown_file(&path).then_some(path)
+}
+
+fn is_markdown_file(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
 }
 
 fn split_file_reference_location(token: &str) -> Option<(&str, Option<u32>, Option<u32>)> {

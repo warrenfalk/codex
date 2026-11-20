@@ -1180,7 +1180,9 @@ impl App {
                         | Err(_) => {}
                     }
                 }
-            } else if let ViewAction::OpenLink(url) = action {
+            } else if let ViewAction::OpenLink(url) = action
+                && !self.try_open_markdown_link(tui, &url)
+            {
                 super::desktop_links::open(url, self.app_event_tx.clone());
             }
         }

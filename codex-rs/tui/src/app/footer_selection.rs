@@ -73,7 +73,9 @@ impl App {
                 };
                 if let Some((characters, result)) = copied {
                     self.transcript_view.show_copy_feedback(&result, characters);
-                } else if let ViewAction::OpenLink(url) = action {
+                } else if let ViewAction::OpenLink(url) = action
+                    && !self.try_open_markdown_link(tui, &url)
+                {
                     self.open_url_in_browser(url);
                 }
             }

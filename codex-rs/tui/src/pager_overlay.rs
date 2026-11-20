@@ -3,10 +3,12 @@
 //! Static content retains its generic pager. Transcript previews share the main conversation
 //! viewport, including its scrolling, selection, search and bounded text layouts.
 
+mod markdown;
 mod notes;
 mod scrolling;
 mod transcript;
 
+pub(crate) use markdown::MarkdownOverlay;
 pub(crate) use notes::NotesOverlay;
 pub(crate) use transcript::TranscriptOverlay;
 
@@ -48,6 +50,7 @@ pub(crate) enum Overlay {
     Static(StaticOverlay),
     Analytics(Box<crate::analytics::AnalyticsView>),
     Notes(NotesOverlay),
+    Markdown(Box<MarkdownOverlay>),
 }
 
 impl Overlay {
@@ -89,7 +92,9 @@ impl Overlay {
 
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         let mouse_capture = match self {
-            Overlay::Transcript(_) | Overlay::Analytics(_) => tui::MouseCapture::Enabled,
+            Overlay::Transcript(_) | Overlay::Analytics(_) | Overlay::Markdown(_) => {
+                tui::MouseCapture::Enabled
+            }
             Overlay::Static(_) | Overlay::Notes(_) => tui::MouseCapture::Disabled,
         };
         tui.set_mouse_capture(mouse_capture)?;
@@ -98,6 +103,7 @@ impl Overlay {
             Overlay::Static(o) => o.handle_event(tui, event),
             Overlay::Analytics(o) => o.handle_event(tui, event),
             Overlay::Notes(o) => o.handle_event(tui, event),
+            Overlay::Markdown(o) => o.handle_event(tui, event),
         };
         if result.is_err() || self.is_done() {
             let restore = tui.set_mouse_capture(tui::MouseCapture::Inherit);
@@ -112,6 +118,7 @@ impl Overlay {
             Overlay::Static(o) => o.is_done(),
             Overlay::Analytics(o) => o.is_done,
             Overlay::Notes(o) => o.is_done(),
+            Overlay::Markdown(o) => o.is_done(),
         }
     }
 }

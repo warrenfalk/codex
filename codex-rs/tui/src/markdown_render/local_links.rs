@@ -70,10 +70,10 @@ pub(super) fn render_local_link_href(
     } else {
         cwd?.join(&path_text)
     };
-    let path = resolved_path.to_string_lossy().replace('\\', "/");
-    Some(format!(
-        "{scheme}://file{path}{}",
-        location_suffix.unwrap_or_default()
+    Some(crate::file_links::editor_file_href(
+        scheme,
+        &resolved_path,
+        location_suffix.as_deref().unwrap_or_default(),
     ))
 }
 

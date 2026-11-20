@@ -84,9 +84,15 @@ impl From<Vec<HyperlinkLine>> for HyperlinkRows {
 
 impl Renderable for HyperlinkRows {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        for (row, line) in self.0.iter().take(usize::from(area.height)).enumerate() {
+        self.render_scrolled(area, buf, /*scroll_offset*/ 0);
+    }
+
+    fn render_scrolled(&self, area: Rect, buf: &mut Buffer, scroll_offset: u16) -> bool {
+        let rows = self.0.iter().skip(usize::from(scroll_offset));
+        for (row, line) in rows.take(usize::from(area.height)).enumerate() {
             line.render(Rect::new(area.x, area.y + row as u16, area.width, 1), buf);
         }
+        true
     }
 
     fn desired_height(&self, width: u16) -> u16 {
