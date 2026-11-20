@@ -104,6 +104,9 @@ rustPlatform.buildRustPackage (_: {
   inherit version;
   cargoLock.lockFile = ./Cargo.lock;
   doCheck = false;
+  # Keep Cargo's bundled native libraries, including AWS-LC and SQLite.
+  # The system-library hook requires separate packages this recipe does not supply.
+  dontCargoUseSystemLibs = true;
   src = ./.;
   buildInputs = nativeAudioLibraries;
 
