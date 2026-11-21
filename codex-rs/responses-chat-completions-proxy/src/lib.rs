@@ -1,6 +1,7 @@
 mod config;
 mod content;
 mod error;
+mod gemini;
 mod history;
 mod protocol;
 mod request;
@@ -64,6 +65,13 @@ impl Drop for EmbeddedProxy {
 struct AppState {
     config: Arc<ProxyConfig>,
     client: Client,
+    protocol: UpstreamProtocol,
+}
+
+#[derive(Clone, Copy)]
+enum UpstreamProtocol {
+    Chat,
+    Gemini,
 }
 
 #[derive(Serialize)]
@@ -73,6 +81,17 @@ struct ServerInfo {
 }
 
 pub async fn serve(config: ProxyConfig) -> anyhow::Result<()> {
+    serve_with_protocol(config, UpstreamProtocol::Chat).await
+}
+
+pub async fn serve_gemini(config: ProxyConfig) -> anyhow::Result<()> {
+    serve_with_protocol(config, UpstreamProtocol::Gemini).await
+}
+
+async fn serve_with_protocol(
+    config: ProxyConfig,
+    protocol: UpstreamProtocol,
+) -> anyhow::Result<()> {
     let address = SocketAddr::new(config.listen_address, config.port);
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -84,7 +103,7 @@ pub async fn serve(config: ProxyConfig) -> anyhow::Result<()> {
     if let Some(path) = config.server_info.as_deref() {
         write_server_info(path, bound_address.port())?;
     }
-    let app = router(config)?;
+    let app = router_with_protocol(config, protocol)?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -115,6 +134,10 @@ pub fn start_embedded(config: ProxyConfig) -> anyhow::Result<EmbeddedProxy> {
 }
 
 pub fn router(config: ProxyConfig) -> anyhow::Result<Router> {
+    router_with_protocol(config, UpstreamProtocol::Chat)
+}
+
+fn router_with_protocol(config: ProxyConfig, protocol: UpstreamProtocol) -> anyhow::Result<Router> {
     if config.upstream_bearer.is_some() && config.forward_inbound_authorization {
         anyhow::bail!(
             "proxy-owned credentials and inbound Authorization forwarding are mutually exclusive"
@@ -128,13 +151,22 @@ pub fn router(config: ProxyConfig) -> anyhow::Result<Router> {
     if !upstream_url.username().is_empty() || upstream_url.password().is_some() {
         anyhow::bail!("--upstream-url must not contain credentials");
     }
-    let client = Client::builder()
-        .connect_timeout(config.request_timeout)
+    if matches!(protocol, UpstreamProtocol::Gemini)
+        && config.upstream_bearer.as_deref().is_none_or(str::is_empty)
+    {
+        anyhow::bail!("GenerateContent requires a proxy-owned Gemini API key");
+    }
+    let mut client = Client::builder().connect_timeout(config.request_timeout);
+    if matches!(protocol, UpstreamProtocol::Gemini) {
+        client = client.redirect(reqwest::redirect::Policy::none());
+    }
+    let client = client
         .build()
         .context("failed to build upstream HTTP client")?;
     let state = AppState {
         config: Arc::new(config),
         client,
+        protocol,
     };
     Ok(Router::new()
         .route("/v1/responses", post(handle_responses))
@@ -154,20 +186,29 @@ async fn handle_responses(
 ) -> Result<Response, ProxyError> {
     let request: ResponsesRequest = serde_json::from_slice(&body)
         .map_err(|error| ProxyError::invalid(format!("invalid JSON body: {error}")))?;
-    let translated = request::translate_request(
-        request,
-        state.config.capabilities,
-        state.config.upstream_model.as_deref(),
-    )?;
-    let upstream =
-        upstream::send_chat_request(&state.client, &state.config, &headers, &translated.chat)
+    let body = match state.protocol {
+        UpstreamProtocol::Chat => {
+            let translated = request::translate_request(
+                request,
+                state.config.capabilities,
+                state.config.upstream_model.as_deref(),
+            )?;
+            let upstream = upstream::send_chat_request(
+                &state.client,
+                &state.config,
+                &headers,
+                &translated.chat,
+            )
             .await?;
-    let body = Body::from_stream(translate_upstream(
-        upstream,
-        translated.tools,
-        state.config.stream_idle_timeout,
-        state.config.capabilities.reasoning_content,
-    ));
+            Body::from_stream(translate_upstream(
+                upstream,
+                translated.tools,
+                state.config.stream_idle_timeout,
+                state.config.capabilities.reasoning_content,
+            ))
+        }
+        UpstreamProtocol::Gemini => gemini::respond(&state.client, &state.config, request).await?,
+    };
     Ok((
         [
             (CONTENT_TYPE, "text/event-stream; charset=utf-8"),

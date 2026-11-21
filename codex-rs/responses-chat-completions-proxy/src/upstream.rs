@@ -97,7 +97,7 @@ async fn upstream_error(response: reqwest::Response) -> ProxyError {
     ProxyError::upstream_http(status, message)
 }
 
-async fn read_bounded_body(
+pub(crate) async fn read_bounded_body(
     response: reqwest::Response,
     max_bytes: usize,
 ) -> Result<Vec<u8>, ProxyError> {

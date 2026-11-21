@@ -5,6 +5,8 @@ This proxy lets an unmodified Codex client use a backend that implements
 protocol. The proxy translates full conversation history and tools into Chat Completions, then
 turns the Chat result back into the Responses SSE events Codex consumes.
 
+The executable also supports native [Gemini GenerateContent](#gemini-4-neon) upstreams.
+
 This is a compatibility profile, not a general implementation of every Responses feature. Read
 the capability and unsupported-feature sections before pointing an existing Codex profile at it.
 
@@ -79,6 +81,46 @@ capabilities must likewise match both the proxy flags and the real backend. In p
 - set the real context window and input modalities rather than copying the example values.
 
 Codex must remain configured with `wire_api = "responses"`. Do not add a Chat wire mode to Codex.
+
+### Gemini 4 Neon
+
+Start the same executable in native Google GenerateContent mode. In this example the key
+file contains one `GEMINI_API_KEY=...` line. The launching shell gives the key only to the
+adapter process.
+
+```bash
+GEMINI_API_KEY="$(sed -n 's/^GEMINI_API_KEY=//p' "$HOME/.gemini-codex")" \
+  ./target/debug/codex-responses-chat-completions-proxy \
+  --gemini-generate-content \
+  --upstream-url 'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-neon:streamGenerateContent?alt=sse' \
+  --upstream-api-key-env GEMINI_API_KEY \
+  --port 60002
+```
+
+Use this Codex configuration with the adapter running:
+
+```toml
+model = "gemini-4-neon"
+model_provider = "gemini-local"
+model_context_window = 1048576
+model_reasoning_effort = "high"
+model_reasoning_summary = "none"
+web_search = "disabled"
+
+[model_providers.gemini-local]
+name = "Gemini GenerateContent"
+base_url = "http://127.0.0.1:60002/v1"
+wire_api = "responses"
+supports_websockets = false
+```
+
+The model in the GenerateContent URL selects the upstream model. Use a custom model
+catalog to advertise optional Codex capabilities such as image input, parallel tools,
+or freeform patching. Gemini decides when to batch calls. Gemini mode supports `low`,
+`medium`, `high`, and `xhigh` thinking levels. It uses native function declarations,
+inline base64 image content, and stateless history replay. Google API usage is billed
+to the project that owns the key. Resume Gemini conversations with the same custom
+provider and upstream model so their signed history can be replayed.
 
 ### Built-in Kimi K3 profile
 

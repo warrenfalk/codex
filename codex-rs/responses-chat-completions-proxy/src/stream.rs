@@ -475,11 +475,11 @@ impl StreamTranslator {
     }
 }
 
-fn prefixed_id(prefix: &str) -> String {
+pub(crate) fn prefixed_id(prefix: &str) -> String {
     format!("{prefix}_{}", Uuid::now_v7().simple())
 }
 
-fn sse(value: Value) -> Bytes {
+pub(crate) fn sse(value: Value) -> Bytes {
     Bytes::from(format!("data: {value}\n\n"))
 }
 

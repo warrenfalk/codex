@@ -45,7 +45,7 @@ pub(crate) fn translate_request(
     Ok(TranslatedRequest { chat, tools })
 }
 
-fn validate_request_controls(
+pub(crate) fn validate_request_controls(
     request: &ResponsesRequest,
     capabilities: BackendCapabilities,
 ) -> Result<(), ProxyError> {

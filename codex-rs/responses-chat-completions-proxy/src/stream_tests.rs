@@ -252,7 +252,7 @@ fn maps_content_filter_to_failed_and_rejects_unknown_terminal_reasons() -> anyho
     assert_eq!(
         error.as_deref(),
         Some(
-            "upstream Chat Completions stream is invalid: unsupported Chat finish_reason \"future_reason\""
+            "upstream inference stream is invalid: unsupported Chat finish_reason \"future_reason\""
         )
     );
     Ok(())

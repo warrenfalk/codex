@@ -60,8 +60,26 @@ pub enum ReasoningContentPolicy {
 }
 
 #[derive(Debug, Parser)]
-#[command(about = "Expose a Codex-compatible Responses API over a Chat Completions backend")]
+#[command(
+    about = "Expose a Codex-compatible Responses API over Chat Completions or Gemini GenerateContent"
+)]
 pub struct Args {
+    /// Use the Gemini REST streamGenerateContent protocol and x-goog-api-key authentication.
+    #[arg(long, requires = "upstream_api_key_env", conflicts_with_all = [
+        "forward_inbound_authorization",
+        "upstream_model",
+        "disable_upstream_streaming",
+        "supports_developer_role",
+        "supports_image_input",
+        "supports_image_tool_output",
+        "supports_parallel_tool_calls",
+        "forwards_prompt_cache_key",
+        "supports_reasoning_content",
+        "supports_reasoning_effort",
+        "supports_structured_output",
+    ])]
+    pub gemini_generate_content: bool,
+
     #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST))]
     pub listen_address: IpAddr,
 

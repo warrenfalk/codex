@@ -12,16 +12,16 @@ pub(crate) enum ProxyError {
     InvalidRequest(String),
     #[error("unsupported Responses feature: {0}")]
     Unsupported(String),
-    #[error("upstream Chat Completions request failed: {0}")]
+    #[error("upstream inference request failed: {0}")]
     Upstream(String),
-    #[error("upstream Chat Completions returned HTTP {status}: {message}")]
+    #[error("upstream inference returned HTTP {status}: {message}")]
     UpstreamHttp { status: StatusCode, message: String },
-    #[error("upstream Chat Completions request failed: {message}")]
+    #[error("upstream inference request failed: {message}")]
     ModelNotFound {
         message: String,
         status: Option<StatusCode>,
     },
-    #[error("upstream Chat Completions stream is invalid: {0}")]
+    #[error("upstream inference stream is invalid: {0}")]
     InvalidUpstream(String),
 }
 

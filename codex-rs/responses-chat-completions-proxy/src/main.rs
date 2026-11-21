@@ -8,6 +8,12 @@ fn pre_main() {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Args::parse().into_config()?;
-    codex_responses_chat_completions_proxy::serve(config).await
+    let args = Args::parse();
+    let gemini = args.gemini_generate_content;
+    let config = args.into_config()?;
+    if gemini {
+        codex_responses_chat_completions_proxy::serve_gemini(config).await
+    } else {
+        codex_responses_chat_completions_proxy::serve(config).await
+    }
 }
